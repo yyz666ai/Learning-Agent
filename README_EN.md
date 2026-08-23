@@ -96,8 +96,11 @@ python -m pip install -r requirements.txt
 
 ### 3. Configure the API key
 
+Create an API key in the [DeepSeek Platform](https://platform.deepseek.com/). Never send the key through chat, place it in frontend code, or commit it to Git.
+
 ```bash
 cp .secrets.env.example .secrets.env
+chmod 600 .secrets.env
 ```
 
 Edit `.secrets.env`:
@@ -136,6 +139,15 @@ This creates the local read-only runtime snapshot at `workspace/releases/current
 ```
 
 Open <http://127.0.0.1:8787>. API documentation is available at <http://127.0.0.1:8787/api/docs>.
+
+Opening the page only reads existing state; it does not create an empty learner directory. Confirming onboarding or triggering the first Codex-backed learning action creates the isolated profile automatically:
+
+```text
+http://127.0.0.1:8787/?user_id=alice
+→ learning-agent-server/userdir/u_alice/
+```
+
+The directory persists the profile, plan, progress, lessons, practice bank, notes, code projects, and isolated Codex runtime. Closing the browser or restarting the server does not remove it. The current `user_id` is a local profile identifier, not authentication; add real accounts, sessions, and tenant isolation before public deployment.
 
 Health check:
 
@@ -211,6 +223,16 @@ cd learning-agent-server
 ## Contributing
 
 Community pull requests are welcome, especially knowledge-base contributions. Please keep facts verifiable, code runnable, examples teachable, and learner data out of commits.
+
+For the first push, use GitHub CLI browser authentication instead of entering a GitHub account password in the terminal:
+
+```bash
+brew install gh
+gh auth login   # GitHub.com → HTTPS → Login with a web browser
+gh auth status
+```
+
+Git command-line password authentication is no longer supported; use browser authorization, a personal access token, or an SSH key.
 
 ## License
 

@@ -111,6 +111,19 @@ python -m backend.publish
 
 浏览器打开：<http://127.0.0.1:8787>
 
+### 用户数据什么时候创建？
+
+仅打开首页时，后端只读取状态，不会创建一个没有内容的空用户目录。用户确认 onboarding 学习目标，或第一次触发需要 Codex 的学习操作后，系统会按 URL 中的 `user_id` 自动创建独立目录：
+
+```text
+http://127.0.0.1:8787/?user_id=alice
+→ learning-agent-server/userdir/u_alice/
+```
+
+其中会持续保存画像、`plan.md`、课程进度、讲义、题库、笔记、练习项目，以及该用户隔离的 `.codex-runtime/home/config.toml`。关闭网页或重启服务不会清除这些内容；`userdir/` 已被 Git 忽略。
+
+> 当前 `user_id` 是本地学习档案标识，不是登录鉴权。公开部署前必须增加真实账号认证、会话管理和租户隔离。
+
 ## 完整安装教程
 
 ### 1. 准备基础环境
@@ -170,10 +183,13 @@ Windows WSL 使用相同命令。原生 Windows PowerShell 尚不是当前脚本
 
 ### 5. 配置 DeepSeek API
 
+先在 [DeepSeek 开放平台](https://platform.deepseek.com/) 创建 API Key。不要把 Key 发到聊天、写入前端代码或提交到 Git。
+
 复制安全配置示例：
 
 ```bash
 cp .secrets.env.example .secrets.env
+chmod 600 .secrets.env
 ```
 
 编辑 `.secrets.env`：
@@ -328,6 +344,16 @@ flowchart LR
 - 教学 Skills、行为评测与质量规则。
 
 ### 推荐 PR 流程
+
+首次向 GitHub 推送前，推荐使用 GitHub CLI 的浏览器授权，不要在终端输入 GitHub 账号密码：
+
+```bash
+brew install gh        # macOS；其他系统参见 https://cli.github.com/
+gh auth login          # 选择 GitHub.com → HTTPS → Login with a web browser
+gh auth status         # 确认当前账号
+```
+
+GitHub 已停止 Git 的密码认证；浏览器授权、Personal Access Token 或 SSH Key 才是受支持的命令行认证方式。
 
 ```bash
 # 1. Fork 后克隆自己的仓库
