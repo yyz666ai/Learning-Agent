@@ -1,0 +1,4 @@
+interface:
+  display_name: "间隔复习"
+  short_description: "按到期时间选择最多五个知识点并生成回忆、解释和代码复习任务"
+  default_prompt: "请使用 $spaced-review 为我准备今天到期的学习复习。"

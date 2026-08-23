@@ -1,0 +1,11 @@
+{
+  "skill_name": "knowledge-curator",
+  "cases": [
+    {
+      "id": "missing-api-topic",
+      "prompt": "知识库没有 webhook 重试 API，请边教边补充。",
+      "expectations": ["先继续教学", "只向 DEV_CURRICULUM 写入有证据的知识原子"],
+      "forbidden": ["因知识库缺失而停止教学", "修改只读发布快照"]
+    }
+  ]
+}

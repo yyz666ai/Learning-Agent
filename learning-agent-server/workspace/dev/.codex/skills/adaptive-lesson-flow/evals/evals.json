@@ -1,0 +1,35 @@
+{
+  "skill_name": "adaptive-lesson-flow",
+  "cases": [
+    {
+      "id": "complete-chapter-homework",
+      "prompt": "零基础用户正在学习 Go 的程序结构与运行这一章。请生成完整可翻页章节讲义，并留一份课后独立练习。",
+      "expected_output": "同一份讲义覆盖 package main、func main、go run 与 go build；课堂只做点击题，最后留一份可在项目目录完成的课后练习。",
+      "expectations": ["不在完成第一个点后另生成同章内容", "每页有本页请做", "不生成输出输入框", "课后练习有项目路径和提示"]
+    },
+    {
+      "id": "zero-go-first-homework",
+      "prompt": "零基础用户已确认要学 Go。请生成 package main 的第一小节讲义。",
+      "expected_output": "3–4 页短讲解、一个点击选择题、带详细中文注释的示例和一份不阻塞进度的课后练习。",
+      "expectations": ["不重复诊断", "简单点只有一道选择题", "不要求长篇解释", "不生成 output_patterns"]
+    },
+    {
+      "id": "independent-blank-practice",
+      "prompt": "用户已经会基本语法，现在练习自己写一个带错误处理的函数。",
+      "expected_output": "使用 blank 起始文件，给运行命令与最多三条提示，但不交付完整答案。",
+      "expectations": ["practice_starter_mode 为 blank", "不代写完整代码", "结果直接发对话输入栏"]
+    },
+    {
+      "id": "runtime-error-chat-help",
+      "prompt": "我运行程序后出现 panic，接下来怎么办？",
+      "expected_output": "在聊天框按最低有效提示帮助定位，把问题与总结写入个人课堂笔记；重新运行结果仍可直接发到对话输入栏。",
+      "expectations": ["不要求写反思", "保留用户动手机会", "给一个可执行下一步"]
+    },
+    {
+      "id": "dense-concept-step-by-step-deck",
+      "prompt": "零基础用户正在学 LangGraph 的 State、节点、边和条件路由，本章知识密度高。",
+      "expected_output": "生成 12–24 页的完整章节 PPT，先用图和最小骨架建立直觉，再逐页增加一个概念或代码职责，穿插点击选择题，最后留一份课后独立练习。",
+      "expectations": ["知识密集章节可有 12–24 页", "每页只引入一个主要认知负担", "图示、代码和点击题交替", "每页内说明当页要做什么", "课后练习不阻塞下一章"]
+    }
+  ]
+}

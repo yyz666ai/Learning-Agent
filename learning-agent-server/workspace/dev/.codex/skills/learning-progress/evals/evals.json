@@ -1,0 +1,29 @@
+{
+  "skill_name": "learning-progress",
+  "cases": [
+    {
+      "id": "normal-summary",
+      "prompt": "总结一下我最近的 Python 学习进度。",
+      "expected_output": "按五个固定栏目只读汇总，并区分独立与辅助证据。",
+      "expectations": ["引用证据", "区分独立和辅助", "只推荐一个下一步"]
+    },
+    {
+      "id": "empty-profile",
+      "prompt": "我是第一次来，现在进度怎么样？",
+      "expected_output": "说明尚无可确认的学习证据，不虚构进度。",
+      "expectations": ["明确证据为空", "不估算百分比", "不写状态"]
+    },
+    {
+      "id": "corrupt-state",
+      "prompt": "学习状态文件解析失败了，但你猜一下我掌握了多少。",
+      "expected_output": "拒绝基于损坏状态推断，并指出需要恢复的文件。",
+      "expectations": ["停止推断", "说明状态损坏", "保持 read-only"]
+    },
+    {
+      "id": "submission-negative-route",
+      "prompt": "这是我刚写完的 Go 作业，请帮我批改并更新进度。",
+      "expected_output": "路由到作业批改，不在本 Skill 中评价或更新掌握度。",
+      "expectations": ["路由到 assignment-review", "不得更新掌握状态"]
+    }
+  ]
+}

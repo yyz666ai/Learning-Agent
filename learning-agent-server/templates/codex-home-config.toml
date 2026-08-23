@@ -1,0 +1,11 @@
+# 每用户 CODEX_HOME 的配置模板（复制到 users/u_xxx/.codex-runtime/home/config.toml）
+# 作用：让软件 spawn 的 Codex 与个人命令行的 ~/.codex 彻底分离，API 随便选。
+# 模型可切换：deepseek-v4-flash（快/省）或 deepseek-v4-pro（更强推理）。
+model = "deepseek-v4-flash"
+model_provider = "deepseek"
+
+[model_providers.deepseek]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com/v1"
+env_key = "DEEPSEEK_API_KEY"    # key 从进程环境读取，由 bridge 注入；不要写进本文件
+wire_api = "responses"          # codex 0.146+ 仅支持 responses 协议；DeepSeek V4 原生支持

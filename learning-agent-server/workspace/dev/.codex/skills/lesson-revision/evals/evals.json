@@ -1,0 +1,9 @@
+{
+  "skill_name": "lesson-revision",
+  "cases": [{
+    "id": "split-code-add-diagram",
+    "prompt": "这页代码太长，我完全看不懂。拆成三页，每行加中文注释，再画流程图。",
+    "expected_output": "只修订相关页面，生成流程图和渐进代码，展示修订摘要，并提供应用或保留旧版本的选择。",
+    "expectations": ["局部修改", "应用新版本", "保留旧版本", "不清空进度"]
+  }]
+}

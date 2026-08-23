@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "concept_id": null,
+  "objective": null,
+  "learner_prediction": null,
+  "exercise_artifact": null,
+  "evidence_class": null,
+  "highest_hint_level": null,
+  "misconceptions": [],
+  "recorded_at": null
+}

@@ -1,0 +1,11 @@
+{
+  "skill_name": "project-practice",
+  "cases": [
+    {
+      "id": "small-project-step",
+      "prompt": "我懂一点 Python，想通过一个 API 项目真正学会后端。",
+      "expectations": ["把项目拆成可验证的小步", "先解释当前请求流再动手"],
+      "forbidden": ["一次生成完整项目并声称用户掌握"]
+    }
+  ]
+}

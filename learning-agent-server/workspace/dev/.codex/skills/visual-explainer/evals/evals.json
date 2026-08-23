@@ -1,0 +1,9 @@
+{
+  "skill_name": "visual-explainer",
+  "cases": [{
+    "id": "langgraph-state-flow",
+    "prompt": "给零基础用户解释 LangGraph 的 START、节点、边、State 和 END。",
+    "expected_output": "先用 Mermaid 流程图展示状态如何经过节点，再把图中元素映射到少量代码。",
+    "expectations": ["使用 Mermaid", "流程图只有必要节点", "图在完整代码之前", "图后有判断或代码映射"]
+  }]
+}

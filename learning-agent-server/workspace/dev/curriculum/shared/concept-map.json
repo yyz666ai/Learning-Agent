@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "language": "shared",
+  "concepts": [
+    {
+      "id": "shared.programming.execution",
+      "title": "程序执行模型",
+      "prerequisites": [],
+      "outcomes": ["能够按执行顺序追踪一个小程序的状态变化"],
+      "common_misconceptions": ["源代码会在同一时刻全部执行"]
+    },
+    {
+      "id": "shared.programming.control-flow",
+      "title": "控制流",
+      "prerequisites": ["shared.programming.execution"],
+      "outcomes": ["能够解释条件与循环如何改变执行路径"],
+      "common_misconceptions": ["循环条件只在开始时检查一次"]
+    },
+    {
+      "id": "shared.programming.functions",
+      "title": "函数抽象",
+      "prerequisites": ["shared.programming.control-flow"],
+      "outcomes": ["能够用输入、输出和副作用描述函数"],
+      "common_misconceptions": ["函数调用不会创建新的执行上下文"]
+    },
+    {
+      "id": "shared.engineering.testing",
+      "title": "软件测试",
+      "prerequisites": ["shared.programming.functions"],
+      "outcomes": ["能够把需求转化为可重复执行的测试"],
+      "common_misconceptions": ["测试通过就能证明程序在所有情况下正确"]
+    },
+    {
+      "id": "shared.engineering.debugging",
+      "title": "系统化调试",
+      "prerequisites": ["shared.programming.execution"],
+      "outcomes": ["能够从可复现现象逐步定位根因"],
+      "common_misconceptions": ["看到报错位置就等于找到根因"]
+    },
+    {
+      "id": "shared.engineering.version-control",
+      "title": "版本控制",
+      "prerequisites": ["shared.programming.execution"],
+      "outcomes": ["能够用提交和分支安全记录代码变化"],
+      "common_misconceptions": ["Git 只是一种云端备份工具"]
+    }
+  ]
+}

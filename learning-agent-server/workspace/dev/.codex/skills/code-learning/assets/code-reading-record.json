@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "project_id": null,
+  "file": null,
+  "symbol": null,
+  "objective": null,
+  "bounded_references": [],
+  "concept_ids": [],
+  "learner_prediction": null,
+  "transfer_artifact": null,
+  "highest_hint_level": null,
+  "recorded_at": null
+}

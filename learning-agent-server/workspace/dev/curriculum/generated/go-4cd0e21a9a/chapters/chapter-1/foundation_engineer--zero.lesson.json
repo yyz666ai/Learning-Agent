@@ -1,0 +1,213 @@
+{
+  "lesson_id": "package-main-func-main-import-fmt-lesson",
+  "title": "跑通第一个 Go 程序：三件套与两种运行方式",
+  "topic": "go",
+  "language": "go",
+  "route": "foundation_engineer",
+  "knowledge_point_id": "package-main-func-main-import-fmt",
+  "chapter_id": "chapter-1",
+  "chapter_title": "跑通第一个 Go 程序",
+  "covered_knowledge_point_ids": [
+    "package-main-func-main-import-fmt",
+    "go-run-go-build",
+    "fmt-println"
+  ],
+  "practice_path": "projects/go/package-main",
+  "completion_mode": "self_practice",
+  "completion_prompt": "课堂部分完成：三件套、go run/go build、fmt.Println 都已过了一遍。课后请独立完成 projects/go/package-main 里的 main.go 与 evidence.md，完成后把代码、真实运行输出或遇到的问题直接发到右侧输入栏。",
+  "output_patterns": [],
+  "output_requirements": [],
+  "practice_starter_mode": "blank",
+  "completion_actions": [
+    "submit",
+    "reteach",
+    "stuck"
+  ],
+  "pages": [
+    {
+      "id": "why-trio",
+      "type": "explain",
+      "title": "为什么需要“三件套”",
+      "eyebrow": "本章目标",
+      "markdown": "一个 Go 程序要能运行，就像开一家小店要先备好三样东西：\n\n- **package main** = 门牌：告诉 Go「这是一家可以直接开门的店」，也就是可以运行的程序。\n- **import \"fmt\"** = 工具箱：把「打印文字」这个工具借进来用。\n- **func main()** = 开门流程：程序启动后，从这一段开始干活。\n\n缺了门牌，Go 不知道这是不是能运行的程序；缺了工具箱，想说话没有工具；缺了开门流程，程序不知道从哪开始。三件套缺一不可。\n\n**本页请做**：读一遍，在心里记住三件套的名字和作用，下一页看它们的真身。",
+      "code": "",
+      "language": null,
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "skeleton",
+      "type": "example",
+      "title": "先看两件套的骨架",
+      "eyebrow": "最小骨架",
+      "markdown": "这是「能启动但还不会说话」的骨架，先认识两件套：`package main` 和 `func main()`。`import \"fmt\"` 和打印功能，下一页再加。\n\n**本页请做**：读注释，数一数这个程序里有哪两件套；先不要运行，下一页会给出完整程序。",
+      "code": "package main // 第 1 件套：告诉 Go 这是一个可以运行的程序包\n\nfunc main() { // 第 2 件套：程序启动后，从这里开始执行\n    // 里面先空着：程序能启动，但屏幕上什么也看不到\n}",
+      "language": "go",
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "hello-program",
+      "type": "example",
+      "title": "三件套凑齐：最小完整程序",
+      "eyebrow": "最小完整程序",
+      "markdown": "把三件套凑齐，程序就会开口说话：\n\n- `import \"fmt\"` 把打印工具箱搬进来；\n- `fmt.Println(\"Hello, 世界!\")` 从工具箱里拿出喇叭，把这句话喊到屏幕上，喊完自动换行。\n\n这就是 Go 的「最小完整程序」：任何 Go 程序都从这里长出来。\n\n**本页请做**：对照注释，把每一行的作用在心里讲一遍；记住这个程序的样貌，后面的练习要自己写一个类似的。",
+      "code": "package main // 告诉 Go：这是可以运行的程序包（三件套之一）\n\nimport \"fmt\" // 借入 fmt 工具箱，里面装着打印用的 Println（三件套之二）\n\nfunc main() { // 程序启动后从这里开始执行（三件套之三）\n    fmt.Println(\"Hello, 世界!\") // 把括号里的文字打印到屏幕上，并自动换行\n}",
+      "language": "go",
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "check-trio",
+      "type": "check",
+      "title": "三件套，你记住了吗",
+      "eyebrow": "课堂点击题 1/3",
+      "markdown": "检查一下自己的理解：一个 Go 程序要能运行，最少需要哪一组东西？\n\n**本页请做**：点一个选项；答对自动进入下一页，答错看提示后再选一次。",
+      "code": "",
+      "language": null,
+      "question": "让 Go 程序能运行的“三件套”是？",
+      "options": [
+        {
+          "id": "a",
+          "label": "package main、import \"fmt\"、func main()"
+        },
+        {
+          "id": "b",
+          "label": "多写几行注释"
+        },
+        {
+          "id": "c",
+          "label": "把一个文件夹命名为 go"
+        }
+      ],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "run-build",
+      "type": "explain",
+      "title": "怎么让程序跑起来：go run 与 go build",
+      "eyebrow": "两种运行方式",
+      "markdown": "程序写好以后，有两条路让它跑起来：\n\n- **go run main.go**：临时演出。直接运行，看完就走，不留下任何文件。适合一边写一边试。\n- **go build -o hello main.go**：打包带走。生成一个叫 `hello` 的可执行文件，之后随时用 `./hello` 运行。适合做出能交付的程序。\n\n可以这样记：`go run` 是当场试吃，`go build` 是把菜装盒打包，`./hello` 是打开盒子吃。\n\n**本页请做**：对照下面命令，把「哪个命令生成文件、哪个直接运行」记清楚；下一页做一道判断。",
+      "code": "go version                # 先确认电脑里装好了 Go（会显示版本号）\ngo run main.go            # 直接运行 main.go，不产生文件\ngo build -o hello main.go # 把 main.go 打包成可执行文件 hello\n./hello                   # 运行刚生成的可执行文件 hello",
+      "language": "bash",
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "check-runbuild",
+      "type": "check",
+      "title": "go run 还是 go build",
+      "eyebrow": "课堂点击题 2/3",
+      "markdown": "想「生成一个可以留着、以后随时运行的可执行文件」，应该怎么做？\n\n**本页请做**：选一个选项；答对后进入下一页。",
+      "code": "",
+      "language": null,
+      "question": "生成可执行文件并稍后运行，正确的做法是？",
+      "options": [
+        {
+          "id": "a",
+          "label": "只用 go run main.go，它会自动留下可执行文件"
+        },
+        {
+          "id": "b",
+          "label": "先 go build -o hello main.go，再用 ./hello 运行"
+        },
+        {
+          "id": "c",
+          "label": "先 go version，再双击 main.go"
+        }
+      ],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "println-line",
+      "type": "example",
+      "title": "fmt.Println：打印一行并自动换行",
+      "eyebrow": "打印与换行",
+      "markdown": "`fmt.Println` 的名字拆开看：Print = 打印，ln = line（一行）。所以它喊完一句话，会**自动换行**。\n\n下面的程序连着喊两句，猜猜屏幕上会是几行？\n\n**本页请做**：先在心里预测输出——会看到几行、每行是什么；记住 Println 会自动换行。",
+      "code": "package main // 告诉 Go：这是可运行的程序包\n\nimport \"fmt\" // 借入打印工具箱\n\nfunc main() { // 程序从这里开始\n    fmt.Println(\"第一句\") // 打印「第一句」，然后自动换行\n    fmt.Println(\"第二句\") // 打印「第二句」，再换行\n}",
+      "language": "go",
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "check-println",
+      "type": "check",
+      "title": "改哪里，输出会变",
+      "eyebrow": "课堂点击题 3/3",
+      "markdown": "想让你写的问候程序输出「你好，小名」，而不是「Hello, 世界!」，应该改哪一行？\n\n**本页请做**：选一个选项；这是本章最后一题，答对后进入课后练习。",
+      "code": "",
+      "language": null,
+      "question": "修改输出内容，应该改哪里？",
+      "options": [
+        {
+          "id": "a",
+          "label": "import \"fmt\" 那一行"
+        },
+        {
+          "id": "b",
+          "label": "package main 那一行"
+        },
+        {
+          "id": "c",
+          "label": "fmt.Println(\"...\") 括号里的文字"
+        }
+      ],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "practice-homework",
+      "type": "practice",
+      "title": "课后练习：自己写一个“你好”程序",
+      "eyebrow": "课后独立练习",
+      "markdown": "现在轮到你独立完成。文件夹 **projects/go/package-main**（在你自己的学习工作区里，用编辑器打开）已经放好了空白的 `main.go`。\n\n任务：\n1. 先在心里预测：三件套写好后，程序运行会输出什么？\n2. 终端先跑 `go version` 确认环境；写好程序后 `go run main.go`，记下第一次真实输出；\n3. 把问候语改成自己的名字，再 `go run main.go` 跑一次；\n4. 用 `go build -o hello main.go` 生成可执行文件，再用 `./hello` 运行；\n5. 把每次的真实输出（`go version`、两次 `go run`、`./hello`）都写进 `evidence.md`。\n\n提示（由弱到强，最多用三条）：\n① 程序至少要有 `package main`、`import \"fmt\"`、`func main()` 三件套；\n② 输出用 `fmt.Println(\"你的问候语\")`，改括号里的文字输出就会变；\n③ 直接运行用 `go run main.go`，生成文件用 `go build -o hello main.go`。\n\n**本页请做**：打开 projects/go/package-main，在编辑器里完成 main.go，按上面步骤运行并把真实输出写进 evidence.md。",
+      "code": "",
+      "language": null,
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": "homework",
+      "completion_criteria": null
+    },
+    {
+      "id": "mastery",
+      "type": "mastery",
+      "title": "本章完成：把练习结果发给我",
+      "eyebrow": "课后练习与提交",
+      "markdown": "课堂的 3 道点击题你已经通过，本章讲解部分完成。\n\n**练习目录**：projects/go/package-main（里面有 `main.go` 和你要写的 `evidence.md`）\n**完成目标**：`go version`、`go run main.go`、`go build -o hello main.go` + `./hello` 的真实输出都写进 `evidence.md`；自己能说清「这段程序做了什么、改哪里输出会变」——这一步不用写给我。\n**提交方式**：把 main.go 的代码、真实运行输出，或者运行中遇到的问题，直接发到右侧输入栏，我会帮你检查并继续下一步。课后练习不卡下一章，随时完成随时提交。\n\n**本页请做**：现在打开 projects/go/package-main 开始练习；完成后把代码和运行结果发到输入栏。",
+      "code": "",
+      "language": null,
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    }
+  ],
+  "progress": {
+    "current_page": 1,
+    "total_pages": 10,
+    "mastery_percent": 0,
+    "remaining_minutes": 25
+  }
+}

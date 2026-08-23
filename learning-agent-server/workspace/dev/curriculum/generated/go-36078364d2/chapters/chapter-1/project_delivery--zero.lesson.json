@@ -1,0 +1,145 @@
+{
+  "lesson_id": "go-lesson",
+  "title": "装好 Go，跑起第一个程序",
+  "topic": "Go 语言",
+  "language": "go",
+  "route": "project_delivery",
+  "knowledge_point_id": "go",
+  "chapter_id": "chapter-1",
+  "chapter_title": "装好 Go，跑起第一个程序",
+  "covered_knowledge_point_ids": [
+    "go",
+    "go-main",
+    "go-run",
+    "fmt-println"
+  ],
+  "practice_path": "projects/go/package-main",
+  "completion_mode": "self_practice",
+  "completion_prompt": "课后练习在本章的「作业练习」页：在 projects/go/package-main 文件夹新建 main.go，先按课件提示安装或确认 Go（终端输入 go version 能看到版本号），然后自己敲一个问候程序并跑通，再把问候语改成别的再跑一次。两次都运行成功、并能口答「程序从哪个函数开始执行」（答案：main 函数）后，把 go version 的输出、两次运行结果和修改后的 main.go 代码直接发到右侧对话输入栏，我会帮你检查并记录学习证据。",
+  "output_patterns": [],
+  "output_requirements": [],
+  "practice_starter_mode": "blank",
+  "completion_actions": [
+    "submit",
+    "reteach",
+    "stuck"
+  ],
+  "pages": [
+    {
+      "id": "toolchain-what",
+      "type": "explain",
+      "title": "Go 工具链是什么",
+      "eyebrow": "装好 Go，跑起第一个程序",
+      "markdown": "**Go 工具链**，就是装 Go 时一整套帮你「写代码 → 跑起来」的工具，装完 Go 它就在你电脑里了。\n\n它里面有几个你马上会用到的主角：\n\n- `go run`：把你的代码跑起来（执行程序）；\n- `go version`：报告你装的 Go 是哪个版本；\n- 另外还有编译、管理依赖等工具，现在先不用管。\n\n为什么要先学会验证？因为只有确认「工具链真的装好了」，后面写代码、跑程序才不会一上来就报「找不到命令」的错。\n\n**本页请做**：打开电脑的终端（macOS 叫“终端”，Windows 叫“PowerShell”或“终端”），输入下面这条命令并回车，看看有没有显示版本号：\n\n```bash\ngo version\n```",
+      "code": "# 教学说明：下面代码展示本页的最小执行步骤\ngo version",
+      "language": "bash",
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "toolchain-check",
+      "type": "check",
+      "title": "验证装好了吗",
+      "eyebrow": "工具链验证",
+      "markdown": "你刚在终端敲了 `go version`。\n\n想一下：如果 Go 工具链装好了，屏幕上应该出现什么？\n\n- 出现 `go version go1.x.x ...` 这样的版本号 → 装好了，可以放心往下走；\n- 出现 `command not found` 或 `不是内部或外部命令` → 还没装好，去 Go 官网（golang.org/dl）下载安装包，装完重新打开终端再试一次。\n\n**本页请做**：点击下面这道选择题，选出「验证 Go 装好了」的正确命令。",
+      "code": "",
+      "language": "go",
+      "question": "想确认电脑里的 Go 工具链装好了，应该运行哪条命令？",
+      "options": [
+        {
+          "id": "a",
+          "label": "go version"
+        },
+        {
+          "id": "b",
+          "label": "go run main.go"
+        },
+        {
+          "id": "c",
+          "label": "fmt.Println(\"hi\")"
+        }
+      ],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "main-entry",
+      "type": "explain",
+      "title": "一个 Go 程序的最小结构",
+      "eyebrow": "程序从哪开始",
+      "markdown": "任何 Go 程序，都至少要有两行「地基」：\n\n```go\npackage main\n\nfunc main() {\n    // 你要做的事，写在这里面\n}\n```\n\n- 第 1 行 `package main`：声明这是一个可以独立运行的程序（以后你见到别的 package，先记住“能直接跑的 Go 程序都叫 main”）；\n- `func main()`：**main 函数**，它就是程序的大门——电脑执行你的程序时，一定从 `main()` 函数的第一行开始。\n\n再看怎么跑：在终端输入 `go run main.go`，Go 就会编译并执行这个文件，程序从 `main` 函数开始跑。\n\n**本页请做**：在 projects/go/package-main 文件夹里新建一个文件，命名为 `main.go`（一个文件夹里放一个 main.go，这就是你的第一个 Go 程序文件）。",
+      "code": "package main\n\nfunc main() {\n    // 你要做的事，写在这里面\n}",
+      "language": "go",
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "first-run",
+      "type": "example",
+      "title": "跑起第一个程序",
+      "eyebrow": "最小可运行例子",
+      "markdown": "把下面这段代码完整敲进你的 `main.go`（别复制粘贴，自己敲一遍记得更牢）：\n\n```go\npackage main // 声明：这是一个能独立运行的程序\n\nimport (\n    \"fmt\"  // 引入 fmt 包，它负责“把文字打印到屏幕上”\n    \"time\" // 引入 time 包，用来取当前时间\n)\n\nfunc main() { // main 是入口函数，程序从这里开始执行\n    name := \"小明\"                  // 把名字存进变量 name（:= 表示“新建一个变量并放值进去”）\n    today := time.Now().Format(\"2006-01-02\") // 取今天日期，并格式化成 年-月-日\n    fmt.Println(\"你好，\" + name + \"！今天是 \" + today) // 把问候语打印出来\n}\n```\n\n看不懂没关系，先记住三件事：程序从 `main` 开始、`fmt.Println` 负责打印、`go run main.go` 负责运行。\n\n然后在终端（先 `cd` 进 projects/go/package-main 这个文件夹）运行：\n\n```bash\ngo run main.go\n```\n\n看到一行「你好，小明！今天是 2026-08-23」之类的输出，你就跑通了！\n\n**本页请做**：在终端运行 `go run main.go`，确认屏幕打印出了问候语和今天的日期。",
+      "code": "package main // 声明：这是一个能独立运行的程序\n\nimport (\n    \"fmt\"  // 引入 fmt 包，它负责“把文字打印到屏幕上”\n    \"time\" // 引入 time 包，用来取当前时间\n)\n\nfunc main() { // main 是入口函数，程序从这里开始执行\n    name := \"小明\"                  // 把名字存进变量 name（:= 表示“新建一个变量并放值进去”）\n    today := time.Now().Format(\"2006-01-02\") // 取今天日期，并格式化成 年-月-日\n    fmt.Println(\"你好，\" + name + \"！今天是 \" + today) // 把问候语打印出来\n}",
+      "language": "go",
+      "question": "在终端里，运行一个叫 main.go 的 Go 程序，应该输入哪条命令？",
+      "options": [
+        {
+          "id": "a",
+          "label": "go version main.go"
+        },
+        {
+          "id": "b",
+          "label": "go run main.go"
+        },
+        {
+          "id": "c",
+          "label": "run go main.go"
+        }
+      ],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "homework",
+      "type": "practice",
+      "title": "课后作业练习",
+      "eyebrow": "独立完成",
+      "markdown": "这是本章唯一的课后独立练习，自己动手，不看答案代码。\n\n**目标**：让程序打印「你好，<你的名字>！今天是 <今天的日期>」，并跑通两次。\n\n**步骤**：\n\n1. 在 projects/go/package-main 文件夹新建 `main.go`；\n2. 自己写一个问候程序：需要 `package main`、`import` 必要的包、`main` 函数、用 `fmt.Println` 打印「你的名字 + 今天的日期」；\n3. 在终端运行 `go run main.go`，看到输出；\n4. 把问候语改成别的（比如「早上好，某某！今天是…」），再运行一次。\n\n**最多 3 条提示**：\n\n1. 想取今天的日期，就 `import \"time\"`，用 `time.Now().Format(\"2006-01-02\")`（这串数字是 Go 的日期格式模板，照抄即可）；\n2. 打印用 `fmt.Println(...)`，要把 `fmt` 包 import 进来；\n3. 如果报错，把报错信息原样发到右侧输入栏，我们一起看。\n\n**本页请做**：按步骤写好 main.go 并运行两次（第一次原版、第二次改过问候语），把两次运行结果和改后的代码截图或贴到右侧输入栏。",
+      "code": "",
+      "language": "go",
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": "homework",
+      "completion_criteria": null
+    },
+    {
+      "id": "mastery",
+      "type": "mastery",
+      "title": "本章完成检查",
+      "eyebrow": "装好 Go，跑起第一个程序",
+      "markdown": "这一章你已经看到四个关键点：\n\n1. Go 工具链是装 Go 时带的一整套工具，用 `go version` 验证装好没有；\n2. 一个 Go 程序至少要 `package main` 和 `main` 函数，程序从 `main` 函数开始执行；\n3. `go run main.go` 负责把 `main.go` 跑起来；\n4. `fmt.Println` 把文字打印到屏幕上。\n\n**完成目标**：\n\n- `go version` 显示出版本号；\n- 课后作业的两次修改都运行成功；\n- 能用一句话回答「程序从哪个函数开始执行」→ 答案：main 函数。\n\n**提交方式**：把 `go version` 的输出、两次运行结果和修改后的 `main.go` 代码，一起发到右侧对话输入栏（不需要发长解释，发代码和结果就行）。课后练习不算下一章的拦路虎，做完随时提交，我会帮你核对。\n\n**本页请做**：在右侧输入栏贴出你的 `go version` 输出、两次运行结果和 `main.go` 代码。",
+      "code": "",
+      "language": "go",
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "practice_kind": null,
+      "completion_criteria": null
+    }
+  ],
+  "progress": {
+    "current_page": 1,
+    "total_pages": 6,
+    "mastery_percent": 0,
+    "remaining_minutes": 25
+  }
+}

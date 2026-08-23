@@ -1,0 +1,4 @@
+interface:
+  display_name: "作业批改"
+  short_description: "核验作业、推理过程与测试结果并区分独立完成和辅助完成证据"
+  default_prompt: "请使用 $assignment-review 批改我提交的作业并说明证据等级。"

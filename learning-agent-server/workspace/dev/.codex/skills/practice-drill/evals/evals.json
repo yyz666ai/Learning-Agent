@@ -1,0 +1,11 @@
+{
+  "skill_name": "practice-drill",
+  "cases": [
+    {
+      "id": "advanced-go-drill",
+      "prompt": "我有五年 Go 经验，想练并发错误处理。",
+      "expectations": ["一次只展示一道迁移练习", "给出可观察完成标准"],
+      "forbidden": ["一次展示多道题", "把跳过记为答对"]
+    }
+  ]
+}

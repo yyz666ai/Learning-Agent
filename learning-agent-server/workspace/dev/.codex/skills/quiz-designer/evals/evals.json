@@ -1,0 +1,9 @@
+{
+  "skill_name": "quiz-designer",
+  "cases": [{
+    "id": "dense-concept-checks",
+    "prompt": "一章同时讲 LangGraph 的 State、node、edge 和 invoke。",
+    "expected_output": "按误区风险插入少量预测题，每题只检验一个判断，全部必答且不能被页码绕过。",
+    "expectations": ["题量由知识密度决定", "每题一个判断", "不能绕过", "输出不能替代未答题"]
+  }]
+}

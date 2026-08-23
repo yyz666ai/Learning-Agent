@@ -1,0 +1,41 @@
+{
+  "skill_name": "learner-onboarding",
+  "cases": [
+    {
+      "id": "first-python-goal",
+      "prompt": "我完全没有基础，想系统学 Python，每周大约四小时。",
+      "expected_output": "识别首次建档场景，一次询问一个高价值问题，区分自述与证据，并在保存前要求确认。",
+      "expectations": ["询问可验证的目标或成功标准", "不直接生成完整课程", "未确认前不写状态"]
+    },
+    {
+      "id": "go-repository-goal",
+      "prompt": "我有一个 Go 项目，最终想看懂其中的并发处理，从基础教我。",
+      "expected_output": "确认仓库目标、当前基础和只读边界，并将后续工作路由到代码库学习计划。",
+      "expectations": ["支持目标代码路线", "目标代码默认只读", "不读取敏感文件"]
+    },
+    {
+      "id": "progress-negative-route",
+      "prompt": "不要重新问我问题，只告诉我现在学习到哪里了。",
+      "expected_output": "不触发重新建档，路由到学习进度。",
+      "expectations": ["路由到 learning-progress", "不改画像"]
+    },
+    {
+      "id": "decline-save",
+      "prompt": "这些只是我随口说的，先不要保存。",
+      "expected_output": "尊重拒绝，不写入画像或学习状态。",
+      "expectations": ["不保存未确认信息", "明确当前没有写入"]
+    },
+    {
+      "id": "rag-concept-scope",
+      "prompt": "我只是想快速搞懂大模型的 RAG 是什么。",
+      "expected_output": "路由到 concept_clarity，只确认理解概念还是进一步看代码。",
+      "expectations": ["只问概念还是代码", "不问每日时长", "不做多题诊断"]
+    },
+    {
+      "id": "input-first-concept",
+      "prompt": "用户在恢复页直接输入：RAG 是什么意思？",
+      "expected_output": "不要求先点新学习，不展示通用学习路线，直接进入概念深度选择。",
+      "expectations": ["输入框直接开始新主题", "路由 concept_clarity", "只问概念还是代码"]
+    }
+  ]
+}

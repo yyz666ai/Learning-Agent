@@ -1,0 +1,4 @@
+interface:
+  display_name: "学习计划"
+  short_description: "依据目标、现有学习证据和目标代码生成可动态调整的中文学习路线"
+  default_prompt: "请使用 $learning-plan 根据我的目标和现有证据生成一份学习计划。"

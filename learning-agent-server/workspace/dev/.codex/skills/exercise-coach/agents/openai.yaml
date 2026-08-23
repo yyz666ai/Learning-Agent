@@ -1,0 +1,4 @@
+interface:
+  display_name: "练习辅导"
+  short_description: "根据学习者已有尝试提供最低有效等级提示并执行独立迁移门禁"
+  default_prompt: "请使用 $exercise-coach 根据我当前的尝试只给最低必要提示。"

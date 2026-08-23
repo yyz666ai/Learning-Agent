@@ -1,0 +1,14 @@
+{
+  "skill_name": "new-topic-research",
+  "cases": [{
+    "id": "research-new-versioned-library",
+    "prompt": "知识库只有 Python 基础，现在用户要从零学习 LangGraph。",
+    "expected_output": "先搜索 LangGraph 官方文档和当前版本，形成带事实来源的 sources.json，再交给学习计划。",
+    "expectations": ["优先官方文档", "记录版本", "事实引用来源", "搜索失败不生成正式计划"]
+  }, {
+    "id": "refresh-existing-topic-for-complete-mastery",
+    "prompt": "知识库已有 Go 基础讲义，但用户选择从零完整掌握 Go 并达到工程师水平。",
+    "expected_output": "不把旧讲义当作足够依据；重新检索官方文档、版本变化和工程实践，形成覆盖领域、先修要求和毕业项目的深度研究底稿。",
+    "expectations": ["完整掌握路线强制更新网络资料", "至少五个覆盖领域", "记录先修要求", "设计综合毕业项目", "事实可追溯到权威来源"]
+  }]
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "learning-state.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "revision",
+    "profile_status",
+    "active_language",
+    "active_plan",
+    "active_task",
+    "recent_evidence",
+    "due_review_count",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "revision": {"type": "integer", "minimum": 0},
+    "profile_status": {"enum": ["uninitialized", "in_progress", "confirmed"]},
+    "plan_status": {"enum": ["draft", "awaiting_confirmation", "confirmed"]},
+    "active_language": {"type": ["string", "null"], "enum": ["python", "go", null]},
+    "active_plan": {"type": ["string", "null"]},
+    "active_task": {"type": ["string", "null"]},
+    "active_topic": {"type": "string", "minLength": 1, "maxLength": 240},
+    "learning_mode": {"enum": ["systematic", "project", "practice"]},
+    "goal_route": {"enum": ["concept_clarity", "foundation_engineer", "urgent_codebase", "syntax_reading", "project_delivery", "gap_upgrade", "senior_engineer", "interview_sprint"]},
+    "concept_scope": {"enum": ["not_applicable", "meaning_only", "code_walkthrough"]},
+    "session_minutes": {"type": "integer", "minimum": 10, "maximum": 120},
+    "deadline_days": {"type": ["integer", "null"], "minimum": 1, "maximum": 365},
+    "knowledge_source": {"enum": ["knowledge_base", "skill_guided"]},
+    "diagnosis": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["estimated_level", "score", "answered_count", "strengths", "gaps", "evidence"],
+      "properties": {
+        "estimated_level": {"type": "string", "minLength": 1, "maxLength": 64},
+        "score": {"type": "number", "minimum": 0, "maximum": 1},
+        "answered_count": {"type": "integer", "minimum": 1, "maximum": 10},
+        "strengths": {"type": "array", "maxItems": 8, "items": {"type": "string"}},
+        "gaps": {"type": "array", "maxItems": 8, "items": {"type": "string"}},
+        "evidence": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["question_id", "dimension", "correct"],
+            "properties": {
+              "question_id": {"type": "string"},
+              "dimension": {"type": "string"},
+              "correct": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    },
+    "recent_evidence": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {"type": "string"}
+    },
+    "due_review_count": {"type": "integer", "minimum": 0},
+    "updated_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

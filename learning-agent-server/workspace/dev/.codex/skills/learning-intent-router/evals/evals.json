@@ -1,0 +1,35 @@
+{
+  "skill_name": "learning-intent-router",
+  "cases": [
+    {
+      "id": "concept-question",
+      "prompt": "RAG 是什么？",
+      "expectations": ["topic 为 RAG", "不问每日时长", "最多只确认概念深度"]
+    },
+    {
+      "id": "ambiguous-langgraph",
+      "prompt": "我想学 LangGraph",
+      "expectations": ["仅追问最终要做到什么", "生成 2–3 个 LangGraph 相关选项", "无其他选项"]
+    },
+    {
+      "id": "interview-with-evidence",
+      "prompt": "下周面试 Java 后端，我做过两年项目，想补 JVM 和并发。",
+      "expectations": ["复用期限和经验槽位", "不重复问基础", "进入面试路线或只问一个高价值问题"]
+    },
+    {
+      "id": "current-debugging",
+      "prompt": "这段代码为什么报错？",
+      "expectations": ["返回 answer_in_context", "不新建课程", "不进入建档"]
+    },
+    {
+      "id": "interview-intake",
+      "prompt": "以下是我收集的 12 道后端面试题，帮我收录。",
+      "expectations": ["返回 interview_bank_intake", "不询问学习时长", "不误创建普通课程"]
+    },
+    {
+      "id": "correct-previous-slot",
+      "prompt": "已有 learning_scope=complete_mastery。用户又说：不对，我只想两天看懂这个项目。",
+      "expectations": ["新输入覆盖旧范围", "保留两天约束", "不要求用户点其他选项"]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "代码学习"
+  short_description: "在只读边界内讲解一个文件、函数、调用链或数据流并安排迁移练习"
+  default_prompt: "请使用 $code-learning 从基础讲解我指定的这段真实代码。"

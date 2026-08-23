@@ -1,0 +1,14 @@
+{
+  "skill_name": "plan-revision",
+  "cases": [{
+    "id": "add-project-without-reset",
+    "prompt": "我已学完前两章，想增加一个实战项目并减少后面的选择题。",
+    "expected_output": "新增项目阶段并调整未完成章节，保留前两章与当前进度，先展示修订摘要。",
+    "expectations": ["保留已完成进度", "不重新摸底", "显示修改摘要", "确认后替换"]
+  },{
+    "id": "direct-chat-revision",
+    "prompt": "Plan 审阅中，用户直接输入：前面快一点，后面加一个真实项目。",
+    "expected_output": "直接把这句话当作 Plan 修订意见，不再让用户点调整入口。",
+    "expectations": ["直接修订", "不重新 onboarding", "保留已完成进度"]
+  }]
+}

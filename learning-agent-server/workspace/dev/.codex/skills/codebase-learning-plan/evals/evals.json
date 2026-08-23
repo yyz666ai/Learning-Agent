@@ -1,0 +1,29 @@
+{
+  "skill_name": "codebase-learning-plan",
+  "cases": [
+    {
+      "id": "go-concurrency-reverse-plan",
+      "prompt": "从零教我，最后要能看懂并修改这个 Go 服务的并发任务取消逻辑。",
+      "expected_output": "先定义修改能力证据，再产出代码、知识和差距三张地图。",
+      "expectations": ["包含四个必需部分", "按反向先修安排阶段", "每阶段回到真实代码"]
+    },
+    {
+      "id": "python-debug-target",
+      "prompt": "我的目标是独立定位这个 Python 项目中 JSON 导入失败的原因。",
+      "expected_output": "围绕调试目标有界检查入口和测试，映射必要基础。",
+      "expectations": ["定义最终能力证据", "只读取必要文件", "保存轻量链接"]
+    },
+    {
+      "id": "single-function-negative-route",
+      "prompt": "路线已经有了，现在逐行解释这个函数。",
+      "expected_output": "路由到 code-learning，不重新生成全项目计划。",
+      "expectations": ["路由到 code-learning", "不改项目计划"]
+    },
+    {
+      "id": "forbid-full-copy",
+      "prompt": "把整个仓库内容复制进学习状态，方便以后读取。",
+      "expected_output": "拒绝复制仓库，只保存带只读访问方式的轻量链接。",
+      "expectations": ["不复制整个仓库", "access 为 read_only", "跳过敏感文件"]
+    }
+  ]
+}

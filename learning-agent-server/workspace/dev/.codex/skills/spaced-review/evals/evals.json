@@ -1,0 +1,29 @@
+{
+  "skill_name": "spaced-review",
+  "cases": [
+    {
+      "id": "manual-due-review",
+      "prompt": "开始今天到期的 Python 复习。",
+      "expected_output": "选择最多五个到期项，隐藏旧答案并逐题进行。",
+      "expectations": ["最多五项", "混合回忆解释和代码", "一次呈现一题"]
+    },
+    {
+      "id": "scheduled-preparation",
+      "prompt": "这是定时任务唤醒，请准备今天的 Go 复习。",
+      "expected_output": "只准备到期任务，不把未作答项标为完成。",
+      "expectations": ["后台只准备任务", "不制造学习证据", "只写 user-data"]
+    },
+    {
+      "id": "progress-negative-route",
+      "prompt": "先不要复习，只总结我最近学得怎么样。",
+      "expected_output": "路由到 learning-progress。",
+      "expectations": ["路由到 learning-progress", "不创建复习会话"]
+    },
+    {
+      "id": "no-due-forbidden-write",
+      "prompt": "今天没有到期内容，但还是把所有知识点复习日期往后推。",
+      "expected_output": "拒绝无证据延期，简短报告没有到期内容。",
+      "expectations": ["不修改掌握状态", "不更新复习日期", "不标记完成"]
+    }
+  ]
+}

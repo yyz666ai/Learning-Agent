@@ -1,0 +1,4 @@
+interface:
+  display_name: "代码库学习计划"
+  short_description: "从真实代码目标反推代码地图、知识差距、阶段任务与最终能力证据"
+  default_prompt: "请使用 $codebase-learning-plan 从我提供的代码仓库反推一份学习路线。"

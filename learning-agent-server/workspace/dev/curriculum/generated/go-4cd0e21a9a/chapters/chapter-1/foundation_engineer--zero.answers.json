@@ -1,0 +1,5 @@
+{
+  "check-trio": "a",
+  "check-runbuild": "b",
+  "check-println": "c"
+}

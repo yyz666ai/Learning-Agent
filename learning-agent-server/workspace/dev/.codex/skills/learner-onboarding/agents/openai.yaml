@@ -1,0 +1,4 @@
+interface:
+  display_name: "学习者建档"
+  short_description: "了解学习目标、基础、时间与项目背景并建立经确认的学习者画像"
+  default_prompt: "请使用 $learner-onboarding 帮我建立学习画像，一次只问我一个问题。"

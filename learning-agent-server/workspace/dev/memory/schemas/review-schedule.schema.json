@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-schedule.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "items"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["concept_id", "stage", "priority", "next_review_at"],
+        "properties": {
+          "concept_id": {"type": "string", "minLength": 1},
+          "stage": {"type": "integer", "minimum": 0, "maximum": 4},
+          "priority": {"type": "integer", "minimum": 0},
+          "next_review_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

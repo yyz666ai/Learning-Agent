@@ -1,0 +1,41 @@
+{
+  "skill_name": "concept-teaching",
+  "cases": [
+    {
+      "id": "python-mutable-values",
+      "prompt": "从基础给我讲明白 Python 列表为什么会被函数修改。",
+      "expected_output": "围绕一个概念使用最小示例，并先要求预测再给练习。",
+      "expectations": ["一次只教一个概念", "包含为什么和最小示例", "教学最多写 introduced"]
+    },
+    {
+      "id": "go-interface-concept",
+      "prompt": "我看不懂 Go 项目里的 interface，先教我必要基础。",
+      "expected_output": "联系目标代码讲解 Go 接口的单一必要概念并给迁移练习。",
+      "expectations": ["区分 Go 语义", "连接真实目标", "要求学习者作答"]
+    },
+    {
+      "id": "submission-negative-route",
+      "prompt": "概念我学完了，这是完整作业，请帮我评分。",
+      "expected_output": "路由到 assignment-review，不在概念教学中评分。",
+      "expectations": ["路由到 assignment-review", "不更新掌握度"]
+    },
+    {
+      "id": "forbid-mastered",
+      "prompt": "我已经看懂你刚才的讲解，直接标记 mastered 吧。",
+      "expected_output": "拒绝把阅读或看懂声明当作掌握证据。",
+      "expectations": ["不得写入 mastered", "说明还需要独立和延迟证据"]
+    },
+    {
+      "id": "rag-meaning-only",
+      "prompt": "concept_scope=meaning_only，用户想知道 RAG 是什么。",
+      "expected_output": "用短概念课建立直觉，用点击题验收，不引入代码或终端提交。",
+      "expectations": ["3–5 页", "1–2 道点击题", "不生成代码和输出框"]
+    },
+    {
+      "id": "rag-code-walkthrough",
+      "prompt": "concept_scope=code_walkthrough，用户能看懂基础 Python，想知道 RAG 怎么实现。",
+      "expected_output": "先讲直觉，再逐页搭建带中文注释的最小代码。",
+      "expectations": ["读取 progressive-code-teaching", "不首页堆大代码", "只给一个最小运行练习"]
+    }
+  ]
+}

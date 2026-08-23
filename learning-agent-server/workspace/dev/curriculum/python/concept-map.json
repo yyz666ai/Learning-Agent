@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "language": "python",
+  "concepts": [
+    {
+      "id": "python.syntax.values",
+      "title": "值、类型与变量",
+      "prerequisites": ["shared.programming.execution"],
+      "outcomes": ["能够追踪赋值并选择合适的内置类型"],
+      "common_misconceptions": ["变量是具有永久固定类型的盒子"]
+    },
+    {
+      "id": "python.control-flow",
+      "title": "条件与循环",
+      "prerequisites": ["python.syntax.values", "shared.programming.control-flow"],
+      "outcomes": ["能够使用条件和循环表达分支与重复逻辑"],
+      "common_misconceptions": ["for 循环只能配合数字计数器"]
+    },
+    {
+      "id": "python.functions",
+      "title": "函数",
+      "prerequisites": ["python.control-flow", "shared.programming.functions"],
+      "outcomes": ["能够定义带参数和返回值的函数并解释作用域"],
+      "common_misconceptions": ["print 的结果等同于 return 的返回值"]
+    },
+    {
+      "id": "python.collections",
+      "title": "集合类型",
+      "prerequisites": ["python.syntax.values", "python.control-flow"],
+      "outcomes": ["能够根据访问与变更需求选择 list、dict、set 或 tuple"],
+      "common_misconceptions": ["复制列表变量会自动复制全部元素"]
+    },
+    {
+      "id": "python.modules",
+      "title": "模块与包",
+      "prerequisites": ["python.functions"],
+      "outcomes": ["能够拆分模块并解释 import 的解析过程"],
+      "common_misconceptions": ["import 只会声明名字而不会执行模块顶层代码"]
+    },
+    {
+      "id": "python.errors",
+      "title": "异常处理",
+      "prerequisites": ["python.functions"],
+      "outcomes": ["能够捕获可恢复异常并保留失败上下文"],
+      "common_misconceptions": ["捕获 Exception 并忽略总是最安全"]
+    },
+    {
+      "id": "python.files-json",
+      "title": "文件与 JSON",
+      "prerequisites": ["python.collections", "python.errors"],
+      "outcomes": ["能够安全读写文本文件和 JSON 数据"],
+      "common_misconceptions": ["JSON 对象可以保存任意 Python 类型"]
+    },
+    {
+      "id": "python.objects-types",
+      "title": "对象与类型标注",
+      "prerequisites": ["python.functions", "python.collections"],
+      "outcomes": ["能够设计小型类并使用类型标注表达接口"],
+      "common_misconceptions": ["类型标注会在运行时自动拒绝错误类型"]
+    },
+    {
+      "id": "python.testing-debugging",
+      "title": "测试与调试",
+      "prerequisites": ["python.modules", "python.errors", "shared.engineering.testing", "shared.engineering.debugging"],
+      "outcomes": ["能够编写单元测试并从失败信息定位问题"],
+      "common_misconceptions": ["只有实现完成后才需要写测试"]
+    },
+    {
+      "id": "python.async",
+      "title": "并发与异步",
+      "prerequisites": ["python.functions", "python.errors"],
+      "outcomes": ["能够解释协程调度并实现受控异步任务"],
+      "common_misconceptions": ["async 会自动让所有代码并行运行"]
+    },
+    {
+      "id": "python.web",
+      "title": "Web 后端",
+      "prerequisites": ["python.files-json", "python.testing-debugging"],
+      "outcomes": ["能够实现并测试一个小型 HTTP API"],
+      "common_misconceptions": ["HTTP 状态码只影响浏览器显示"]
+    },
+    {
+      "id": "python.data",
+      "title": "数据处理",
+      "prerequisites": ["python.collections", "python.files-json"],
+      "outcomes": ["能够清洗、转换并验证结构化数据"],
+      "common_misconceptions": ["缺失值和空字符串始终等价"]
+    },
+    {
+      "id": "python.llm-apps",
+      "title": "LLM 应用",
+      "prerequisites": ["python.web", "python.data"],
+      "outcomes": ["能够构建带验证和评估的最小 LLM 工作流"],
+      "common_misconceptions": ["提示词足够长就不需要确定性验证"]
+    },
+    {
+      "id": "python.algorithms",
+      "title": "算法与复杂度",
+      "prerequisites": ["python.collections", "python.functions"],
+      "outcomes": ["能够比较常见算法的时间与空间代价"],
+      "common_misconceptions": ["运行更快的一次实验总能证明复杂度更优"]
+    }
+  ]
+}

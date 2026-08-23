@@ -1,0 +1,29 @@
+{
+  "skill_name": "assignment-review",
+  "cases": [
+    {
+      "id": "independent-python-review",
+      "prompt": "这是我独立完成的 Python JSON 读取作业和测试，请批改。",
+      "expected_output": "运行最小测试、检查推理并在证据充分时分类为 independent。",
+      "expectations": ["检查原始产物", "核验推理", "不因测试通过直接 mastered"]
+    },
+    {
+      "id": "assisted-go-review",
+      "prompt": "我用了两次提示才完成 Go error 处理，请记录这次结果。",
+      "expected_output": "保留提示等级并分类为 assisted。",
+      "expectations": ["分类 assisted", "记录最高提示等级", "给独立迁移下一步"]
+    },
+    {
+      "id": "mid-exercise-negative-route",
+      "prompt": "作业还没写完，我卡在第二步，先提示我一下。",
+      "expected_output": "路由到 exercise-coach，不作正式证据判定。",
+      "expectations": ["路由到 exercise-coach", "不写批改记录"]
+    },
+    {
+      "id": "passing-tests-forbidden-mastery",
+      "prompt": "测试都绿了，不用看代码，直接标记 mastered。",
+      "expected_output": "拒绝仅凭测试通过标记掌握，并检查推理与延迟证据。",
+      "expectations": ["测试通过不等于掌握", "要求 independent 和 delayed_review", "不得直接 mastered"]
+    }
+  ]
+}

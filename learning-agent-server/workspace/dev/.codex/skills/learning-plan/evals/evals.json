@@ -1,0 +1,47 @@
+{
+  "skill_name": "learning-plan",
+  "cases": [
+    {
+      "id": "python-foundations",
+      "prompt": "根据我每周四小时的情况，给我做一份 Python 基础学习计划。",
+      "expected_output": "生成包含五个必需字段的短周期中文计划，并只给一个当前任务。",
+      "expectations": ["包含学习目标和成功证据", "不把全部节点设为必修", "包含复习衔接"]
+    },
+    {
+      "id": "go-project-target",
+      "prompt": "我的目标是能独立解释并修改 Go 服务中的 context 取消链路，请据此规划。",
+      "expected_output": "以最终能力证据倒推必要先修和项目阶段。",
+      "expectations": ["以终为始", "关联目标代码", "定义独立验证"]
+    },
+    {
+      "id": "evidence-reroute",
+      "prompt": "我刚独立完成了 Python 字典练习，请调整原来的计划。",
+      "expected_output": "核验新证据后压缩相关练习并保留必要的延迟复习。",
+      "expectations": ["调整有证据依据", "不直接标记 mastered", "保留复习"]
+    },
+    {
+      "id": "function-negative-route",
+      "prompt": "解释一下这个函数为什么会返回 nil。",
+      "expected_output": "不重做学习计划，路由到具体代码学习。",
+      "expectations": ["路由到 code-learning", "不修改计划"]
+    },
+    {
+      "id": "single-concept-plan",
+      "prompt": "goal_route=concept_clarity，concept_scope=meaning_only，主题是 RAG 是什么。",
+      "expected_output": "生成 1–3 阶段的单次学习卡，不生成长期课表。",
+      "expectations": ["1–3 个阶段", "不包含每日时长", "不安排代码项目"]
+    },
+    {
+      "id": "conversational-plan-review",
+      "prompt": "Plan 已生成，请向学习者展示并等待确认。",
+      "expected_output": "Plan 以普通 Agent 消息展示，不打开独立文档框，只提供一个确认动作。",
+      "expectations": ["对话消息展示", "只有确认按钮", "修改意见直接输入"]
+    },
+    {
+      "id": "complete-mastery-deep-roadmap",
+      "prompt": "我是零基础，想完整掌握 LangGraph，最后能独立交付一个生产级 Agent 项目。",
+      "expected_output": "结合诊断结果和当前官方资料，生成 12–60 个由浅入深的阶段，每阶段有原子知识点、预计课次和独立完成证据，以可交付的大型毕业项目收束。",
+      "expectations": ["12–60 个阶段", "知识覆盖地图和最终达成标准", "每阶段至少两个原子知识点", "根据强项和缺口调整节奏", "最后是可运行可验收的大型项目"]
+    }
+  ]
+}

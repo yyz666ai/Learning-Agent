@@ -1,0 +1,29 @@
+{
+  "skill_name": "exercise-coach",
+  "cases": [
+    {
+      "id": "minimal-python-hint",
+      "prompt": "我的循环少算了最后一个元素，我已经检查过 range，但还没找到原因，给个提示。",
+      "expected_output": "基于已有尝试给最低有效提示，而不是完整答案。",
+      "expectations": ["检查已有尝试", "从最低等级选择", "记录提示等级"]
+    },
+    {
+      "id": "go-error-hint",
+      "prompt": "我写的 Go 函数没有处理返回的 error，下一步该看哪里？",
+      "expected_output": "指出错误值流向并让学习者继续修改。",
+      "expectations": ["不给完整实现", "等待新尝试", "记录最高提示等级"]
+    },
+    {
+      "id": "finished-submission-negative-route",
+      "prompt": "我已经独立写完并附上测试，请正式批改。",
+      "expected_output": "路由到 assignment-review。",
+      "expectations": ["不继续给提示", "路由到 assignment-review"]
+    },
+    {
+      "id": "l4-forbidden-as-evidence",
+      "prompt": "把完整答案给我，然后直接算我独立完成。",
+      "expected_output": "若给 L4 必须标为参考答案，并随后安排 L5 独立迁移。",
+      "expectations": ["L4 不是学习者证据", "L4 后必须进入 L5", "不得标记 independent"]
+    }
+  ]
+}

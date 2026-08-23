@@ -1,0 +1,124 @@
+{
+  "lesson_id": "rag-lesson",
+  "title": "RAG 是什么意思",
+  "topic": "RAG 是什么意思",
+  "language": "text",
+  "route": "concept_clarity",
+  "knowledge_point_id": "rag",
+  "chapter_id": "chapter-1",
+  "chapter_title": "先建立直觉：模型答不上来的问题",
+  "covered_knowledge_point_ids": [
+    "rag",
+    "rag-2"
+  ],
+  "practice_path": "concepts/rag",
+  "completion_mode": "choice",
+  "completion_prompt": "你已理解 RAG 的核心思路：先查资料、再作答，而不是改模型的记忆。恭喜完成本知识点！",
+  "output_patterns": [],
+  "output_requirements": [],
+  "practice_starter_mode": "provided",
+  "completion_actions": [
+    "submit",
+    "reteach",
+    "stuck"
+  ],
+  "pages": [
+    {
+      "id": "p1-why",
+      "type": "explain",
+      "title": "客服机器人答不上新政策",
+      "eyebrow": "先看场景",
+      "markdown": "今年公司出了一份新休假政策，比如「今年起每年多两天年假」。老板让客服机器人回答客户的问题，可是你问它：\n\n“今年新出的休假政策是什么？”\n\n它支支吾吾答不上来，或者干脆编一个。\n\n为什么？因为它是在「过去」被训练的，只记得训练时见过的资料；这份政策是训练之后才有的，它根本没见过。\n\n就像一位很聪明的老员工，他入职那年还没有这份政策，你问他，他只能靠猜。\n\n**本页请做**：先别翻页，在心里猜一下：模型答不上来，是因为它“笨”，还是因为“没见过这份资料”？记住你的答案。",
+      "code": "",
+      "language": null,
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "p2-compare",
+      "type": "explain",
+      "title": "硬答 vs 重训，都不划算",
+      "eyebrow": "两种笨办法",
+      "markdown": "要让模型回答新政策，有两个「笨办法」：\n\n| 做法 | 结果 |\n| --- | --- |\n| 凭记忆硬答 | 不知道，就瞎编一个 |\n| 重新训练模型 | 慢、贵，政策变了还得再来一遍 |\n\n硬答会骗人，重训又太慢。所以换个思路：**先查资料，再作答**——回答前，先把资料库里相关的那段找出来，让模型照着答。\n\n就像考试：闭卷靠背，会忘、会编；**开卷翻书**才稳。\n\n**本页请做**：在心里用两个词记住这两种笨办法（比如“瞎编”和“重训”），然后点下一页，看看“开卷”怎么做。",
+      "code": "",
+      "language": null,
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "p3-flow",
+      "type": "explain",
+      "title": "先查资料，再作答（开卷考试）",
+      "eyebrow": "RAG 的思路",
+      "markdown": "RAG（检索增强生成）就是给模型“开卷考试”：回答前，先到资料库（比如公司文档）里检索相关段落，把段落拼进问题，再让模型照着作答。\n\n```mermaid\nflowchart LR\n    A[用户问：今年新出的休假政策？] --> B[① 去资料库检索]\n    B --> C[② 找到新政策那一段]\n    C --> D[③ 把段落拼进问题]\n    D --> E[④ 模型照着资料回答]\n```\n\n适合 RAG 的场景：资料经常变（比如新政策）、只有内部文档才知道的内容。\n边界：资料库里没有的，RAG 也答不上——它只负责“查得到、答得准”。\n\n**本页请做**：看图把流程默背一遍：提问 → 查资料 → 拼进去 → 作答；然后点下一页做判断。",
+      "code": "",
+      "language": null,
+      "question": null,
+      "options": [],
+      "practice_path": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "p4-check",
+      "type": "check",
+      "title": "哪个做法最像 RAG？",
+      "eyebrow": "考考你",
+      "markdown": "回顾一下，RAG 的三个关键词是“查资料 → 拼进问题 → 照着答”。下面哪个做法最符合？\n\n**本页请做**：点选你认为正确的选项；答错会给你一个最小提示，可以重选。",
+      "code": "",
+      "language": null,
+      "question": "下面哪个做法最像 RAG？",
+      "options": [
+        {
+          "id": "a",
+          "label": "把新政策写进模型里，重新训练一次"
+        },
+        {
+          "id": "b",
+          "label": "回答前，先从资料库检索相关段落，拼进问题再作答"
+        },
+        {
+          "id": "c",
+          "label": "让模型自由发挥，想到什么答什么"
+        }
+      ],
+      "practice_path": null,
+      "completion_criteria": null
+    },
+    {
+      "id": "p5-mastery",
+      "type": "mastery",
+      "title": "你能用 RAG 的思路解决问题吗",
+      "eyebrow": "验收",
+      "markdown": "记住这句话：**RAG 是查资料补上下文，不是改模型记忆。**\n\n用它解决下面的场景：\n\n**本页请做**：点对这道题，完成本知识点；点对后在心里默念那句话。",
+      "code": "",
+      "language": null,
+      "question": "客服机器人要回答“今年新出的休假政策”，最合理的做法是？",
+      "options": [
+        {
+          "id": "a",
+          "label": "先停服重训模型，把新政策装进它的记忆"
+        },
+        {
+          "id": "b",
+          "label": "先去资料库找到新政策，再据此回答"
+        },
+        {
+          "id": "c",
+          "label": "资料里没有就算了，让模型编一个"
+        }
+      ],
+      "practice_path": null,
+      "completion_criteria": null
+    }
+  ],
+  "progress": {
+    "current_page": 1,
+    "total_pages": 5,
+    "mastery_percent": 0,
+    "remaining_minutes": 15
+  }
+}

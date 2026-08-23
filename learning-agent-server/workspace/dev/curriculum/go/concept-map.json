@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "language": "go",
+  "concepts": [
+    {
+      "id": "go.syntax.values",
+      "title": "值、类型与变量",
+      "prerequisites": ["shared.programming.execution"],
+      "outcomes": ["能够声明变量并解释静态类型和零值"],
+      "common_misconceptions": ["零值表示变量尚未初始化且不可使用"]
+    },
+    {
+      "id": "go.control-flow",
+      "title": "控制流",
+      "prerequisites": ["go.syntax.values", "shared.programming.control-flow"],
+      "outcomes": ["能够使用 if、for 和 switch 表达执行路径"],
+      "common_misconceptions": ["Go 必须使用 while 才能表达条件循环"]
+    },
+    {
+      "id": "go.functions",
+      "title": "函数",
+      "prerequisites": ["go.control-flow", "shared.programming.functions"],
+      "outcomes": ["能够定义多返回值函数并解释参数传递"],
+      "common_misconceptions": ["多返回值只是一个隐藏切片"]
+    },
+    {
+      "id": "go.collections",
+      "title": "Array、Slice 与 Map",
+      "prerequisites": ["go.syntax.values", "go.control-flow"],
+      "outcomes": ["能够根据容量、共享底层数组和键值访问选择集合"],
+      "common_misconceptions": ["复制 slice 会复制全部底层元素"]
+    },
+    {
+      "id": "go.structs-methods",
+      "title": "Struct 与 Method",
+      "prerequisites": ["go.functions", "go.collections"],
+      "outcomes": ["能够用 struct 建模数据并选择方法接收者"],
+      "common_misconceptions": ["只有 pointer receiver 才能调用方法"]
+    },
+    {
+      "id": "go.interfaces",
+      "title": "Interface",
+      "prerequisites": ["go.structs-methods"],
+      "outcomes": ["能够通过行为契约定义和实现小接口"],
+      "common_misconceptions": ["类型必须显式声明 implements 才能满足接口"]
+    },
+    {
+      "id": "go.pointers",
+      "title": "Pointer",
+      "prerequisites": ["go.functions", "go.structs-methods"],
+      "outcomes": ["能够解释地址、解引用和可变共享状态"],
+      "common_misconceptions": ["Go 的 pointer 支持任意指针运算"]
+    },
+    {
+      "id": "go.errors-defer",
+      "title": "Error 与 Defer",
+      "prerequisites": ["go.functions"],
+      "outcomes": ["能够传播带上下文的错误并用 defer 管理清理"],
+      "common_misconceptions": ["defer 会在声明它的代码行立即执行"]
+    },
+    {
+      "id": "go.packages-modules",
+      "title": "Package 与 Module",
+      "prerequisites": ["go.functions"],
+      "outcomes": ["能够组织 package 并解释 module 依赖"],
+      "common_misconceptions": ["package 名称必须与仓库名称相同"]
+    },
+    {
+      "id": "go.testing-debugging",
+      "title": "测试与调试",
+      "prerequisites": ["go.packages-modules", "go.errors-defer", "shared.engineering.testing", "shared.engineering.debugging"],
+      "outcomes": ["能够编写表驱动测试并定位失败根因"],
+      "common_misconceptions": ["表驱动测试只是为了减少代码行数"]
+    },
+    {
+      "id": "go.goroutines",
+      "title": "Goroutine",
+      "prerequisites": ["go.functions", "go.errors-defer"],
+      "outcomes": ["能够启动、等待并约束 goroutine 生命周期"],
+      "common_misconceptions": ["主函数会自动等待全部 goroutine"]
+    },
+    {
+      "id": "go.channels",
+      "title": "Channel",
+      "prerequisites": ["go.goroutines"],
+      "outcomes": ["能够使用 channel 协调任务并识别阻塞风险"],
+      "common_misconceptions": ["关闭 channel 是接收方的固定职责"]
+    },
+    {
+      "id": "go.context",
+      "title": "Context",
+      "prerequisites": ["go.goroutines", "go.channels"],
+      "outcomes": ["能够传播取消、截止时间和请求范围值"],
+      "common_misconceptions": ["context 适合保存所有业务参数"]
+    },
+    {
+      "id": "go.http",
+      "title": "HTTP 服务",
+      "prerequisites": ["go.interfaces", "go.errors-defer", "go.testing-debugging"],
+      "outcomes": ["能够实现并测试 Handler 与中间件"],
+      "common_misconceptions": ["每个请求都应该启动不受控后台 goroutine"]
+    },
+    {
+      "id": "go.database",
+      "title": "数据库访问",
+      "prerequisites": ["go.interfaces", "go.context", "go.http"],
+      "outcomes": ["能够实现带 context、事务和错误处理的数据访问"],
+      "common_misconceptions": ["连接池等同于一个长期独占连接"]
+    }
+  ]
+}

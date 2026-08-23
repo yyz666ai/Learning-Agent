@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mastery.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "language", "concepts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "language": {"enum": ["python", "go"]},
+    "concepts": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/concept"}
+    }
+  },
+  "$defs": {
+    "concept": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence", "next_review_at"],
+      "properties": {
+        "status": {
+          "enum": ["unseen", "introduced", "practicing", "provisional", "mastered", "needs_review"]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/evidence"}
+        },
+        "next_review_at": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "result", "hint_level", "recorded_at", "artifact_path"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "result": {"type": "string", "minLength": 1},
+        "hint_level": {"type": "integer", "minimum": 0, "maximum": 5},
+        "recorded_at": {"type": "string", "format": "date-time"},
+        "artifact_path": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

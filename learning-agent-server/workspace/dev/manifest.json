@@ -1,0 +1,29 @@
+{
+  "name": "Learning Agent",
+  "version": "0.1.0",
+  "runtime": "codex-cli",
+  "entrypoint": "AGENTS.md",
+  "state_root_env": "USER_DIR",
+  "languages": ["python", "go"],
+  "requires_model_api": true,
+  "requires_database": false,
+  "publishable": [
+    "AGENTS.md",
+    ".codex/skills/",
+    "curriculum/",
+    "references/",
+    "memory/schemas/",
+    "memory/templates/",
+    "tools/*.py",
+    "manifest.json"
+  ],
+  "non_publishable": [
+    ".git/",
+    ".codex-runtime/",
+    "*.pyc",
+    "__pycache__/",
+    "private user memory",
+    "secrets",
+    "scratch/"
+  ]
+}

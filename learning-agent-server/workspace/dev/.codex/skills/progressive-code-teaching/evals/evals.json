@@ -1,0 +1,14 @@
+{
+  "skill_name": "progressive-code-teaching",
+  "cases": [{
+    "id": "split-long-framework-example",
+    "prompt": "零基础用户第一次看到 25 行 LangGraph 示例。",
+    "expected_output": "先用 6–10 行骨架，随后逐次加入 State、节点、边和 invoke，每个新 API 带逐行中文注释和小检查。",
+    "expectations": ["不先展示完整长代码", "逐步增加", "逐行中文注释", "最终页提供完整代码"]
+  }, {
+    "id": "reject-uncommented-generated-code",
+    "prompt": "模型为零基础用户生成了一页 18 行无中文注释的 Python 代码，而且这是本课第一个代码页。",
+    "expected_output": "拒绝发布该课件，先生成更短的可理解骨架，再逐步增加代码；每个陌生 API 和关键数据变化都必须有中文注释。",
+    "expectations": ["无中文注释时不发布", "首个代码页不得超过 12 个有效行", "8 行以上至少两处中文注释", "完整代码只在前面已有骨架后展示"]
+  }]
+}

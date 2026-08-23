@@ -1,0 +1,9 @@
+{
+  "skill_name": "project-scaffolder",
+  "cases": [{
+    "id": "editor-ready-course-root",
+    "prompt": "为 LangGraph 从零到项目路线创建六章练习。",
+    "expected_output": "创建一个可用 Cursor 或 Trae 打开的课程根目录，章节内分离 src、exercises、diagrams 和 notes。",
+    "expectations": ["一个课程根目录", "章节编号", "不覆盖用户文件", "页面说明打开根目录"]
+  }]
+}

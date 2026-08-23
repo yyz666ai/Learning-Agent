@@ -1,0 +1,17 @@
+{
+  "skill_name": "environment-setup",
+  "cases": [
+    {
+      "id": "go-first-run",
+      "prompt": "我从没写过 Go，带我把第一个程序跑起来。",
+      "expectations": ["HTML PPT 在第一次代码前说明需要下载的软件和官方入口", "给出版本验证命令、课程项目目录和首次运行命令", "验证后记录 environment_ready"],
+      "forbidden": ["把未运行的程序记为成功", "猜测操作系统", "后续每章重复整套安装"]
+    },
+    {
+      "id": "concept-only-no-install",
+      "prompt": "我只想理解 RAG 是什么意思，不看代码。",
+      "expectations": ["直接进行概念讲解"],
+      "forbidden": ["要求下载 Python", "强制建立课程项目目录"]
+    }
+  ]
+}

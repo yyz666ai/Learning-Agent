@@ -1,0 +1,4 @@
+interface:
+  display_name: "学习进度"
+  short_description: "只读汇总独立和辅助证据、待复习内容、重复误区以及下一步建议"
+  default_prompt: "请使用 $learning-progress 只读查看我当前的学习进度和下一步。"
