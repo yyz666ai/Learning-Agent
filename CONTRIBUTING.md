@@ -10,7 +10,7 @@
 
 | 类型 | 修改位置 | 示例 |
 |---|---|---|
-| 知识原子 | `learning-agent-server/workspace/dev/curriculum/<topic>/atoms/` | Go 指针、Python 生成器、RAG 检索 |
+| 知识原子 | `workspace/dev/curriculum/<topic>/atoms/` | Go 指针、Python 生成器、RAG 检索 |
 | 学习路线 | `curriculum/<topic>/learning-paths/` | 从零到工程师、面试冲刺 |
 | 框架/库 | `curriculum/<topic>/libraries/<library>/` | LangGraph、FastAPI、Gin |
 | 教学 Skill | `workspace/dev/.codex/skills/<skill>/` | 出题、讲代码、复习、项目辅导 |
@@ -19,7 +19,7 @@
 
 ### 知识原子要求
 
-先阅读 [`ATOMS.md`](learning-agent-server/workspace/dev/curriculum/ATOMS.md)。一个知识原子至少包含：
+先阅读 [`ATOMS.md`](workspace/dev/curriculum/ATOMS.md)。一个知识原子至少包含：
 
 - 唯一 `id`、对应 `concept`、标题、先修和版本；
 - “解决什么问题”，先建立直觉；
@@ -47,15 +47,13 @@ git clone https://github.com/<your-name>/Learning-Agent.git
 cd Learning-Agent
 git checkout -b curriculum/<short-topic>
 
-cd learning-agent-server
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements.txt
 
 # 修改后校验
-python workspace/dev/tools/validate_workspace.py
-python -m pytest -q
-python -m backend.publish
+.venv/bin/python workspace/dev/tools/validate_workspace.py
+.venv/bin/python -m pytest -q
+.venv/bin/python -m backend.publish
 ```
 
 提交信息建议：
@@ -91,7 +89,6 @@ Before opening a pull request:
 5. Run:
 
 ```bash
-cd learning-agent-server
 .venv/bin/python workspace/dev/tools/validate_workspace.py
 .venv/bin/python -m pytest -q
 .venv/bin/python -m backend.publish

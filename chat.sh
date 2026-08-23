@@ -8,8 +8,8 @@ cd "$(dirname "$0")"
 USER_ID="${1:-yang}"
 RELEASE="${2:-workspace/releases/current}"
 if [ ! -d "$RELEASE" ]; then
-  echo "还没有发布版本，先运行：python backend/publish.py" >&2
-  exit 1
+  echo "首次使用：正在准备教学知识库…"
+  .venv/bin/python -m backend.publish
 fi
 APPROVAL="${LEARNING_AGENT_APPROVAL:-on-request}"
 

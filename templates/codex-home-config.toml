@@ -1,4 +1,4 @@
-# 每用户 CODEX_HOME 的配置模板（复制到 users/u_xxx/.codex-runtime/home/config.toml）
+# 本地学习档案的 CODEX_HOME 配置模板（复制到 userdir/u_xxx/.codex-runtime/home/config.toml）
 # 作用：让软件 spawn 的 Codex 与个人命令行的 ~/.codex 彻底分离，API 随便选。
 # 模型可切换：deepseek-v4-flash（快/省）或 deepseek-v4-pro（更强推理）。
 model = "deepseek-v4-flash"

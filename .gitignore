@@ -1,5 +1,6 @@
 .DS_Store
 .workbuddy/
+.worktrees/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -10,15 +11,15 @@ __pycache__/
 .planning/
 .superpowers/
 
-# Learning Agent secrets and per-machine runtime
-learning-agent-server/.secrets.env
-learning-agent-server/*.env
-learning-agent-server/userdir/
-learning-agent-server/workspace/releases/
-learning-agent-server/com.learning-agent.local.plist
+# Learning Agent secrets and local runtime
+.secrets.env
+*.env
+userdir/
+workspace/releases/
+com.learning-agent.local.plist
 
 # Local QA evidence and generated evaluation runs
-learning-agent-server/.design-qa-*
-learning-agent-server/evals/runs/
-learning-agent-server/evals/**/*.png
-learning-agent-server/evals/*.png
+.design-qa-*
+evals/runs/
+evals/**/*.png
+evals/*.png

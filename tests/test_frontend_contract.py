@@ -845,3 +845,12 @@ def test_unanswered_choice_pages_cannot_be_skipped_with_dots_or_next() -> None:
     assert "firstBlockingCheck" in artifact
     assert "这一页需要先答对" in artifact
     assert "button.disabled = index > blockingIndex" in artifact
+
+
+def test_run_script_prepares_workspace_on_first_start() -> None:
+    source = (Path(__file__).parents[1] / "run.sh").read_text(encoding="utf-8")
+
+    assert 'if [[ ! -d "workspace/releases/current" ]]' in source
+    assert '"$PYTHON" -m backend.publish' in source
+    assert 'if [[ ! -s ".secrets.env" ]]' in source
+    assert "replace_with_your_deepseek_api_key" in source
