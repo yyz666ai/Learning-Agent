@@ -75,7 +75,7 @@ DEEPSEEK_API_KEY=你的_DeepSeek_API_Key
 ./run.sh
 ```
 
-首次启动会自动准备教学知识库，不需要手动执行 publish。随后打开：
+首次启动会自动准备教学知识库。随后打开：
 
 <http://127.0.0.1:8787>
 
