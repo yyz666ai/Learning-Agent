@@ -36,5 +36,5 @@
 
 - [x] Document backend `publish` in README without describing it as a package or GitHub publish.
 - [x] Update this checklist and the product change record.
-- [ ] Run full pytest, workspace validation, JS syntax, JSON and diff checks.
-- [ ] Commit and push directly to GitHub `main`, then verify the remote SHA.
+- [x] Run full pytest, workspace validation, JS syntax, JSON and diff checks.
+- [x] Commit and push directly to GitHub `main`, then verify the remote SHA.
