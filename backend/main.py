@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,7 @@ try:
     from .review_material import append_attempt, append_learning_question, append_lesson_note, read_lesson_notes, read_review_document
     from .reminders import ReminderScheduler, read_reminder, save_reminder
     from .review_cards import rate_card, read_cards
+    from .supplemental_practice import parse_supplemental_response
 except ImportError:
     from codex_driver import chat, latest_release, stream_chat
     from curriculum import curriculum_from_plan, load_curriculum, render_curriculum_plan, save_curriculum
@@ -68,6 +70,7 @@ except ImportError:
     from review_material import append_attempt, append_learning_question, append_lesson_note, read_lesson_notes, read_review_document
     from reminders import ReminderScheduler, read_reminder, save_reminder
     from review_cards import rate_card, read_cards
+    from supplemental_practice import parse_supplemental_response
 
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = SERVER_ROOT / "frontend"
@@ -164,6 +167,10 @@ class ExerciseGenerateRequest(BaseModel):
     level: str = Field(default="beginner", max_length=64)
 
 
+class SupplementalPracticeRequest(ExerciseGenerateRequest):
+    count: int = Field(default=3, ge=3, le=5)
+
+
 class OnboardingConfirmRequest(OnboardingSubmission):
     diagnostic_session_id: str | None = Field(default=None, max_length=64)
 
@@ -238,6 +245,15 @@ class ReviewRatingRequest(BaseModel):
     rating: str = Field(pattern="^(forgot|hard|easy)$")
 
 
+class PracticeReviewItemRequest(BaseModel):
+    user_id: str = Field(default="yang", max_length=64)
+    item_id: str = Field(min_length=1, max_length=240)
+
+
+class PracticeReviewRateRequest(PracticeReviewItemRequest):
+    rating: str = Field(pattern="^(forgot|hard|easy)$")
+
+
 class InterviewIntakeRequest(BaseModel):
     user_id: str = Field(default="yang", min_length=1, max_length=64)
     raw_text: str = Field(min_length=2, max_length=50_000)
@@ -294,12 +310,41 @@ def _practice_payload(user_id: str) -> dict[str, Any]:
         }
         for question in interview["questions"]
     ]
-    questions = [*practice["questions"], *interview_items]
+    important_items = [
+        {
+            "id": card["card_id"],
+            "source": "important_question",
+            "kind": "short_answer",
+            "title": card.get("title") or "重要问题",
+            "normalized_text": card.get("title") or "",
+            "prompt": card.get("title") or "",
+            "options": [],
+            "status": "mastered" if card.get("last_rating") == "easy" else "incorrect" if card.get("last_rating") == "forgot" else "unattempted",
+            "needs_review": card.get("last_rating") in {None, "forgot", "hard"},
+            "attempt_count": int(card.get("attempts") or 0),
+            "wrong_count": sum(
+                item.get("rating") == "forgot" for item in card.get("review_history") or []
+            ),
+            "next_review": card.get("next_review"),
+        }
+        for card in read_cards(SERVER_ROOT, user_id).get("cards", {}).values()
+        if isinstance(card, dict) and card.get("summary")
+    ]
+    questions = [*practice["questions"], *interview_items, *important_items]
     mastered = sum(question.get("status") == "mastered" for question in questions)
     total = len(questions)
     return {
         "study_mode": interview.get("study_mode"),
-        "questions": questions,
+        "questions": [
+            {
+                key: value for key, value in question.items()
+                if key not in {
+                    "answer", "answer_markdown", "correct_option_id", "explanation",
+                    "review_history", "rubric", "follow_ups",
+                }
+            }
+            for question in questions
+        ],
         "coverage": {
             "mastered": mastered,
             "total": total,
@@ -307,6 +352,58 @@ def _practice_payload(user_id: str) -> dict[str, Any]:
         },
         "plan_progress": interview.get("plan_progress", {}),
     }
+
+
+def _unified_review_session(user_id: str, *, limit: int = 5) -> dict[str, Any]:
+    practice = PracticeBankStore(SERVER_ROOT).review_session(user_id, limit=20)
+    today = date.today().isoformat()
+    interview_cards = []
+    for question in InterviewBankStore(SERVER_ROOT).list_questions(user_id):
+        next_review = str(question.get("next_review") or "")
+        if question.get("answer_status") != "ready" or not question.get("answer_markdown"):
+            continue
+        if next_review and next_review > today:
+            continue
+        interview_cards.append({
+            "id": question["id"],
+            "source": "interview",
+            "kind": "interview",
+            "title": question.get("normalized_text") or "面试题",
+            "prompt": question.get("normalized_text") or "",
+            "options": [],
+            "needs_review": question.get("mastery") in {"forgot", "hard"},
+            "wrong_count": sum(
+                item.get("value") == "forgot" for item in question.get("evidence") or []
+            ),
+            "next_review": question.get("next_review"),
+        })
+    important_cards = []
+    for card in read_cards(SERVER_ROOT, user_id).get("cards", {}).values():
+        next_review = str(card.get("next_review") or "")
+        if not card.get("summary") or (next_review and next_review > today):
+            continue
+        important_cards.append({
+            "id": card["card_id"],
+            "source": "important_question",
+            "kind": "short_answer",
+            "title": card.get("title") or "重要问题",
+            "prompt": card.get("title") or "",
+            "options": [],
+            "needs_review": card.get("last_rating") in {"forgot", "hard"},
+            "wrong_count": sum(
+                item.get("rating") == "forgot" for item in card.get("review_history") or []
+            ),
+            "next_review": card.get("next_review"),
+        })
+    cards = [*practice["cards"], *interview_cards, *important_cards]
+    cards.sort(key=lambda item: (
+        0 if item.get("needs_review") else 1,
+        0 if item.get("source") == "interview" else 1,
+        str(item.get("next_review") or "0000-00-00"),
+        -int(item.get("wrong_count") or 0),
+    ))
+    selected = cards[:limit]
+    return {"cards": selected, "total": len(selected), "due_count": len(cards)}
 
 
 def read_state(user_id: str) -> dict[str, Any]:
@@ -448,6 +545,119 @@ def practice_bank(user_id: str = Query(default="yang", max_length=64)) -> dict[s
         return _practice_payload(user_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/practice/review/session")
+def practice_review_session(
+    user_id: str = Query(default="yang", max_length=64),
+    limit: int = Query(default=5, ge=1, le=20),
+) -> dict[str, Any]:
+    try:
+        return _unified_review_session(user_id, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/practice/review/reveal")
+def practice_review_reveal(request: PracticeReviewItemRequest) -> dict[str, Any]:
+    try:
+        if request.item_id.startswith("question:"):
+            card = read_cards(SERVER_ROOT, request.user_id).get("cards", {}).get(request.item_id)
+            if not isinstance(card, dict) or not card.get("summary"):
+                raise KeyError(request.item_id)
+            return {
+                "id": request.item_id,
+                "answer": card["summary"],
+                "explanation": f"关联主题：{card.get('topic') or '当前课程'}",
+                "last_wrong": None,
+            }
+        if request.item_id.startswith("iq_"):
+            question = InterviewBankStore(SERVER_ROOT).get_question(
+                request.user_id, request.item_id,
+            )
+            if question.get("answer_status") != "ready" or not question.get("answer_markdown"):
+                raise KeyError(request.item_id)
+            last_wrong = next((
+                evidence for evidence in reversed(question.get("evidence") or [])
+                if evidence.get("value") == "forgot"
+            ), None)
+            return {
+                "id": request.item_id,
+                "answer": question["answer_markdown"],
+                "explanation": "\n".join(f"- {item}" for item in question.get("rubric") or []),
+                "last_wrong": last_wrong,
+            }
+        return PracticeBankStore(SERVER_ROOT).reveal_review_item(
+            request.user_id, request.item_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="复习题不存在或还没有参考答案") from exc
+
+
+@app.post("/api/practice/review/rate")
+def practice_review_rate(request: PracticeReviewRateRequest) -> dict[str, Any]:
+    try:
+        if request.item_id.startswith("question:"):
+            card = read_cards(SERVER_ROOT, request.user_id).get("cards", {}).get(request.item_id)
+            if not isinstance(card, dict):
+                raise KeyError(request.item_id)
+            return rate_card(
+                SERVER_ROOT,
+                request.user_id,
+                card_id=request.item_id,
+                title=str(card.get("title") or "重要问题"),
+                rating=request.rating,
+            )
+        if request.item_id.startswith("iq_"):
+            return InterviewBankStore(SERVER_ROOT).record_mastery(
+                request.user_id,
+                request.item_id,
+                {"forgot": "forgot", "hard": "hard", "easy": "smooth"}[request.rating],
+            )
+        return PracticeBankStore(SERVER_ROOT).rate_review_item(
+            request.user_id, item_id=request.item_id, rating=request.rating,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="复习题不存在或还没有参考答案") from exc
+
+
+@app.post("/api/practice/supplemental/generate")
+def generate_supplemental_practice(request: SupplementalPracticeRequest) -> dict[str, Any]:
+    skill_texts = []
+    for skill_name in ("practice-drill", "quiz-designer"):
+        candidates = (
+            SERVER_ROOT / "workspace/dev/.codex/skills" / skill_name / "SKILL.md",
+            SERVER_ROOT / "workspace/releases/current/.codex/skills" / skill_name / "SKILL.md",
+        )
+        skill_path = next((path for path in candidates if path.is_file()), None)
+        if skill_path is None:
+            raise HTTPException(status_code=503, detail=f"教学 Skill 不可用：{skill_name}")
+        skill_texts.append(skill_path.read_text(encoding="utf-8"))
+    system = (
+        "你是 Learning Agent 的针对性练习设计器。必须严格遵守下面两个教学 Skill。\n\n"
+        + "\n\n---\n\n".join(skill_texts)
+        + "\n\n只输出 JSON：{\"questions\":[...]}。每题字段为 title、prompt、options、"
+        "correct_option_id、explanation。options 必须有 2 至 4 项且只有一个最佳答案；"
+        "答案 id 必须属于 options。题目不得重复，必须检验理解或迁移，不考无意义术语背诵。"
+    )
+    raw = llm_chat(
+        f"模块：{request.module}\n学习程度：{request.level}\n请生成 {request.count} 道题。",
+        system=system,
+        max_tokens=3200,
+        temperature=0.2,
+    )
+    try:
+        questions = parse_supplemental_response(raw, expected_count=request.count)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"练习题没有通过结构校验：{exc}") from exc
+    result = PracticeBankStore(SERVER_ROOT).add_supplemental_questions(
+        request.user_id, topic=request.module, questions=questions,
+    )
+    return {**result, "requested_count": request.count, "source": "supplemental"}
 
 
 @app.get("/api/interview/questions/{question_id}")
@@ -601,7 +811,9 @@ def current_lesson(
             },
         ) from exc
     ensure_practice_workspace(SERVER_ROOT, user_id, bundle.manifest)
-    PracticeBankStore(SERVER_ROOT).register_lesson(user_id, bundle.manifest)
+    PracticeBankStore(SERVER_ROOT).register_lesson(
+        user_id, bundle.manifest, answer_keys=bundle.answer_keys,
+    )
     return bundle.public_manifest()
 
 
@@ -625,7 +837,9 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
             if not existing.manifest.chapter_id or not existing.manifest.covered_knowledge_point_ids:
                 raise ValueError("legacy single-point lesson must be regenerated as a chapter")
             ensure_practice_workspace(SERVER_ROOT, request.user_id, existing.manifest)
-            PracticeBankStore(SERVER_ROOT).register_lesson(request.user_id, existing.manifest)
+            PracticeBankStore(SERVER_ROOT).register_lesson(
+                request.user_id, existing.manifest, answer_keys=existing.answer_keys,
+            )
             return existing.public_manifest()
         except (OSError, ValueError):
             pass
@@ -643,7 +857,9 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
                 pass
             else:
                 ensure_practice_workspace(SERVER_ROOT, request.user_id, migrated.manifest)
-                PracticeBankStore(SERVER_ROOT).register_lesson(request.user_id, migrated.manifest)
+                PracticeBankStore(SERVER_ROOT).register_lesson(
+                    request.user_id, migrated.manifest, answer_keys=migrated.answer_keys,
+                )
                 return migrated.public_manifest()
     release = latest_release()
     if release is None:
@@ -671,7 +887,9 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
             model_call=lambda prompt: chat(request.user_id, prompt, release),
         )
         ensure_practice_workspace(SERVER_ROOT, request.user_id, bundle.manifest)
-        PracticeBankStore(SERVER_ROOT).register_lesson(request.user_id, bundle.manifest)
+        PracticeBankStore(SERVER_ROOT).register_lesson(
+            request.user_id, bundle.manifest, answer_keys=bundle.answer_keys,
+        )
     except Exception as exc:
         error_type = "validation" if isinstance(exc, (ValueError, TypeError, json.JSONDecodeError)) else "provider"
         message = (
@@ -720,7 +938,9 @@ def check_lesson_answer(request: LessonCheckRequest) -> dict[str, Any]:
     correct = bundle.answer_keys[request.page_id] == request.selected_option_id
     page = next(page for page in bundle.manifest.pages if page.id == request.page_id)
     practice_store = PracticeBankStore(SERVER_ROOT)
-    practice_store.register_lesson(request.user_id, bundle.manifest)
+    practice_store.register_lesson(
+        request.user_id, bundle.manifest, answer_keys=bundle.answer_keys,
+    )
     practice_store.record_choice_attempt(
         request.user_id,
         lesson_id=request.lesson_id,

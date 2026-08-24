@@ -51,6 +51,20 @@ class OutputRequirement(BaseModel):
     patterns: list[str] = Field(min_length=1, max_length=6)
 
 
+class InterviewFollowUp(BaseModel):
+    prompt: str = Field(min_length=1, max_length=1_000)
+    answer_points: list[str] = Field(min_length=1, max_length=8)
+
+
+class InterviewPrompt(BaseModel):
+    id: str = Field(min_length=1, max_length=96, pattern=r"^[a-z0-9-]+$")
+    question: str = Field(min_length=1, max_length=2_000)
+    reference_answer: str = Field(min_length=1, max_length=8_000)
+    answer_structure: list[str] = Field(min_length=1, max_length=8)
+    common_omissions: list[str] = Field(default_factory=list, max_length=8)
+    follow_ups: list[InterviewFollowUp] = Field(default_factory=list, max_length=5)
+
+
 class LessonManifest(BaseModel):
     lesson_id: str = Field(min_length=1, max_length=96)
     title: str = Field(min_length=1, max_length=240)
@@ -70,6 +84,7 @@ class LessonManifest(BaseModel):
     completion_actions: list[Literal["submit", "reteach", "stuck"]] = Field(
         default_factory=lambda: ["submit", "reteach", "stuck"], min_length=3, max_length=3
     )
+    interview_prompts: list[InterviewPrompt] = Field(default_factory=list, max_length=4)
     pages: list[LessonPage] = Field(min_length=3, max_length=24)
     progress: LessonProgress
 

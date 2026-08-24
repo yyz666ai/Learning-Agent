@@ -12,6 +12,8 @@ from backend import main
 from backend.curriculum import curriculum_from_plan
 from backend.lesson_generator import parse_lesson_response
 from backend.practice_bank import PracticeBankStore
+from backend.interview_bank import InterviewBankStore
+from backend.review_cards import add_question_card
 from backend import review_material
 from backend.review_material import append_learning_question
 from backend import project_snapshot
@@ -94,6 +96,123 @@ def test_current_lesson_registers_practice_and_check_attempt_updates_unified_ban
     assert classroom["status"] == "mastered"
     assert classroom["attempt_count"] == 1
     assert any(item["source"] == "homework" for item in payload["questions"])
+
+
+def test_unified_review_api_hides_then_reveals_answer_and_saves_rating(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    bundle = parse_lesson_response(
+        model_lesson_json("go.variables"), topic="Go", route="foundation_engineer",
+        knowledge_point_id="go.variables", session_minutes=25,
+    )
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    store = PracticeBankStore(tmp_path)
+    store.register_lesson("learner", bundle.manifest, answer_keys=bundle.answer_keys)
+
+    session = client.get("/api/practice/review/session?user_id=learner")
+    card = session.json()["cards"][0]
+    reveal = client.post("/api/practice/review/reveal", json={
+        "user_id": "learner", "item_id": card["id"],
+    })
+    rated = client.post("/api/practice/review/rate", json={
+        "user_id": "learner", "item_id": card["id"], "rating": "easy",
+    })
+
+    assert session.status_code == 200
+    assert "answer" not in card
+    assert reveal.status_code == 200
+    assert reveal.json()["answer"]
+    assert rated.status_code == 200
+    assert rated.json()["review_count"] == 1
+    assert rated.json()["last_review_rating"] == "easy"
+
+
+def test_unified_review_api_includes_answered_interview_questions(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    store = InterviewBankStore(tmp_path)
+    intake = store.intake("learner", "什么是 goroutine？")
+    question = store.get_question("learner", intake["question_ids"][0])
+    question.update({
+        "answer_status": "ready",
+        "answer_markdown": "goroutine 是由 Go 运行时调度的轻量并发执行单元。",
+        "rubric": ["说明轻量", "说明由运行时调度"],
+    })
+    store.save_question("learner", question)
+
+    session = client.get("/api/practice/review/session?user_id=learner").json()
+    card = next(item for item in session["cards"] if item["source"] == "interview")
+    reveal = client.post("/api/practice/review/reveal", json={
+        "user_id": "learner", "item_id": card["id"],
+    })
+    rated = client.post("/api/practice/review/rate", json={
+        "user_id": "learner", "item_id": card["id"], "rating": "hard",
+    })
+
+    assert reveal.json()["answer"].startswith("goroutine")
+    assert rated.json()["mastery"] == "hard"
+    assert rated.json()["next_review"]
+
+
+def test_unified_review_api_includes_important_learning_questions(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    saved = add_question_card(
+        tmp_path, "learner", topic="Go", question="为什么 map 并发写会出问题？",
+        summary="普通 map 不保证并发写安全，需要同步或使用 sync.Map。",
+    )
+
+    session = client.get("/api/practice/review/session?user_id=learner").json()
+    bank = client.get("/api/practice/bank?user_id=learner").json()
+    card = next(item for item in session["cards"] if item["id"] == saved["card_id"])
+    reveal = client.post("/api/practice/review/reveal", json={
+        "user_id": "learner", "item_id": card["id"],
+    })
+    rated = client.post("/api/practice/review/rate", json={
+        "user_id": "learner", "item_id": card["id"], "rating": "forgot",
+    })
+
+    assert card["source"] == "important_question"
+    assert any(item["id"] == saved["card_id"] for item in bank["questions"])
+    assert reveal.json()["answer"].startswith("普通 map")
+    assert rated.json()["last_rating"] == "forgot"
+
+
+def test_generate_supplemental_practice_reads_skills_validates_and_saves_bank(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    captured: dict[str, str] = {}
+    skill_root = tmp_path / "workspace/dev/.codex/skills"
+    for name in ("practice-drill", "quiz-designer"):
+        path = skill_root / name / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {name}\n{name} teaching rules", encoding="utf-8")
+
+    def fake_model(prompt: str, system: str, **_: object) -> str:
+        captured.update({"prompt": prompt, "system": system})
+        return json.dumps({"questions": [
+            {"title": f"练习 {index}", "prompt": f"问题 {index}？", "options": [
+                {"id": "a", "label": "正确"}, {"id": "b", "label": "错误"},
+            ], "correct_option_id": "a", "explanation": f"解析 {index}"}
+            for index in range(1, 4)
+        ]}, ensure_ascii=False)
+
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "llm_chat", fake_model)
+    response = client.post("/api/practice/supplemental/generate", json={
+        "user_id": "learner", "module": "Go 变量", "level": "beginner", "count": 3,
+    })
+    bank = client.get("/api/practice/bank?user_id=learner").json()
+
+    assert response.status_code == 200
+    assert response.json()["added_count"] == 3
+    assert "practice-drill teaching rules" in captured["system"]
+    assert "quiz-designer teaching rules" in captured["system"]
+    assert len(bank["questions"]) == 3
+    assert all(item["source"] == "supplemental" for item in bank["questions"])
+    assert all("answer" not in item for item in bank["questions"])
 
 
 def test_cached_lesson_is_reloaded_through_current_teaching_contract_before_use(

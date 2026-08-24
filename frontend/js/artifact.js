@@ -126,6 +126,31 @@
     setText("homeworkPath", homework.practice_path || state.manifest.practice_path);
   }
 
+  function renderInterviewPrompts() {
+    const prompts = state.manifest?.interview_prompts || [];
+    const section = byId("lessonInterviewPrompts");
+    section.hidden = !prompts.length;
+    if (!prompts.length) { byId("lessonInterviewPromptList").replaceChildren(); return; }
+    byId("lessonInterviewPromptList").replaceChildren(...prompts.map((prompt, index) => {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `${index + 1}. ${prompt.question}`;
+      const answer = document.createElement("div"); answer.className = "markdown-body";
+      const structure = (prompt.answer_structure || []).map((item) => `- ${item}`).join("\n");
+      const omissions = (prompt.common_omissions || []).map((item) => `- ${item}`).join("\n");
+      const followUps = (prompt.follow_ups || []).map((item) => (
+        `- **${item.prompt}**：${(item.answer_points || []).join("、")}`
+      )).join("\n");
+      answer.innerHTML = global.MarkdownRenderer.render(
+        `#### 参考答案\n\n${prompt.reference_answer}\n\n**回答结构**\n\n${structure}`
+        + (omissions ? `\n\n**常见遗漏**\n\n${omissions}` : "")
+        + (followUps ? `\n\n**常见追问**\n\n${followUps}` : ""),
+      );
+      global.MarkdownRenderer.hydrate(answer);
+      details.append(summary, answer); return details;
+    }));
+  }
+
   function renderLessonNotes(notes) {
     state.notes = Array.isArray(notes) ? notes : [];
     const panel = byId("lessonNotesPanel"); const list = byId("lessonNotesList");
@@ -152,6 +177,8 @@
 
   function showPage(index) {
     if (!state.manifest) return;
+    byId("reviewCardPanel").hidden = true;
+    document.querySelector(".page-navigation").hidden = false;
     const requestedIndex = Math.max(0, Math.min(index, state.manifest.pages.length - 1));
     const blockingIndex = requestedIndex > state.pageIndex ? firstBlockingCheck(requestedIndex) : -1;
     state.pageIndex = blockingIndex >= 0 ? blockingIndex : requestedIndex;
@@ -186,8 +213,10 @@
         ? "必答选择题都答对就能完成；不需要写代码、粘贴终端输出或额外解释。"
         : "本章课堂已经讲完。课后练习留在真实项目里，你可以自己消化；完成后的代码、运行结果或问题直接发到右侧输入栏。系统不再检查打印输出。 ");
       renderHomework();
+      renderInterviewPrompts();
       setText("completeSubmitBtn", choiceOnly ? "完成这个概念" : "完成课堂，进入下一章");
     }
+    if (!isFinal) byId("lessonInterviewPrompts").hidden = true;
     renderDots();
     byId("artifactPane").scrollTop = 0;
     if (isFinal) {

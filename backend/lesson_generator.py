@@ -10,11 +10,11 @@ from typing import Callable
 try:
     from .curriculum import Chapter, Curriculum, KnowledgePoint
     from .learning_content import SAFE_USER_ID
-    from .lesson_manifest import DEFAULT_OUTPUT_PATTERN, LessonBundle, LessonManifest, LessonPage, LessonProgress, OutputRequirement
+    from .lesson_manifest import DEFAULT_OUTPUT_PATTERN, InterviewPrompt, LessonBundle, LessonManifest, LessonPage, LessonProgress, OutputRequirement
 except ImportError:
     from curriculum import Chapter, Curriculum, KnowledgePoint
     from learning_content import SAFE_USER_ID
-    from lesson_manifest import DEFAULT_OUTPUT_PATTERN, LessonBundle, LessonManifest, LessonPage, LessonProgress, OutputRequirement
+    from lesson_manifest import DEFAULT_OUTPUT_PATTERN, InterviewPrompt, LessonBundle, LessonManifest, LessonPage, LessonProgress, OutputRequirement
 
 
 def _extract_json(text: str) -> dict:
@@ -303,6 +303,12 @@ def parse_lesson_response(
             homework_indexes = [last_practice]
         if len(homework_indexes) != 1:
             raise ValueError("self-practice lesson must include exactly one homework page")
+    raw_interview_prompts = payload.get("interview_prompts") or []
+    interview_prompts = [InterviewPrompt.model_validate(item) for item in raw_interview_prompts]
+    if len({item.id for item in interview_prompts}) != len(interview_prompts):
+        raise ValueError("interview prompt ids must be unique")
+    if route == "interview_sprint" and not 2 <= len(interview_prompts) <= 4:
+        raise ValueError("interview prompts must contain 2 to 4 answered short-answer cards")
     covered_ids = [point.id for point in covered_knowledge_points] if covered_knowledge_points is not None else ([point.id for point in chapter.knowledge_points] if chapter else [knowledge_point_id])
     if chapter and len(pages) < min(12, len(covered_ids) + 2):
         raise ValueError("chapter deck is too short to cover its knowledge points")
@@ -323,6 +329,7 @@ def parse_lesson_response(
         output_requirements=requirements,
         practice_starter_mode=payload.get("practice_starter_mode") or "provided",
         completion_actions=["submit", "reteach", "stuck"],
+        interview_prompts=interview_prompts,
         pages=pages,
         progress=LessonProgress(total_pages=len(pages), remaining_minutes=session_minutes),
     )
@@ -410,7 +417,7 @@ def build_lesson_prompt(
 先读取 workspace 中的 `adaptive-lesson-flow`、`concept-teaching` 与 `knowledge-curator` Skill；如果当前路线是精进或项目实战，再读取对应的 `practice-drill` 或 `project-practice` Skill。先读取上述 Skill 后，不要扫描用户历史、知识库或其他文件。只输出一个 JSON 对象，
 研究依据中的事实必须用于校验本章内容；不要编造未被来源支持的版本号或 API。不要 Markdown 围栏和过程说明。字段必须为：
 title, language, practice_path, completion_mode(choice/self_practice), completion_prompt, output_patterns, output_requirements,
-practice_starter_mode(provided/blank), pages(3–24 页，最后一页 type 必须为 mastery), answer_keys。
+practice_starter_mode(provided/blank), pages(3–24 页，最后一页 type 必须为 mastery), answer_keys, interview_prompts。
 page 字段使用 id, type(explain/example/check/practice/mastery), title, eyebrow, markdown,
 code, language, question, options, practice_kind(classroom/homework/null)。options 必须是对象数组，例如
 [{{"id":"a","label":"选项文字"}},{{"id":"b","label":"选项文字"}}]，answer_keys 的值使用同样的小写 id。
@@ -425,6 +432,8 @@ choice 与 self_practice 都必须令 output_patterns=[]、output_requirements=[
 代码型课程必须且只能有一个 practice_kind=homework 的课后练习。课堂练习只用 check 点击题；课后练习不作为进入下一章的门禁，完成后把代码、运行结果或问题直接发到右侧输入栏。
 practice_starter_mode：第一个非常简单的例子可用 provided；课后需要独立完成时用 blank，给清晰步骤和最多 3 条提示，但不要给答案代码。
 讲解、代码、题量和实践必须针对当前能力与当前知识点；不得输出其他语言的固定首课。选择题答案只放 answer_keys，不写进 markdown。
+当路线为 interview_sprint 时，interview_prompts 必须有 2–4 项；每项字段为 id, question, reference_answer,
+answer_structure, common_omissions, follow_ups。follow_ups 每项字段为 prompt, answer_points。即使用户没有提供面试题也必须生成，答案要适合口述并能应对追问；其他路线可返回空数组。
 """
 
 

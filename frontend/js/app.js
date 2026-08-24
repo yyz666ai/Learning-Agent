@@ -201,6 +201,40 @@
     return /(PPT|讲义|课件|这一页|这节课)/i.test(message) && /(修改|重做|重新生成|再生成|太浅|太深|太难|太长|看不懂|加.*图|加.*代码)/.test(message);
   }
 
+  function isSupplementalPracticeRequest(message) {
+    return /(再出|多出|追加|多练|再练).{0,8}(题|练习)|针对.{0,8}(题|练习)/.test(message);
+  }
+
+  async function generateSupplementalPractice(instruction) {
+    state.busy = true;
+    addMessage("user", instruction);
+    $("#sendBtn").disabled = true;
+    window.LearningActivity.start("正在生成针对性练习", "正在读取出题规则并检查每道题的答案…");
+    try {
+      const response = await fetch("/api/practice/supplemental/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: USER_ID,
+          module: state.context?.current_task || state.context?.topic || instruction,
+          level: state.context?.level || "beginner",
+          count: 3,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "练习题暂时没有生成成功");
+      addMessage("agent", `已把 **${result.added_count || 0} 道针对性练习**加入题库。现在可以直接开始做；重复题不会再次收录。`);
+      await window.InterviewBankController?.load?.();
+      await window.InterviewBankController?.startReview?.();
+      window.LearningActivity.finish("针对性练习已准备好", "题目已经加入题库，并打开复习卡。 ");
+    } catch (error) {
+      addMessage("agent", `这次练习没有生成成功：${error.message}。你可以直接重新发送刚才的要求。`);
+      window.LearningActivity.finish("练习暂时没有生成", "你的要求已经保留，可以直接重试。 ");
+    } finally {
+      state.busy = false;
+      $("#sendBtn").disabled = false;
+    }
+  }
+
   async function reviseCurrentLesson(instruction) {
     state.busy = true;
     addMessage("user", instruction);
@@ -228,6 +262,10 @@
   async function sendMessage(message, { echoUser = true } = {}) {
     const value = message.trim();
     if (!value || state.busy) return;
+    if (state.ready && isSupplementalPracticeRequest(value)) {
+      await generateSupplementalPractice(value);
+      return;
+    }
     if (state.ready && isLessonRevisionRequest(value)) {
       await reviseCurrentLesson(value);
       return;
@@ -752,39 +790,8 @@
 
   function showAnkiRating() {
     if (window.OnboardingController.active) return;
-    $("#choiceTrayHint").textContent = "这张卡回忆起来有多顺？"; $("#choiceProgress").textContent = "Anki 式记录";
-    $("#choiceTray").classList.remove("is-plan-confirmation");
-    const ratings = [
-      { label: "没想起来", value: "forgot", tone: "red", detail: "很快再出现" },
-      { label: "稍微有点困难", value: "hard", tone: "yellow", detail: "缩短复习间隔" },
-      { label: "顺利", value: "easy", tone: "green", detail: "延长复习间隔" },
-    ];
-    $("#inlineChoices").replaceChildren(...ratings.map((rating, index) => {
-      const button = document.createElement("button"); button.type = "button"; button.className = `inline-choice rating-${rating.tone}`;
-      const badge = document.createElement("span"); badge.className = "inline-choice-index"; badge.textContent = String(index + 1);
-      const copy = document.createElement("span"); const strong = document.createElement("strong"); strong.textContent = rating.label; const small = document.createElement("small"); small.textContent = rating.detail; copy.append(strong, small); button.append(badge, copy);
-      button.addEventListener("click", async () => {
-        button.disabled = true;
-        try {
-          const response = await fetch("/api/review/rate", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: USER_ID,
-              card_id: `topic.${String(state.context?.topic || "current").toLowerCase().replace(/[^a-z0-9]+/g, "-") || "current"}`,
-              title: state.context?.current_task || state.context?.topic || "当前知识点",
-              rating: rating.value,
-            }),
-          });
-          const saved = await response.json();
-          if (!response.ok) throw new Error("复习记录没有保存成功");
-          addMessage("user", rating.label);
-          addMessage("agent", `已记录。这个知识点会在 ${saved.next_review} 再出现。`);
-          $("#choiceTray").hidden = true;
-        } catch (error) { showToast(error.message); button.disabled = false; }
-      });
-      return button;
-    }));
-    $("#choiceTray").hidden = false;
+    $("#settingsDialog").close();
+    window.InterviewBankController.startReview();
   }
 
   async function openReminderSettings() {

@@ -49,13 +49,23 @@ def rate_card(
     cards = payload["cards"]
     previous = cards.get(card_id) if isinstance(cards.get(card_id), dict) else {}
     attempts = int(previous.get("attempts") or 0) + 1
+    next_review = (selected_today + timedelta(days=INTERVAL_DAYS[rating])).isoformat()
+    history = list(previous.get("review_history") or [])
+    history.append({
+        "rating": rating,
+        "reviewed_at": selected_today.isoformat(),
+        "interval_days": INTERVAL_DAYS[rating],
+        "next_review": next_review,
+    })
     card = {
+        **previous,
         "card_id": card_id,
         "title": title[:240],
         "last_rating": rating,
         "attempts": attempts,
         "last_reviewed": selected_today.isoformat(),
-        "next_review": (selected_today + timedelta(days=INTERVAL_DAYS[rating])).isoformat(),
+        "next_review": next_review,
+        "review_history": history,
     }
     cards[card_id] = card
     path = _path(server_root, user_id)

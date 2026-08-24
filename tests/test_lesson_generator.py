@@ -37,6 +37,39 @@ def model_lesson_json(knowledge_point_id: str, title: str = "package main 的作
     )
 
 
+def test_interview_route_requires_answered_short_answer_cards() -> None:
+    payload = json.loads(model_lesson_json("jvm-memory"))
+    payload["language"] = "java"
+    with pytest.raises(ValueError, match="interview prompts"):
+        parse_lesson_response(
+            json.dumps(payload, ensure_ascii=False), topic="Java 后端面试",
+            route="interview_sprint", knowledge_point_id="jvm-memory", session_minutes=25,
+        )
+
+    payload["interview_prompts"] = [{
+        "id": "heap-stack",
+        "question": "请解释 JVM 堆和栈的主要区别。",
+        "reference_answer": "栈主要保存线程私有的调用帧；堆主要保存线程共享的对象实例。",
+        "answer_structure": ["先讲归属", "再讲存放内容", "最后讲生命周期"],
+        "common_omissions": ["忘记说明线程私有与共享"],
+        "follow_ups": [{"prompt": "对象一定在堆上吗？", "answer_points": ["逃逸分析", "实现细节"]}],
+    }, {
+        "id": "gc-roots",
+        "question": "GC Roots 为什么能判断对象是否可达？",
+        "reference_answer": "从一组确定存活的根节点向下遍历引用链，不可达对象可作为回收候选。",
+        "answer_structure": ["定义根节点", "说明可达性遍历"],
+        "common_omissions": ["把可达直接等同于立刻回收"],
+        "follow_ups": [],
+    }]
+    bundle = parse_lesson_response(
+        json.dumps(payload, ensure_ascii=False), topic="Java 后端面试",
+        route="interview_sprint", knowledge_point_id="jvm-memory", session_minutes=25,
+    )
+
+    assert len(bundle.manifest.interview_prompts) == 2
+    assert bundle.manifest.interview_prompts[0].reference_answer.startswith("栈主要")
+
+
 def test_generator_prompt_contains_profile_point_prerequisites_evidence_and_time(tmp_path: Path) -> None:
     curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
     captured: dict[str, str] = {}

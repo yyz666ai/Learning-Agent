@@ -654,11 +654,13 @@ def test_learning_sidebar_is_compact_and_keeps_more_space_for_outline() -> None:
 
 def test_anki_ratings_and_verified_confetti_are_present() -> None:
     js = read(APP_JS)
+    bank = read(INTERVIEW_JS)
     css = read(STYLE)
-    assert "没想起来" in js
-    assert "稍微有点困难" in js
-    assert "顺利" in js
-    assert 'fetch("/api/review/rate"' in js
+    assert "没想起来" in bank
+    assert "稍微有点困难" in bank
+    assert "顺利" in bank
+    assert 'fetch("/api/practice/review/rate"' in bank
+    assert "InterviewBankController.startReview" in js
     assert "result.correct === true && result.verified === true" in js
     assert ".confetti-piece" in css
     assert "1500ms" in css
@@ -751,7 +753,7 @@ def test_startup_home_uses_left_projects_and_free_text_for_new_intent() -> None:
     assert "showOnboardingHome" in js
     assert "openLearningProject" in js
     assert "openBank" in interview_js
-    assert "window.InterviewBankController = { init, intake, load, shouldIntake, openBank }" in interview_js
+    assert "window.InterviewBankController = { init, intake, load, shouldIntake, openBank, startReview, openPracticeItem }" in interview_js
 
 
 def test_learning_archive_and_new_project_flow_are_unambiguous_and_reversible() -> None:
@@ -854,3 +856,39 @@ def test_run_script_prepares_workspace_on_first_start() -> None:
     assert '"$PYTHON" -m backend.publish' in source
     assert 'if [[ ! -s ".secrets.env" ]]' in source
     assert "replace_with_your_deepseek_api_key" in source
+
+
+def test_question_bank_has_real_anki_review_session_controls() -> None:
+    html = read(INDEX)
+    bank = read(INTERVIEW_JS)
+
+    assert 'id="startBankReviewBtn"' in html
+    assert 'id="bankDueCount"' in html
+    assert 'id="reviewCardPanel"' in html
+    assert 'id="revealReviewAnswerBtn"' in html
+    assert 'id="reviewRatingActions"' in html
+    assert "/api/practice/review/session" in bank
+    assert "/api/practice/review/reveal" in bank
+    assert "/api/practice/review/rate" in bank
+    assert "没想起来" in bank
+    assert "稍微有点困难" in bank
+    assert "顺利" in bank
+
+
+def test_chat_can_generate_supplemental_practice_into_the_bank() -> None:
+    app = read(APP_JS)
+    bank = read(INTERVIEW_JS)
+
+    assert "isSupplementalPracticeRequest" in app
+    assert 'fetch("/api/practice/supplemental/generate"' in app
+    assert "openPracticeItem" in bank
+    assert "startReview" in bank
+
+
+def test_interview_course_shows_answered_short_answer_cards_on_final_slide() -> None:
+    html = read(INDEX)
+    artifact = read(ARTIFACT_JS)
+
+    assert 'id="lessonInterviewPrompts"' in html
+    assert "renderInterviewPrompts" in artifact
+    assert "参考答案" in artifact
