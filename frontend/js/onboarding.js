@@ -15,7 +15,8 @@
     sessionMinutes: 25, deadlineDays: null, teachingPreference: "balanced",
     conceptScope: "not_applicable", slots: { ...EMPTY_SLOTS }, intentHistory: [],
     clarificationCount: 0, diagnostic: null, pendingAction: null, callbacks: {},
-    busy: false, confirmationResult: null, existingProject: null, existingDecision: null,
+    busy: false, confirmationResult: null, generationId: null,
+    existingProject: null, existingDecision: null,
   };
   const byId = (id) => document.getElementById(id);
 
@@ -46,6 +47,21 @@
       teaching_preference: state.teachingPreference,
       concept_scope: state.conceptScope,
     };
+  }
+
+  async function cancelActiveGeneration() {
+    const generationId = state.generationId;
+    if (!generationId) return false;
+    state.generationId = null;
+    try {
+      const result = await request("/api/generations/cancel", {
+        user_id: userId, generation_id: generationId,
+      });
+      return Boolean(result.cancelled);
+    } catch (error) {
+      // Restoring or switching the project also invalidates the lease server-side.
+      return false;
+    }
   }
 
   function addAgent(content) { state.callbacks.addAgent?.(content); }
@@ -289,11 +305,15 @@
     global.LearningActivity?.startPlanGeneration?.();
     try {
       const result = await request("/api/onboarding/confirm", { ...submission(), ...extra });
+      state.generationId = result.generation_id;
       const controller = new AbortController();
-      const personalizationTimeout = window.setTimeout(() => controller.abort(), 300000);
+      const personalizationTimeout = window.setTimeout(() => controller.abort(), 660000);
       try {
-        const personalized = await request("/api/plans/personalize", submission(), { signal: controller.signal });
+        const personalized = await request("/api/plans/personalize", {
+          ...submission(), generation_id: result.generation_id,
+        }, { signal: controller.signal });
         if (!personalized.personalized) throw new Error(personalized.user_message || "模型还没有生成合格的详细课程大纲，请点击重试。");
+        state.generationId = null;
         state.confirmationResult = result; state.stage = "plan_review";
         await state.callbacks.onPlanReady?.(personalized);
         addAgent(state.goalRoute === "concept_clarity"
@@ -303,8 +323,9 @@
         global.LearningActivity?.finish("专属大纲已生成", "请先阅读并确认，课程不会自动开始。");
       } finally { window.clearTimeout(personalizationTimeout); }
     } catch (error) {
+      await cancelActiveGeneration();
       const message = error?.name === "AbortError" || /aborted/i.test(error?.message || "")
-        ? "详细课程研究与生成超过 5 分钟，请重试；你刚才的主题和目标都已保留。"
+        ? "详细课程研究与生成超过 11 分钟，请重试；你刚才的主题和目标都已保留。"
         : error?.message || "详细课程暂时没有生成成功，请重试。";
       showError(new Error(message));
       global.LearningActivity?.finish("生成暂时中断", "你的选择已保留，可以直接重试。");
@@ -400,7 +421,7 @@
       sessionMinutes: 25, deadlineDays: null, teachingPreference: "balanced",
       conceptScope: "not_applicable", slots: { ...EMPTY_SLOTS }, intentHistory: [],
       clarificationCount: 0, diagnostic: null, pendingAction: null, confirmationResult: null,
-      existingProject: null, existingDecision: null,
+      generationId: null, existingProject: null, existingDecision: null,
     });
     if (initialTopic.trim()) analyzeIntent(initialTopic);
     else if (callbacks.restorePersistedIntent) {
@@ -414,5 +435,8 @@
     byId("retryOnboardingBtn").addEventListener("click", () => state.pendingAction?.());
   }, { once: true });
 
-  global.OnboardingController = { begin, handleText, stop, get active() { return state.active; }, userId };
+  global.OnboardingController = {
+    begin, handleText, stop, cancelActiveGeneration,
+    get active() { return state.active; }, userId,
+  };
 }(window));

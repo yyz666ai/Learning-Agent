@@ -271,7 +271,7 @@
     byId("pageDots").replaceChildren();
   }
 
-  async function loadCurrentLesson() {
+  async function loadCurrentLesson(retryStale = true) {
     byId("lessonLoadError").hidden = true;
     startActivity("正在准备讲义", "正在检查当前知识点，并生成这一节的讲解与练习。 ");
     try {
@@ -294,6 +294,13 @@
           body: JSON.stringify({ user_id: userId }),
         });
         payload = await response.json().catch(() => ({}));
+      }
+      if (!response.ok && payload.detail?.recovery === "stale_generation") {
+        if (retryStale) {
+          finishActivity("项目已经切换", "迟到课件已丢弃，正在读取当前项目。 ");
+          return loadCurrentLesson(false);
+        }
+        throw new Error("项目已经切换，请确认当前学习计划后再生成讲义。");
       }
       if (!response.ok) throw new Error(payload.detail?.message || "课程暂时没有准备好。");
       const manifest = applyManifest(payload);
@@ -365,6 +372,11 @@
         body: JSON.stringify({ user_id: userId, force: decision.verdict !== "advance", remediation: decision.verdict === "advance" ? "" : decision.feedback, next_knowledge_point_id: decision.next_knowledge_point_id }),
       });
       const payload = await response.json().catch(() => ({}));
+      if (!response.ok && payload.detail?.recovery === "stale_generation") {
+        await loadCurrentLesson(false);
+        finishActivity("项目已经切换", "已安全丢弃旧课件，并读取当前课程。 ");
+        return;
+      }
       if (!response.ok) throw new Error(payload.detail?.message || "下一步课程没有生成成功，请重试。");
       applyManifest(payload);
       document.dispatchEvent(new CustomEvent("learning-agent:lesson-transition", { detail: decision }));

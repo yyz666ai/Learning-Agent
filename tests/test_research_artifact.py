@@ -7,6 +7,45 @@ import pytest
 from backend.research_artifact import load_valid_research, render_research_evidence, research_path
 
 
+def test_research_paths_do_not_collapse_distinct_chinese_topics(tmp_path) -> None:
+    frontend = research_path(tmp_path, "learner", "AI前端")
+    backend = research_path(tmp_path, "learner", "AI后端")
+
+    assert frontend != backend
+    assert "前端" in frontend.parent.name
+    assert "后端" in backend.parent.name
+
+
+def test_research_loader_recovers_exact_topic_from_legacy_agent_folder(tmp_path) -> None:
+    research_root = tmp_path / "userdir" / "u_learner" / "research"
+    wrong_path = research_root / "ai" / "sources.json"
+    matching_path = research_root / "ai-frontend" / "sources.json"
+    wrong_path.parent.mkdir(parents=True)
+    matching_path.parent.mkdir(parents=True)
+
+    def payload(topic: str) -> dict:
+        return {
+            "topic": topic,
+            "researched_at": "2026-08-24",
+            "version": "current",
+            "sources": [{"id": "docs", "title": "AI SDK", "url": "https://ai-sdk.dev/docs/introduction"}],
+            "teaching_facts": [{"statement": "AI SDK 支持流式 AI 界面。", "source_ids": ["docs"]}],
+            "coverage_areas": ["前端基础", "模型 API", "流式交互", "安全", "面试表达"],
+            "prerequisites": ["JavaScript"],
+            "graduation_project": "完成 AI 前端模拟面试",
+        }
+
+    wrong_path.write_text(json.dumps(payload("AI"), ensure_ascii=False), encoding="utf-8")
+    matching_path.write_text(json.dumps(payload("AI前端"), ensure_ascii=False), encoding="utf-8")
+
+    artifact = load_valid_research(tmp_path, "learner", "AI前端")
+    canonical = research_path(tmp_path, "learner", "AI前端")
+
+    assert artifact.topic == "AI前端"
+    assert canonical.exists()
+    assert json.loads(canonical.read_text(encoding="utf-8"))["topic"] == "AI前端"
+
+
 def test_common_agent_aliases_are_canonicalized_without_losing_sources(tmp_path) -> None:
     path = research_path(tmp_path, "learner", "LangGraph")
     path.parent.mkdir(parents=True)

@@ -133,6 +133,30 @@ def test_confirm_onboarding_writes_resolvable_plan(tmp_path):
     assert state["diagnosis"]["gaps"] == ["并发心智模型"]
 
 
+def test_plan_paths_are_stable_and_do_not_collide_for_unicode_topics(tmp_path):
+    topics = ["AI", "AI前端", "机器学习", "深度学习"]
+    paths: list[str] = []
+
+    for index, topic in enumerate(topics):
+        selected = submission(
+            user_id=f"unicode-{index}", level="zero", topic=topic,
+            goal_route="interview_sprint" if "AI" in topic else "foundation_engineer",
+        )
+        result = confirm_onboarding(tmp_path, selected, diagnosis=None)
+        paths.append(str(result["active_plan"]))
+
+    assert len(set(paths)) == len(topics)
+    assert all(path.startswith("plans/") and path.endswith("-plan.md") for path in paths)
+    assert "ai前端" in paths[1]
+
+    repeated = confirm_onboarding(
+        tmp_path,
+        submission(user_id="unicode-repeat", level="zero", topic="AI前端", goal_route="interview_sprint"),
+        diagnosis=None,
+    )
+    assert repeated["active_plan"].split("/", 1)[1] == paths[1].split("/", 1)[1]
+
+
 def test_confirm_onboarding_writes_machine_readable_profile_with_intent_slots(tmp_path):
     persist_intent_decision(
         tmp_path,

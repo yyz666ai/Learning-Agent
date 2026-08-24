@@ -695,6 +695,7 @@
   async function restoreCurrentCourse() {
     const snapshot = state.onboardingSnapshot;
     if (!snapshot && !state.projectSnapshotId) return;
+    await window.OnboardingController?.cancelActiveGeneration?.();
     if (state.projectSnapshotId) {
       const response = await fetch("/api/projects/restore", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -786,6 +787,10 @@
       if (!healthResponse.ok) throw new Error("学习服务未连接");
       $("#statusDot").classList.add("is-online"); setText("#connectionText", "已连接");
       const context = await contextResponse.json();
+      if (context.profile_status !== "confirmed" && context.profile_status !== "ready") {
+        state.projectSnapshotId = null;
+        localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT);
+      }
       if (context.plan_status === "awaiting_confirmation") {
         state.startupGateActive = false;
         await refreshProjectArchive();

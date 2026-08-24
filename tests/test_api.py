@@ -99,6 +99,49 @@ def test_current_lesson_registers_practice_and_check_attempt_updates_unified_ban
     assert any(item["source"] == "homework" for item in payload["questions"])
 
 
+def test_lesson_generation_discards_result_when_project_changes_before_save(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    curriculum = curriculum_from_plan(
+        GO_PLAN, topic="Go", route="foundation_engineer", level="zero",
+    )
+    bundle = parse_lesson_response(
+        model_lesson_json(curriculum.current_knowledge_point_id),
+        topic="Go", route="foundation_engineer",
+        knowledge_point_id=curriculum.current_knowledge_point_id,
+        session_minutes=25, chapter=curriculum.current_chapter(),
+    )
+    user = tmp_path / "userdir/u_learner"
+    (user / "plans").mkdir(parents=True)
+    (user / "plans/go.md").write_text("# Go plan\n", encoding="utf-8")
+    (user / "profile.md").write_text("# Go learner\n", encoding="utf-8")
+    (user / "learning-state.json").write_text(json.dumps({
+        "profile_status": "confirmed", "plan_status": "confirmed",
+        "active_topic": "Go", "active_plan": "plans/go.md",
+        "goal_route": "foundation_engineer", "revision": 3,
+        "session_minutes": 25, "recent_evidence": [],
+    }), encoding="utf-8")
+    (user / "curriculum.json").write_text(
+        curriculum.model_dump_json(indent=2), encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
+
+    def switch_project_during_generation(*_args, **kwargs):
+        assert kwargs["persist"] is False
+        state = json.loads((user / "learning-state.json").read_text(encoding="utf-8"))
+        state.update({"active_topic": "Python", "revision": 4})
+        (user / "learning-state.json").write_text(json.dumps(state), encoding="utf-8")
+        return bundle
+
+    monkeypatch.setattr(main, "generate_and_save_lesson", switch_project_during_generation)
+    response = client.post("/api/lesson/generate", json={"user_id": "learner", "force": True})
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["recovery"] == "stale_generation"
+    assert not (user / "lessons").exists()
+
+
 def test_unified_review_api_hides_then_reveals_answer_and_saves_rating(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
@@ -366,7 +409,8 @@ def test_cached_lesson_is_reloaded_through_current_teaching_contract_before_use(
 
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
     monkeypatch.setattr(main, "read_learning_context", lambda *_: {
-        "profile_status": "confirmed", "recent_evidence": [], "session_minutes": 25,
+        "profile_status": "confirmed", "plan_status": "confirmed",
+        "recent_evidence": [], "session_minutes": 25,
     })
     monkeypatch.setattr(main, "load_curriculum", lambda *_: curriculum)
     monkeypatch.setattr(main, "load_lesson_bundle", fake_load)
@@ -377,6 +421,8 @@ def test_cached_lesson_is_reloaded_through_current_teaching_contract_before_use(
     monkeypatch.setattr(main, "load_valid_research", lambda *_: (_ for _ in ()).throw(OSError()))
     monkeypatch.setattr(main, "generate_and_save_lesson", fake_generate)
     monkeypatch.setattr(main, "ensure_practice_workspace", lambda *_: tmp_path)
+    monkeypatch.setattr(main, "project_guard", lambda *_: object())
+    monkeypatch.setattr(main, "validate_project_guard", lambda *_: None)
 
     response = client.post("/api/lesson/generate", json={"user_id": "learner"})
 
@@ -1314,7 +1360,8 @@ def test_plan_personalization_uses_codex_and_persists_valid_markdown(
     payload = onboarding_payload("plan-codex")
     payload["topic"] = {"type": "custom", "value": "FastAPI 发 API"}
     payload["goal_route"] = "project_delivery"
-    client.post("/api/onboarding/confirm", json=payload)
+    confirmation = client.post("/api/onboarding/confirm", json=payload).json()
+    payload["generation_id"] = confirmation["generation_id"]
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     captured: dict[str, str] = {}
 
@@ -1362,6 +1409,57 @@ def test_plan_personalization_uses_codex_and_persists_valid_markdown(
     assert "### 阶段 1" in plan
 
 
+def test_plan_personalization_rejects_a_generation_from_an_old_project(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    payload = onboarding_payload("stale-plan")
+    confirmed = client.post("/api/onboarding/confirm", json=payload)
+    called = False
+
+    def forbidden_chat(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("stale generation must be rejected before model execution")
+
+    monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
+    monkeypatch.setattr(main, "chat", forbidden_chat)
+    response = client.post("/api/plans/personalize", json={
+        **payload,
+        "generation_id": "0" * 32,
+    })
+
+    assert confirmed.status_code == 200
+    assert confirmed.json()["generation_id"]
+    assert response.status_code == 409
+    assert response.json()["detail"]["recovery"] == "stale_generation"
+    assert called is False
+
+
+def test_cancel_plan_generation_invalidates_only_the_matching_lease(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    payload = onboarding_payload("cancel-plan")
+    confirmed = client.post("/api/onboarding/confirm", json=payload).json()
+
+    wrong = client.post("/api/generations/cancel", json={
+        "user_id": "cancel-plan", "generation_id": "f" * 32,
+    })
+    cancelled = client.post("/api/generations/cancel", json={
+        "user_id": "cancel-plan", "generation_id": confirmed["generation_id"],
+    })
+
+    assert wrong.status_code == 200
+    assert wrong.json()["cancelled"] is False
+    assert cancelled.status_code == 200
+    assert cancelled.json()["cancelled"] is True
+
+
 def test_concept_clarity_personalization_accepts_a_short_plan_without_daily_time(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -1374,7 +1472,8 @@ def test_concept_clarity_personalization_accepts_a_short_plan_without_daily_time
         "goal_route": "concept_clarity",
         "concept_scope": "meaning_only",
     })
-    client.post("/api/onboarding/confirm", json=payload)
+    confirmation = client.post("/api/onboarding/confirm", json=payload).json()
+    payload["generation_id"] = confirmation["generation_id"]
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     captured: dict[str, str] = {}
 
@@ -1427,10 +1526,16 @@ def test_plan_must_be_confirmed_before_current_lesson_opens(
     client.post("/api/onboarding/confirm", json=payload)
 
     blocked = client.get("/api/lesson/current?user_id=plan-review")
+    premature = client.post("/api/plans/confirm", json={"user_id": "plan-review"})
+    state_path = tmp_path / "userdir/u_plan-review/learning-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update({"plan_status": "awaiting_confirmation", "generation_id": None, "generation_status": "completed"})
+    state_path.write_text(json.dumps(state), encoding="utf-8")
     confirmed = client.post("/api/plans/confirm", json={"user_id": "plan-review"})
 
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["recovery"] == "confirm_plan"
+    assert premature.status_code == 409
     assert confirmed.status_code == 200
     assert confirmed.json()["plan_status"] == "confirmed"
     state = json.loads((tmp_path / "userdir/u_plan-review/learning-state.json").read_text(encoding="utf-8"))
@@ -1470,8 +1575,9 @@ def test_invalid_codex_plan_keeps_detailed_fallback(
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
     payload = onboarding_payload("plan-fallback")
     payload["topic"] = {"type": "custom", "value": "FastAPI 发 API"}
-    client.post("/api/onboarding/confirm", json=payload)
-    plan_path = tmp_path / "userdir/u_plan-fallback/plans/fastapi-api-plan.md"
+    confirmation = client.post("/api/onboarding/confirm", json=payload).json()
+    payload["generation_id"] = confirmation["generation_id"]
+    plan_path = tmp_path / "userdir/u_plan-fallback" / confirmation["active_plan"]
     fallback = plan_path.read_text(encoding="utf-8")
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     monkeypatch.setattr(main, "chat", lambda *_: "太宽泛了，随便学学。")
@@ -1491,7 +1597,8 @@ def test_codex_timeout_is_reported_as_generation_failure_not_plan_validation(
 ) -> None:
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
     payload = onboarding_payload("plan-timeout")
-    client.post("/api/onboarding/confirm", json=payload)
+    confirmation = client.post("/api/onboarding/confirm", json=payload).json()
+    payload["generation_id"] = confirmation["generation_id"]
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     monkeypatch.setattr(main, "chat", lambda *_: "[超时] Codex 在限定时间内没有完成")
 

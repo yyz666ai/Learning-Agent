@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -195,6 +196,10 @@ def test_current_lesson_requests_model_generation_when_manifest_is_missing(
         GO_PLAN, topic="Go", route="foundation_engineer", level="zero",
     )
     save_curriculum(tmp_path, "go-learner", curriculum)
+    state_path = tmp_path / "userdir/u_go-learner/learning-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update({"plan_status": "awaiting_confirmation", "generation_id": None, "generation_status": "completed"})
+    state_path.write_text(json.dumps(state), encoding="utf-8")
     client.post("/api/plans/confirm", json={"user_id": "go-learner"})
 
     response = client.get("/api/lesson/current?user_id=go-learner")
@@ -218,6 +223,11 @@ def test_generate_lesson_reuses_a_verified_chapter_without_calling_the_model(
     )
     curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
     save_curriculum(tmp_path, "cached-go", curriculum)
+    state_path = tmp_path / "userdir/u_cached-go/learning-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update({"plan_status": "awaiting_confirmation", "generation_id": None, "generation_status": "completed"})
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    client.post("/api/plans/confirm", json={"user_id": "cached-go"})
     bundle = parse_lesson_response(
         model_lesson_json(curriculum.current_knowledge_point_id), topic="Go", route="foundation_engineer",
         knowledge_point_id=curriculum.current_knowledge_point_id, session_minutes=25,
@@ -279,6 +289,10 @@ def test_generate_lesson_api_persists_model_manifest_and_grades_saved_answers(
         GO_PLAN, topic="Go", route="foundation_engineer", level="zero",
     )
     save_curriculum(tmp_path, "go-learner", curriculum)
+    state_path = tmp_path / "userdir/u_go-learner/learning-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update({"plan_status": "awaiting_confirmation", "generation_id": None, "generation_status": "completed"})
+    state_path.write_text(json.dumps(state), encoding="utf-8")
     client.post("/api/plans/confirm", json={"user_id": "go-learner"})
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     captured: dict[str, str] = {}
@@ -344,6 +358,11 @@ def test_generate_lesson_api_returns_retryable_error_without_fixed_fallback(
         tmp_path, "java-learner",
         curriculum_from_plan(java_plan, topic="Java", route="foundation_engineer", level="zero"),
     )
+    state_path = tmp_path / "userdir/u_java-learner/learning-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update({"plan_status": "awaiting_confirmation", "generation_id": None, "generation_status": "completed"})
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    client.post("/api/plans/confirm", json={"user_id": "java-learner"})
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     monkeypatch.setattr(main, "chat", lambda *_: model_lesson_json("jdk-jvm"))
 

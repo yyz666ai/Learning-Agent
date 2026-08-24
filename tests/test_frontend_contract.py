@@ -205,6 +205,15 @@ def test_current_project_is_snapshotted_before_new_intent_writes_but_lesson_stay
     assert confirmed.index("localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT)") < confirmed.index("await refreshProjectArchive()")
 
 
+def test_fresh_onboarding_discards_an_orphaned_snapshot_id_from_browser_storage() -> None:
+    app = read(APP_JS)
+    initialize = app[app.index("async function initialize") : app.index("function showAnkiRating")]
+
+    assert 'context.profile_status !== "confirmed"' in initialize
+    assert "state.projectSnapshotId = null" in initialize
+    assert "localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT)" in initialize
+
+
 def test_concept_plan_review_uses_relevant_choices_and_refreshes_real_duration() -> None:
     onboarding = read(ONBOARDING_JS)
     app = read(APP_JS)
@@ -260,16 +269,30 @@ def test_onboarding_requires_a_model_personalized_plan_before_opening_lesson() -
     assert 'request("/api/onboarding/confirm"' in confirm
     assert 'request("/api/plans/personalize"' in confirm
     assert confirm.index('request("/api/onboarding/confirm"') < confirm.index('request("/api/plans/personalize"')
+    assert "result.generation_id" in confirm
+    assert "generation_id: result.generation_id" in confirm
     assert "catch" in confirm
     assert "onConfirmed" in confirm
     assert "AbortController" in confirm
-    assert "300000" in confirm
+    assert "660000" in confirm
     assert "if (!personalized.personalized) throw new Error" in confirm
     assert "onPlanReady" in confirm
     assert 'state.stage = "plan_review"' in confirm
     assert confirm.index('state.stage = "plan_review"') < confirm.index('request("/api/plans/confirm"')
     assert "兜底计划" not in confirm
-    assert "详细课程研究与生成超过 5 分钟" in confirm
+    assert "详细课程研究与生成超过 11 分钟" in confirm
+    assert "cancelActiveGeneration" in confirm
+
+
+def test_project_restore_cancels_the_active_generation_before_restoring_snapshot() -> None:
+    app = read(APP_JS)
+    restore = app[app.index("async function restoreCurrentCourse") : app.index("function actionChoice")]
+    onboarding = read(ONBOARDING_JS)
+
+    assert "window.OnboardingController?.cancelActiveGeneration" in restore
+    assert restore.index("cancelActiveGeneration") < restore.index('fetch("/api/projects/restore"')
+    assert 'request("/api/generations/cancel"' in onboarding
+    assert "cancelActiveGeneration," in onboarding
 
 
 def test_plan_is_rendered_and_confirmed_before_lesson_generation() -> None:
@@ -323,6 +346,14 @@ def test_artifact_uses_structured_lesson_api_and_real_practice_path() -> None:
     assert 'id="practicePath"' in html
     assert "pointermove" in js and "ArrowLeft" in js and "ArrowRight" in js
     assert "localStorage.setItem(widthKey" in js
+
+
+def test_artifact_recovers_from_a_stale_lesson_generation_without_generic_fetch_error() -> None:
+    js = read(ARTIFACT_JS)
+
+    assert 'payload.detail?.recovery === "stale_generation"' in js
+    assert "loadCurrentLesson(false)" in js
+    assert "项目已经切换" in js
 
 
 def test_practice_folder_is_opened_instead_of_copying_its_path() -> None:

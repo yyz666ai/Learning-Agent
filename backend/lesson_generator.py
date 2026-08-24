@@ -535,6 +535,7 @@ def generate_and_save_lesson(
     model_call: Callable[[str], str],
     remediation: str = "",
     research_evidence: str = "",
+    persist: bool = True,
 ) -> LessonBundle:
     prompt = build_lesson_prompt(
         curriculum,
@@ -624,5 +625,6 @@ def generate_and_save_lesson(
                 marker = re.sub(r"\s+", "", point.title).casefold()
                 if marker not in re.sub(r"\s+", "", narrative).casefold():
                     raise ValueError("repaired lesson drifted away from a covered knowledge point")
-    save_lesson_bundle(server_root, user_id, bundle)
+    if persist:
+        save_lesson_bundle(server_root, user_id, bundle)
     return bundle

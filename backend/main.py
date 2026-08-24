@@ -33,6 +33,7 @@ try:
     from .learning_content import default_exercise, read_learning_context
     from .learning_intent import IntentDecision, IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
     from .knowledge_library import load_completed_chapter, save_completed_chapter
+    from .generation_transaction import GenerationStaleError, begin_generation_lease, cancel_generation, commit_plan_generation, project_guard, project_lock, validate_generation_lease, validate_project_guard
     from .lesson_generator import generate_and_save_lesson, load_lesson_bundle, save_lesson_bundle
     from .lesson_manifest import ensure_practice_workspace, resolve_practice_folder
     from .lesson_progression import CompletionEvidence, QuizAttempt, apply_completion_decision, evaluate_completion
@@ -57,6 +58,7 @@ except ImportError:
     from learning_content import default_exercise, read_learning_context
     from learning_intent import IntentDecision, IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
     from knowledge_library import load_completed_chapter, save_completed_chapter
+    from generation_transaction import GenerationStaleError, begin_generation_lease, cancel_generation, commit_plan_generation, project_guard, project_lock, validate_generation_lease, validate_project_guard
     from lesson_generator import generate_and_save_lesson, load_lesson_bundle, save_lesson_bundle
     from lesson_manifest import ensure_practice_workspace, resolve_practice_folder
     from lesson_progression import CompletionEvidence, QuizAttempt, apply_completion_decision, evaluate_completion
@@ -178,6 +180,15 @@ class SupplementalPracticeRequest(ExerciseGenerateRequest):
 
 class OnboardingConfirmRequest(OnboardingSubmission):
     diagnostic_session_id: str | None = Field(default=None, max_length=64)
+
+
+class PlanPersonalizeRequest(OnboardingSubmission):
+    generation_id: str = Field(min_length=32, max_length=32, pattern=r"^[a-f0-9]{32}$")
+
+
+class GenerationCancelRequest(BaseModel):
+    user_id: str = Field(default="yang", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    generation_id: str = Field(min_length=32, max_length=32, pattern=r"^[a-f0-9]{32}$")
 
 
 class PlanConfirmRequest(BaseModel):
@@ -900,12 +911,24 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
     context = read_learning_context(request.user_id, SERVER_ROOT)
     if context["profile_status"] != "confirmed":
         raise HTTPException(status_code=409, detail={"recovery": "complete_onboarding"})
+    if context.get("plan_status") != "confirmed":
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "请先查看并确认学习计划，再开始第一章。", "recovery": "confirm_plan"},
+        )
     try:
         curriculum = load_curriculum(SERVER_ROOT, request.user_id)
     except (OSError, ValueError) as exc:
         raise HTTPException(
             status_code=409,
             detail={"message": "请先生成详细课程大纲。", "recovery": "generate_curriculum"},
+        ) from exc
+    try:
+        generation_guard = project_guard(SERVER_ROOT, request.user_id)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "当前学习项目状态不完整，请重新打开该项目。", "recovery": "reload_project"},
         ) from exc
     if not request.force:
         try:
@@ -963,11 +986,23 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
             remediation=request.remediation,
             research_evidence=research_evidence,
             model_call=lambda prompt: chat(request.user_id, prompt, release),
+            persist=False,
         )
-        ensure_practice_workspace(SERVER_ROOT, request.user_id, bundle.manifest)
-        PracticeBankStore(SERVER_ROOT).register_lesson(
-            request.user_id, bundle.manifest, answer_keys=bundle.answer_keys,
-        )
+        with project_lock(SERVER_ROOT, request.user_id):
+            validate_project_guard(SERVER_ROOT, request.user_id, generation_guard)
+            save_lesson_bundle(SERVER_ROOT, request.user_id, bundle)
+            ensure_practice_workspace(SERVER_ROOT, request.user_id, bundle.manifest)
+            PracticeBankStore(SERVER_ROOT).register_lesson(
+                request.user_id, bundle.manifest, answer_keys=bundle.answer_keys,
+            )
+    except GenerationStaleError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "生成期间学习项目已经切换，本次迟到课件已安全丢弃。",
+                "recovery": "stale_generation",
+            },
+        ) from exc
     except Exception as exc:
         error_type = "validation" if isinstance(exc, (ValueError, TypeError, json.JSONDecodeError)) else "provider"
         message = (
@@ -1355,13 +1390,38 @@ def onboarding_confirm(request: OnboardingConfirmRequest) -> dict[str, Any]:
             raise HTTPException(status_code=409, detail={"recovery": "continue_diagnosis"})
         diagnosis = summarize_diagnosis(session)
     try:
-        return confirm_onboarding(SERVER_ROOT, submission, diagnosis)
+        with project_lock(SERVER_ROOT, request.user_id):
+            return confirm_onboarding(SERVER_ROOT, submission, diagnosis)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post("/api/generations/cancel")
+def cancel_active_generation(request: GenerationCancelRequest) -> dict[str, Any]:
+    try:
+        cancelled = cancel_generation(SERVER_ROOT, request.user_id, request.generation_id)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail={"message": "生成任务标识无效。"}) from exc
+    return {"cancelled": cancelled, "generation_id": request.generation_id}
+
+
 @app.post("/api/plans/personalize")
-def personalize_plan(request: OnboardingSubmission) -> dict[str, Any]:
+def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
+    try:
+        lease_state = validate_generation_lease(SERVER_ROOT, request.user_id, request.generation_id)
+    except (GenerationStaleError, OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "这轮课程生成已被取消或已属于旧项目。", "recovery": "stale_generation"},
+        ) from exc
+    if (
+        str(lease_state.get("active_topic") or "") != request.topic.value
+        or str(lease_state.get("goal_route") or "") != request.goal_route
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "生成请求与当前学习项目不一致。", "recovery": "stale_generation"},
+        )
     try:
         plan_path = active_plan_path(SERVER_ROOT, request.user_id)
         fallback = plan_path.read_text(encoding="utf-8")
@@ -1409,18 +1469,38 @@ def personalize_plan(request: OnboardingSubmission) -> dict[str, Any]:
             route=request.goal_route,
             level=request.level_claim,
         )
-        save_curriculum(SERVER_ROOT, request.user_id, curriculum)
-        replace_plan(plan_path, validated)
-        set_plan_status(SERVER_ROOT, request.user_id, "awaiting_confirmation")
+        transaction = commit_plan_generation(
+            SERVER_ROOT,
+            request.user_id,
+            request.generation_id,
+            plan_markdown=validated,
+            curriculum=curriculum,
+        )
         plan_markdown = plan_path.read_text(encoding="utf-8")
         return {
             "personalized": True,
-            "active_plan": plan_path.name,
+            "active_plan": transaction["active_plan"],
             "current_knowledge_point_id": curriculum.current_knowledge_point_id,
             "plan_status": "awaiting_confirmation",
             "plan_markdown": plan_markdown,
         }
+    except GenerationStaleError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "生成期间学习项目已经切换，本次迟到结果已安全丢弃。", "recovery": "stale_generation"},
+        ) from exc
     except Exception as exc:
+        logger.exception(
+            "plan personalization failed stage=%s user_id=%s topic=%s generation_id=%s",
+            stage,
+            request.user_id,
+            request.topic.value,
+            request.generation_id,
+        )
+        try:
+            cancel_generation(SERVER_ROOT, request.user_id, request.generation_id)
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
         user_messages = {
             "research_validation": "课程和资料已经生成，但权威资料的结构检查没有通过。原计划仍然保留，请重试。",
             "curriculum_build": "详细计划已经生成，但转换为课程大纲时没有通过检查。原计划仍然保留，请重试。",
@@ -1438,8 +1518,14 @@ def personalize_plan(request: OnboardingSubmission) -> dict[str, Any]:
 @app.post("/api/plans/confirm")
 def confirm_plan(request: PlanConfirmRequest) -> dict[str, Any]:
     try:
-        active_plan_path(SERVER_ROOT, request.user_id)
-        set_plan_status(SERVER_ROOT, request.user_id, "confirmed")
+        with project_lock(SERVER_ROOT, request.user_id):
+            active_plan_path(SERVER_ROOT, request.user_id)
+            state = read_state(request.user_id).get("state") or {}
+            if state.get("plan_status") != "awaiting_confirmation":
+                raise ValueError("plan is not awaiting confirmation")
+            if state.get("generation_id") is not None or state.get("generation_status") == "active":
+                raise ValueError("plan generation is still active")
+            set_plan_status(SERVER_ROOT, request.user_id, "confirmed")
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=409, detail={"message": "学习计划还没有准备好，请先重新生成。"}) from exc
     return {"user_id": request.user_id, "plan_status": "confirmed"}
@@ -1456,6 +1542,10 @@ def revise_plan(request: PlanRevisionRequest) -> dict[str, Any]:
     if release is None:
         return {"revised": False, "reason": "codex_unavailable"}
     try:
+        generation_id = begin_generation_lease(SERVER_ROOT, request.user_id)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"revised": False, "reason": "stale_generation"}
+    try:
         generated = chat(
             request.user_id,
             build_plan_revision_prompt(request, current_plan, request.feedback),
@@ -1463,19 +1553,24 @@ def revise_plan(request: PlanRevisionRequest) -> dict[str, Any]:
         )
         validated = normalize_and_validate_plan(generated, request.topic.value, request.goal_route)
         if validated is None:
+            cancel_generation(SERVER_ROOT, request.user_id, generation_id)
             return {"revised": False, "reason": "validation_failed"}
         curriculum = curriculum_from_plan(
             validated, topic=request.topic.value, route=request.goal_route, level=request.level_claim,
         )
-        save_curriculum(SERVER_ROOT, request.user_id, curriculum)
-        replace_plan(plan_path, validated)
-        set_plan_status(SERVER_ROOT, request.user_id, "awaiting_confirmation")
+        commit_plan_generation(
+            SERVER_ROOT, request.user_id, generation_id,
+            plan_markdown=validated, curriculum=curriculum,
+        )
         return {
             "revised": True,
             "plan_status": "awaiting_confirmation",
             "plan_markdown": plan_path.read_text(encoding="utf-8"),
         }
+    except GenerationStaleError:
+        return {"revised": False, "reason": "stale_generation"}
     except Exception:
+        cancel_generation(SERVER_ROOT, request.user_id, generation_id)
         return {"revised": False, "reason": "generation_failed"}
 
 
@@ -1511,6 +1606,7 @@ def generate_curriculum(request: CurriculumGenerateRequest) -> dict[str, Any]:
     release = latest_release()
     if release is None:
         raise HTTPException(status_code=503, detail={"message": "课程模型暂时不可用。", "retryable": True})
+    generation_id = begin_generation_lease(SERVER_ROOT, request.user_id)
     try:
         raw_diagnosis = state.get("diagnosis")
         diagnosis = DiagnosisSummary.model_validate(raw_diagnosis) if isinstance(raw_diagnosis, dict) else None
@@ -1533,9 +1629,19 @@ def generate_curriculum(request: CurriculumGenerateRequest) -> dict[str, Any]:
         curriculum = curriculum_from_plan(
             validated, topic=topic, route=submission.goal_route, level=submission.level_claim,
         )
-        save_curriculum(SERVER_ROOT, request.user_id, curriculum)
-        replace_plan(plan_path, render_curriculum_plan(curriculum))
+        commit_plan_generation(
+            SERVER_ROOT, request.user_id, generation_id,
+            plan_markdown=render_curriculum_plan(curriculum),
+            curriculum=curriculum,
+            plan_status="confirmed",
+        )
+    except GenerationStaleError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "学习项目已经切换，迟到的大纲已安全丢弃。", "recovery": "stale_generation"},
+        ) from exc
     except Exception as exc:
+        cancel_generation(SERVER_ROOT, request.user_id, generation_id)
         raise HTTPException(
             status_code=502,
             detail={"message": "详细课程大纲生成失败，请重试。", "retryable": True},

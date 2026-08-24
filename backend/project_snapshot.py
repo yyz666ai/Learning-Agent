@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from .generation_transaction import project_lock
     from .learning_content import SAFE_USER_ID
 except ImportError:
+    from generation_transaction import project_lock
     from learning_content import SAFE_USER_ID
 
 
@@ -55,28 +57,30 @@ def _snapshot_dir(server_root: Path, user_id: str, snapshot_id: str) -> Path:
 
 
 def create_project_snapshot(server_root: Path, user_id: str) -> str:
-    user_dir = _user_dir(server_root, user_id)
-    snapshot_id = secrets.token_hex(12)
-    snapshot = _snapshot_dir(server_root, user_id, snapshot_id)
-    snapshot.mkdir(parents=True, exist_ok=False)
-    for relative in PROJECT_PATHS:
-        source = user_dir / relative
-        target = snapshot / relative
-        if source.is_dir():
-            shutil.copytree(source, target)
-        elif source.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-    return snapshot_id
+    with project_lock(server_root, user_id):
+        user_dir = _user_dir(server_root, user_id)
+        snapshot_id = secrets.token_hex(12)
+        snapshot = _snapshot_dir(server_root, user_id, snapshot_id)
+        snapshot.mkdir(parents=True, exist_ok=False)
+        for relative in PROJECT_PATHS:
+            source = user_dir / relative
+            target = snapshot / relative
+            if source.is_dir():
+                shutil.copytree(source, target)
+            elif source.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+        return snapshot_id
 
 
 def restore_project_snapshot(server_root: Path, user_id: str, snapshot_id: str) -> None:
-    user_dir = _user_dir(server_root, user_id)
-    snapshot = _snapshot_dir(server_root, user_id, snapshot_id)
-    if not snapshot.is_dir():
-        raise FileNotFoundError(snapshot)
-    _replace_project_paths(user_dir, snapshot)
-    shutil.rmtree(snapshot)
+    with project_lock(server_root, user_id):
+        user_dir = _user_dir(server_root, user_id)
+        snapshot = _snapshot_dir(server_root, user_id, snapshot_id)
+        if not snapshot.is_dir():
+            raise FileNotFoundError(snapshot)
+        _replace_project_paths(user_dir, snapshot)
+        shutil.rmtree(snapshot)
 
 
 def discard_project_snapshot(server_root: Path, user_id: str, snapshot_id: str) -> None:
@@ -187,27 +191,28 @@ def find_learning_project(server_root: Path, user_id: str, topic: str) -> dict[s
 def delete_learning_project(server_root: Path, user_id: str, project_id: str) -> list[dict[str, Any]]:
     """Delete one private project without crossing into shared curriculum paths."""
 
-    user_dir = _user_dir(server_root, user_id)
-    if project_id == "current":
-        if not (user_dir / "learning-state.json").is_file():
+    with project_lock(server_root, user_id):
+        user_dir = _user_dir(server_root, user_id)
+        if project_id == "current":
+            if not (user_dir / "learning-state.json").is_file():
+                raise FileNotFoundError(project_id)
+            for relative in PROJECT_PATHS:
+                target = user_dir / relative
+                if target.is_dir():
+                    shutil.rmtree(target)
+                elif target.exists():
+                    target.unlink()
+            pending = user_dir / ".project-snapshots"
+            if pending.is_dir():
+                shutil.rmtree(pending)
+            return list_learning_projects(server_root, user_id)
+        if not SNAPSHOT_ID.fullmatch(project_id):
+            raise ValueError("invalid project id")
+        archive = _archive_root(server_root, user_id) / project_id
+        if not archive.is_dir():
             raise FileNotFoundError(project_id)
-        for relative in PROJECT_PATHS:
-            target = user_dir / relative
-            if target.is_dir():
-                shutil.rmtree(target)
-            elif target.exists():
-                target.unlink()
-        pending = user_dir / ".project-snapshots"
-        if pending.is_dir():
-            shutil.rmtree(pending)
+        shutil.rmtree(archive)
         return list_learning_projects(server_root, user_id)
-    if not SNAPSHOT_ID.fullmatch(project_id):
-        raise ValueError("invalid project id")
-    archive = _archive_root(server_root, user_id) / project_id
-    if not archive.is_dir():
-        raise FileNotFoundError(project_id)
-    shutil.rmtree(archive)
-    return list_learning_projects(server_root, user_id)
 
 
 def _replace_project_paths(user_dir: Path, source: Path) -> None:
@@ -274,14 +279,15 @@ def _replace_project_paths(user_dir: Path, source: Path) -> None:
 
 
 def switch_project_archive(server_root: Path, user_id: str, project_id: str) -> dict[str, Any]:
-    if not SNAPSHOT_ID.fullmatch(project_id):
-        raise ValueError("invalid project id")
-    archive = _archive_root(server_root, user_id) / project_id
-    if not archive.is_dir():
-        raise FileNotFoundError(archive)
-    current_snapshot = create_project_snapshot(server_root, user_id)
-    archive_project_snapshot(server_root, user_id, current_snapshot)
-    _replace_project_paths(_user_dir(server_root, user_id), archive)
-    metadata = _metadata(archive, project_id, current=True)
-    shutil.rmtree(archive)
-    return metadata
+    with project_lock(server_root, user_id):
+        if not SNAPSHOT_ID.fullmatch(project_id):
+            raise ValueError("invalid project id")
+        archive = _archive_root(server_root, user_id) / project_id
+        if not archive.is_dir():
+            raise FileNotFoundError(archive)
+        current_snapshot = create_project_snapshot(server_root, user_id)
+        archive_project_snapshot(server_root, user_id, current_snapshot)
+        _replace_project_paths(_user_dir(server_root, user_id), archive)
+        metadata = _metadata(archive, project_id, current=True)
+        shutil.rmtree(archive)
+        return metadata

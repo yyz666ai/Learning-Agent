@@ -11,7 +11,7 @@ description: Use when a learner requests a library, framework, API, project, int
 
 - 目标型短课且知识库已有同版本资产：可以直接复用，不重复搜索。
 - 选择“完整掌握”或高级工程师路线时，即使知识库已有基础内容，也要核对知识覆盖、当前版本、工程实践与毕业项目需要的官方资料。
-- 当日已完成且通过深度字段校验的 `sources.json` 可直接复用；重试 Plan 时不重复搜索。文件缺失、过期、版本不清或覆盖不足才重新上网。
+- 当日已完成且通过深度字段校验的 `sources.json` 可直接复用；重试 Plan 时不重复搜索。复用前必须确认顶层 `topic` 与本轮用户主题一致；不得因目录名相似而复用另一主题。文件缺失、过期、版本不清或覆盖不足才重新上网。
 - 新库、新框架、新 API、陌生项目或版本敏感内容：必须研究。
 - 用户提供的帖子、截图和面试题只能作为线索，不能替代官方文档。
 
@@ -21,7 +21,7 @@ description: Use when a learner requests a library, framework, API, project, int
 2. 优先官方文档、官方仓库、标准或原始论文；必要时用 `curl` 读取具体页面。
 3. 只收集影响学习路线的事实：当前版本、先修、最小安装、核心心智模型、运行机制、测试调试、工程边界、性能安全、最小运行例和常见破坏性差异。
    面试路线必须使用“完整目标岗位 + 已确认技术栈”限定范围：优先官方技术文档、公开岗位能力要求和权威工程资料；公开面经只用来发现题型与表达场景，不把无来源答案当作事实。研究结果同时列出岗位能力域、技术栈核心主题、常见追问链和初学者先修缺口。
-4. 输出结构化 `sources.json`，字段必须严格使用：
+4. 输出结构化 `sources.json`，必须写入调用任务给出的**完整精确路径**；不要自己翻译主题、推测 slug 或另建相似目录。字段必须严格使用：
    - 顶层：`topic`, `researched_at`, `version`, `sources`, `teaching_facts`, `coverage_areas`, `prerequisites`, `graduation_project`；
    - 每个 source：`id`, `title`, `url`, `kind`；
    - 每个 teaching fact：`statement`, `source_ids`；

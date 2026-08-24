@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
+import secrets
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -128,8 +131,11 @@ def needs_diagnosis(submission: OnboardingSubmission) -> bool:
 
 
 def _slug(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    return (slug or "learning-topic")[:64]
+    normalized = unicodedata.normalize("NFKC", value).casefold().strip()
+    readable = re.sub(r"[\W_]+", "-", normalized, flags=re.UNICODE).strip("-")
+    readable = (readable or "learning-topic")[:44].strip("-")
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:10]
+    return f"{readable}-{digest}"
 
 
 def _knowledge_source(server_root: Path, topic: TopicSelection) -> str:
@@ -330,6 +336,7 @@ def confirm_onboarding(
         language = None
     revision = state.get("revision")
     revision = revision + 1 if isinstance(revision, int) and revision >= 0 else 1
+    generation_id = secrets.token_hex(16)
     recent_evidence = state.get("recent_evidence")
     if not isinstance(recent_evidence, list):
         recent_evidence = []
@@ -356,6 +363,8 @@ def confirm_onboarding(
             "knowledge_source": knowledge_source,
             "diagnosis": diagnosis.model_dump() if diagnosis is not None else None,
             "plan_status": "draft",
+            "generation_id": generation_id,
+            "generation_status": "active",
         }
     )
     _atomic_write(state_path, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
@@ -366,6 +375,7 @@ def confirm_onboarding(
         "plan_status": "draft",
         "active_plan": relative_plan.as_posix(),
         "knowledge_source": knowledge_source,
+        "generation_id": generation_id,
         "first_lesson": {
             "start_immediately": False,
             "forbid_more_onboarding": True,

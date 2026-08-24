@@ -19,6 +19,13 @@
     "revision": {"type": "integer", "minimum": 0},
     "profile_status": {"enum": ["uninitialized", "in_progress", "confirmed"]},
     "plan_status": {"enum": ["draft", "awaiting_confirmation", "confirmed"]},
+    "generation_id": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{32}$"
+    },
+    "generation_status": {
+      "enum": ["active", "cancelled", "completed", null]
+    },
     "active_language": {"type": ["string", "null"], "enum": ["python", "go", null]},
     "active_plan": {"type": ["string", "null"]},
     "active_task": {"type": ["string", "null"]},

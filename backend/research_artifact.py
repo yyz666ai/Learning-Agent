@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
+import unicodedata
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -54,14 +56,49 @@ class ResearchArtifact(BaseModel):
 
 
 def research_slug(topic: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", topic.casefold()).strip("-")
-    return (slug or "learning-topic")[:64]
+    normalized = unicodedata.normalize("NFKC", topic).casefold().strip()
+    readable = re.sub(r"[\W_]+", "-", normalized, flags=re.UNICODE).strip("-")
+    readable = (readable or "learning-topic")[:44].strip("-")
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:10]
+    return f"{readable}-{digest}"
 
 
 def research_path(server_root: Path, user_id: str, topic: str) -> Path:
     if not SAFE_USER_ID.fullmatch(user_id):
         raise ValueError("invalid user_id")
     return server_root / "userdir" / f"u_{user_id}" / "research" / research_slug(topic) / "sources.json"
+
+
+def _topic_key(value: str) -> str:
+    # 研究产物可以有展示用的路线标签，但不能悄悄换成另一个主题。
+    without_qualifiers = re.sub(r"[（(][^）)]*[）)]", "", value.casefold())
+    key = re.sub(r"[\s\W_]+", "", without_qualifiers)
+    return re.sub(r"(?:工程师|开发者|语言|课程|学习|是什么)$", "", key)
+
+
+def _read_matching_research(path: Path, topic: str) -> tuple[Path, dict]:
+    """Read the canonical artifact, or recover an exact-topic legacy artifact."""
+    candidates = [path]
+    research_root = path.parent.parent
+    if research_root.is_dir():
+        candidates.extend(candidate for candidate in research_root.glob("*/sources.json") if candidate != path)
+    first_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            raw = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            if candidate == path:
+                first_error = exc
+            continue
+        if isinstance(raw, dict) and _topic_key(str(raw.get("topic") or "")) == _topic_key(topic):
+            return candidate, raw
+    if first_error is not None:
+        raise first_error
+    if path.exists():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return path, raw
+    raise FileNotFoundError(path)
 
 
 def load_valid_research(
@@ -72,7 +109,7 @@ def load_valid_research(
     require_deep: bool = False,
 ) -> ResearchArtifact:
     path = research_path(server_root, user_id, topic)
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    _, raw = _read_matching_research(path, topic)
     if not isinstance(raw, dict):
         raise ValueError("research artifact must be an object")
     normalized_sources = []
@@ -114,12 +151,7 @@ def load_valid_research(
         "graduation_project": graduation,
     }
     artifact = ResearchArtifact.model_validate(normalized)
-    def topic_key(value: str) -> str:
-        # 研究产物可以有展示用的路线标签，但不能悄悄换成另一个主题。
-        without_qualifiers = re.sub(r"[（(][^）)]*[）)]", "", value.casefold())
-        key = re.sub(r"[\s\W_]+", "", without_qualifiers)
-        return re.sub(r"(?:工程师|开发者|语言|课程|学习|是什么)$", "", key)
-    if topic_key(artifact.topic) != topic_key(topic):
+    if _topic_key(artifact.topic) != _topic_key(topic):
         raise ValueError("research topic does not match the learning plan")
     artifact = artifact.model_copy(update={"topic": topic})
     if require_deep:
@@ -131,6 +163,7 @@ def load_valid_research(
             has_project = bool(artifact.graduation_project.name.strip() and artifact.graduation_project.evidence)
         if not has_project:
             raise ValueError("deep research must recommend a graduation project")
+    path.parent.mkdir(parents=True, exist_ok=True)
     canonical = path.with_suffix(".json.tmp")
     canonical.write_text(artifact.model_dump_json(indent=2) + "\n", encoding="utf-8")
     canonical.replace(path)

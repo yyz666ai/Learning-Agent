@@ -103,6 +103,24 @@ def test_generator_prompt_contains_profile_point_prerequisites_evidence_and_time
     assert load_lesson_bundle(tmp_path, "learner", curriculum.current_knowledge_point_id) == bundle
 
 
+def test_generator_can_validate_without_persisting_before_project_guard(tmp_path: Path) -> None:
+    curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
+
+    bundle = generate_and_save_lesson(
+        tmp_path,
+        "learner",
+        curriculum=curriculum,
+        profile="零基础",
+        recent_evidence=[],
+        session_minutes=25,
+        model_call=lambda _: model_lesson_json(curriculum.current_knowledge_point_id),
+        persist=False,
+    )
+
+    assert bundle.manifest.knowledge_point_id == curriculum.current_knowledge_point_id
+    assert not (tmp_path / "userdir/u_learner/lessons").exists()
+
+
 def test_generator_builds_one_complete_chapter_and_discards_legacy_output_rules(tmp_path: Path) -> None:
     curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
     chapter = curriculum.current_chapter()
