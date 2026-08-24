@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .learning_content import SAFE_USER_ID
+from .user_memory import read_intent_state, write_profile_json
 
 GoalRoute = Literal[
     "concept_clarity",
@@ -184,6 +185,30 @@ def render_profile(
     )
 
 
+def _render_interview_context(slots: dict[str, object]) -> str:
+    """Render persisted interview slots for both people and downstream agents."""
+    role = str(slots.get("target_role") or "").strip()
+    raw_stack = slots.get("tech_stack")
+    stack = [str(item).strip() for item in raw_stack] if isinstance(raw_stack, list) else []
+    stack = [item for item in stack if item]
+    source = str(slots.get("interview_question_source") or "unknown")
+    source_label = {
+        "has_questions": "已收录现成题",
+        "none": "暂时没有现成题",
+        "unknown": "尚未确认",
+    }.get(source, "尚未确认")
+    count = int(slots.get("interview_question_count") or 0)
+    lines = ["## 面试上下文"]
+    if role:
+        lines.append(f"- 目标岗位：{role}")
+    if stack:
+        lines.append(f"- 技术栈：{'、'.join(stack)}")
+    lines.append(f"- 面试题来源：{source_label}")
+    if count:
+        lines.append(f"- 已收录题目：{count} 道")
+    return "\n".join((*lines, ""))
+
+
 def render_plan(
     submission: OnboardingSubmission,
     diagnosis: DiagnosisSummary | None,
@@ -268,7 +293,27 @@ def confirm_onboarding(
     knowledge_source = _knowledge_source(server_root, submission.topic)
     relative_plan = Path("plans") / f"{_slug(submission.topic.value)}-plan.md"
     plan_path = user_dir / relative_plan
-    _atomic_write(user_dir / "profile.md", render_profile(submission, diagnosis))
+    intent_slots = read_intent_state(server_root, submission.user_id).get("slots", {})
+    profile_markdown = render_profile(submission, diagnosis)
+    if submission.goal_route == "interview_sprint" and isinstance(intent_slots, dict):
+        profile_markdown += "\n" + _render_interview_context(intent_slots)
+    _atomic_write(user_dir / "profile.md", profile_markdown)
+    write_profile_json(
+        server_root,
+        submission.user_id,
+        {
+            "topic": submission.topic.value,
+            "topic_type": submission.topic.type,
+            "learning_mode": submission.learning_mode,
+            "goal_route": submission.goal_route,
+            "level_claim": submission.level_claim,
+            "session_minutes": submission.session_minutes,
+            "deadline_days": submission.deadline_days,
+            "teaching_preference": submission.teaching_preference,
+            "concept_scope": submission.concept_scope,
+            "diagnosis": diagnosis.model_dump() if diagnosis is not None else None,
+        },
+    )
     _atomic_write(
         plan_path,
         render_plan(submission, diagnosis, knowledge_source),

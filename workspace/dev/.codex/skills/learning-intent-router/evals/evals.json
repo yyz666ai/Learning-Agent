@@ -19,7 +19,22 @@
     {
       "id": "explicit-beginner-interview",
       "prompt": "我想面试 AI 前端，初学",
-      "expectations": ["直接识别为 interview_sprint", "level_claim 为 zero", "concept_scope 为 not_applicable", "不再询问理解概念、掌握语法或完成项目", "最终目标是通过岗位模拟面试"]
+      "expectations": ["识别为 interview_sprint", "level_claim 为 zero", "target_role 保留 AI 前端", "只追问目标岗位相关技术栈", "不再询问理解概念、掌握语法或完成项目"]
+    },
+    {
+      "id": "interview-stack-without-source",
+      "prompt": "当前槽位是 AI 前端、初学。用户补充：React 和 TypeScript。",
+      "expectations": ["保留 AI 前端和 zero", "tech_stack 包含 React 与 TypeScript", "只询问是否有小红书或面经收集的真实题", "不直接生成 Plan"]
+    },
+    {
+      "id": "interview-no-collected-questions",
+      "prompt": "当前槽位是 AI 前端、初学、React 和 TypeScript。用户回答：暂时没有现成面试题。",
+      "expectations": ["interview_question_source 为 none", "返回 ready_for_plan", "要求后续按岗位与技术栈研究", "不改写已有岗位和技术栈"]
+    },
+    {
+      "id": "interview-has-collected-questions",
+      "prompt": "当前槽位是 AI 前端、初学、React 和 TypeScript。用户回答：有，我从小红书收集了一些。",
+      "expectations": ["interview_question_source 为 has_questions", "返回 interview_bank_intake", "邀请直接粘贴真实题", "题目未入库前不生成 Plan"]
     },
     {
       "id": "interview-missing-level",

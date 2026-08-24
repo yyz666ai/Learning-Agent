@@ -164,15 +164,45 @@ def test_onboarding_uses_model_intent_and_multiturn_slot_filling() -> None:
     assert "shouldIntake(value)" not in app
 
 
-def test_current_lesson_stays_visible_until_model_commits_to_a_new_plan() -> None:
+def test_unfinished_onboarding_restores_server_intent_state_after_refresh() -> None:
+    js = read(ONBOARDING_JS)
+
+    assert "/api/onboarding/intent-state" in js
+    assert "restoreIntentState" in js
+    assert "persisted.question.options" in js
+    assert 'persisted.action === "interview_bank_intake"' in js
+
+
+def test_interview_onboarding_keeps_structured_slots_and_waits_for_pasted_questions() -> None:
+    js = read(ONBOARDING_JS)
+
+    assert "target_role" in js
+    assert "tech_stack" in js
+    assert "interview_question_source" in js
+    assert 'state.stage = "interview_intake"' in js
+    assert 'state.stage === "interview_intake"' in js
+    assert 'request("/api/interview/intake"' in js
+
+
+def test_current_project_is_snapshotted_before_new_intent_writes_but_lesson_stays_visible() -> None:
     app = read(APP_JS)
     begin = app[app.index("async function beginOnboarding") : app.index("async function restoreCurrentCourse")]
     before_ready = begin[:begin.index("onIntentReady: async () =>")]
     ready_handler = begin[begin.index("onIntentReady: async () =>") :]
 
     assert 'classList.add("is-onboarding")' not in before_ready.split("if (!archiveCurrent)", 1)[0]
-    assert 'fetch("/api/projects/snapshot"' in ready_handler
-    assert ready_handler.index('fetch("/api/projects/snapshot"') < ready_handler.index('classList.add("is-onboarding")')
+    assert 'fetch("/api/projects/snapshot"' in before_ready
+    assert before_ready.index('fetch("/api/projects/snapshot"') < before_ready.index("window.OnboardingController.begin")
+    assert 'fetch("/api/projects/snapshot"' not in ready_handler
+    assert "STORAGE_PROJECT_SNAPSHOT" in app
+    assert "localStorage.setItem(STORAGE_PROJECT_SNAPSHOT" in app
+    assert "localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT" in app
+    assert "projectSnapshotId: localStorage.getItem(STORAGE_PROJECT_SNAPSHOT)" in app
+    pending_confirm = app[app.index("async function confirmPendingPlanAndStart") : app.index("async function initialize")]
+    assert 'fetch("/api/projects/snapshot/archive"' in pending_confirm
+    assert "localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT)" in pending_confirm
+    confirmed = app[app.index("onConfirmed: async () =>") : app.index("onFailed: async () =>")]
+    assert confirmed.index("localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT)") < confirmed.index("await refreshProjectArchive()")
 
 
 def test_concept_plan_review_uses_relevant_choices_and_refreshes_real_duration() -> None:

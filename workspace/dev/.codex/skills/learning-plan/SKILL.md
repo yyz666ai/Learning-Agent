@@ -46,6 +46,16 @@ description: Use when 用户要求创建、调整或恢复 Python、Go、混合�
 - `code_walkthrough` 先讲懂概念，再用 `progressive-code-teaching` 逐步展示最小骨架；不会的通用语法才就地补充。
 - 本次学会即可结束。只有用户明确说要系统学、做项目或持续复习，才转成长路线。
 
+## 面试冲刺 Plan
+
+`goal_route=interview_sprint` 时必须读取 `target_role`、`tech_stack`、`interview_question_source` 和个人 Interview Bank：
+
+- 有现成题时，以已收录真题为第一优先级，按能力域去重、补先修和关联追问，不把题目简单按粘贴顺序堆进 Plan。
+- 没有现成题时，先调用 `new-topic-research`，以“完整岗位 + 技术栈”为范围研究官方能力资料、公开岗位要求和可靠技术文档，再构建题目覆盖地图。
+- 初学者先补岗位所需的最小先修，再进入简答、代码阅读、场景追问与模拟面试；熟练者减少基础选择题，增加开放表达和系统设计。
+- Plan 必须写出目标岗位、技术栈、题目来源、面试能力覆盖地图和最终模拟面试验收，不得退化为某门语言的通用语法课。
+- 后续新增真实面试题时，重新评估未完成章节和覆盖缺口；保留已完成进度，只调整后续 Plan。
+
 ## 计划存放位置
 
 计划文件统一写到 `$USER_DIR/plans/<plan-id>.md`（如 `plans/langchain-doc-qa.md`），`learning-state.json` 的 `active_plan` 记录这个相对路径（`plans/<plan-id>.md`）。不要写到 `$USER_DIR` 根目录，也不要散落各处。

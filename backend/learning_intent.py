@@ -29,6 +29,10 @@ class IntentSlots(BaseModel):
     deadline: str | None = Field(default=None, max_length=160)
     learning_scope: str | None = Field(default=None, max_length=160)
     constraints: list[str] = Field(default_factory=list, max_length=8)
+    target_role: str | None = Field(default=None, max_length=240)
+    tech_stack: list[str] = Field(default_factory=list, max_length=12)
+    interview_question_source: Literal["unknown", "has_questions", "none"] = "unknown"
+    interview_question_count: int = Field(default=0, ge=0, le=10_000)
 
 
 class IntentOption(BaseModel):
@@ -105,6 +109,25 @@ class IntentDecision(BaseModel):
                 raise ValueError("ready_for_plan requires topic and desired_outcome slots")
             if self.onboarding.goal_route != "concept_clarity" and not (self.slots.level_evidence or "").strip():
                 raise ValueError("ready_for_plan requires level evidence from the learner")
+            if self.onboarding.goal_route == "interview_sprint":
+                if not (self.slots.target_role or "").strip():
+                    raise ValueError("interview plan requires target role")
+                if not [item for item in self.slots.tech_stack if item.strip()]:
+                    raise ValueError("interview plan requires tech stack")
+                if self.slots.interview_question_source == "unknown":
+                    raise ValueError("interview plan requires question source")
+                if (
+                    self.slots.interview_question_source == "has_questions"
+                    and self.slots.interview_question_count < 1
+                ):
+                    raise ValueError("collected interview questions must be ingested before plan generation")
+        elif self.action == "interview_bank_intake":
+            if self.slots.interview_question_source != "has_questions":
+                raise ValueError("interview intake requires has_questions source")
+            if not (self.slots.target_role or "").strip() or not self.slots.tech_stack:
+                raise ValueError("interview intake requires role and tech stack")
+            if self.question is not None or self.onboarding is not None:
+                raise ValueError("interview intake cannot include question or onboarding")
         elif self.question is not None or self.onboarding is not None:
             raise ValueError("non-onboarding actions cannot include question or onboarding")
         return self
@@ -162,8 +185,9 @@ def build_intent_prompt(
 5. 不得生成“其他”“都不符合”“我直接补充”或 Other 选项；用户会直接在输入框补充。
 6. 当前课程答疑、一次性报错返回 answer_in_context；一批面试题入库返回 interview_bank_intake。
 7. ready_for_plan 时由你根据语义填写 onboarding；不要要求用户为内部默认时间预算再答一题。
-8. 用户已明确面试目标、主题与起点时，这就是“明确面试目标”：直接 ready_for_plan，设为 interview_sprint + practice + concept_scope=not_applicable；“初学/零基础”对应 zero。可将默认验收结果规范为“完成目标岗位模拟面试并会讲解核心题”，不得再询问“理解概念 / 掌握语法 / 完成项目”。
-9. 只输出一个 JSON 对象，不要 Markdown，不要解释。
+8. 面试目标要保留完整 target_role，并依次只补真正缺失的槽位：基础证据、tech_stack、interview_question_source。不要再问通用学习深度。
+9. 面试技术栈明确后，题目来源仍为 unknown 时，询问是否有从小红书、面经或 JD 收集的真实题；有题返回 interview_bank_intake，实际入库且 interview_question_count > 0 后才能 ready_for_plan；没有题才直接 ready，并由后续研究补齐。
+10. 只输出一个 JSON 对象，不要 Markdown，不要解释。
 
 JSON Schema：
 {json.dumps(schema, ensure_ascii=False)}
@@ -195,6 +219,29 @@ def _level_from_text(value: str) -> str | None:
     ):
         matches.extend((match.start(), level) for match in re.finditer(pattern, value, flags=re.IGNORECASE))
     return max(matches, default=(-1, None), key=lambda item: item[0])[1]
+
+
+def _tech_stack_from_text(value: str) -> list[str]:
+    vocabulary = (
+        "React", "Vue", "Angular", "TypeScript", "JavaScript", "Next.js", "Node.js",
+        "Java", "Spring", "Python", "Django", "FastAPI", "Go", "Gin", "Flutter",
+        "Kubernetes", "SQL", "RAG", "LangGraph",
+    )
+    lowered = value.casefold()
+    return [item for item in vocabulary if item.casefold() in lowered]
+
+
+def _interview_source_from_text(value: str) -> str:
+    compact = re.sub(r"\s+", "", value).casefold()
+    if re.search(r"(?:不是|并非)没有(?:现成|收集|准备)?(?:的)?(?:面试)?题", compact):
+        return "has_questions"
+    if re.search(r"(?:不是|并非)有(?:现成|收集|准备)?(?:的)?(?:面试)?题", compact):
+        return "none"
+    if re.search(r"没有(?:现成|收集|准备)?(?:的)?(?:面试)?题|暂时没有|没收集", compact):
+        return "none"
+    if re.search(r"有(?:现成|收集|准备)?(?:的)?(?:面试)?题|整理了.+题|收集了.+题", compact):
+        return "has_questions"
+    return "unknown"
 
 
 def validate_intent_against_message(
@@ -258,6 +305,22 @@ def validate_intent_against_message(
             current = getattr(decision.slots, field)
             if prior and current != prior:
                 raise ValueError(f"level-only reply must preserve confirmed {field}")
+    correction_requested = bool(re.search(r"不对|不是.+是|其实|改成|换成|换个|纠正", message, flags=re.IGNORECASE))
+    if not correction_requested:
+        for field in ("topic", "target_role", "goal", "desired_outcome"):
+            prior = getattr(prior_slots, field)
+            current = getattr(decision.slots, field)
+            if prior and prior != "unknown" and current != prior:
+                raise ValueError(f"follow-up reply must preserve confirmed {field}")
+    prior_source = prior_slots.interview_question_source
+    current_source = decision.slots.interview_question_source
+    explicit_source_correction = _interview_source_from_text(message)
+    if (
+        prior_source != "unknown"
+        and current_source != prior_source
+        and explicit_source_correction != current_source
+    ):
+        raise ValueError("follow-up reply must preserve confirmed interview_question_source")
     explicit_definition = bool(re.search(
         r"(是什么意思|是什么(?:[？?。！!]|$)|什么叫|解释一下|弄懂.+(?:意思|概念)|what(?:is|'s))",
         normalized,
@@ -315,6 +378,13 @@ def recover_explicit_interview_intent(
             "some": r"有一(?:点|些|定)基础|学过一点|有基础",
         }[level_claim]
         level_evidence = re.search(evidence_pattern, combined_level_text, flags=re.IGNORECASE).group(0)
+    else:
+        # A prior slot may only be reused when it contains an explicit,
+        # parseable learner-level phrase; generic model summaries are ignored.
+        prior_evidence = (slots.level_evidence or "").strip()
+        level_claim = _level_from_text(prior_evidence)
+        if level_claim is not None:
+            level_evidence = prior_evidence
 
     base_slots = {
         **slots.model_dump(),
@@ -323,7 +393,15 @@ def recover_explicit_interview_intent(
         "goal": slots.goal or f"准备 {topic} 岗位面试",
         "desired_outcome": slots.desired_outcome or f"完成 {topic} 岗位模拟面试并能独立讲解核心问题",
         "target_context": slots.target_context or f"{topic} 岗位面试",
-        "level_evidence": None,
+        "level_evidence": level_evidence,
+        "target_role": slots.target_role or topic,
+        "tech_stack": slots.tech_stack or _tech_stack_from_text(text),
+        "interview_question_source": (
+            slots.interview_question_source
+            if slots.interview_question_source != "unknown"
+            else _interview_source_from_text(text)
+        ),
+        "interview_question_count": slots.interview_question_count,
     }
     if level_claim is None:
         return IntentDecision.model_validate({
@@ -344,6 +422,57 @@ def recover_explicit_interview_intent(
         })
 
     base_slots["level_evidence"] = slots.level_evidence or level_evidence
+    if not base_slots["tech_stack"]:
+        topic_lower = topic.casefold()
+        if "前端" in topic_lower:
+            options = [
+                {"id": "react", "label": "React / TypeScript", "detail": "React、TypeScript 与前端工程化"},
+                {"id": "vue", "label": "Vue / TypeScript", "detail": "Vue、TypeScript 与前端工程化"},
+                {"id": "ai-fullstack", "label": "前端 + AI 应用", "detail": "前端框架、模型 API 与 Agent 交互"},
+            ]
+        elif "java" in topic_lower:
+            options = [
+                {"id": "spring", "label": "Java / Spring", "detail": "Spring Boot、数据库与服务开发"},
+                {"id": "microservice", "label": "Java / 微服务", "detail": "Spring Cloud、消息与分布式系统"},
+                {"id": "android", "label": "Java / Android", "detail": "Android 应用与平台基础"},
+            ]
+        else:
+            options = [
+                {"id": "role-core", "label": "岗位核心技术", "detail": "按目标岗位 JD 中的主要技术准备"},
+                {"id": "project-stack", "label": "现有项目技术栈", "detail": "围绕自己做过或要讲的项目准备"},
+                {"id": "ai-stack", "label": "岗位 + AI 应用", "detail": "岗位基础加大模型应用能力"},
+            ]
+        return IntentDecision.model_validate({
+            "action": "clarify", "confidence": 0.99,
+            "summary": f"已确认 {topic} 岗位和基础，只缺主要技术栈",
+            "slots": base_slots,
+            "question": {"prompt": "这次面试主要围绕哪套技术栈？", "slot": "tech_stack", "options": options},
+            "onboarding": None,
+        })
+    if base_slots["interview_question_source"] == "unknown":
+        return IntentDecision.model_validate({
+            "action": "clarify", "confidence": 0.99,
+            "summary": f"已确认 {topic} 岗位、基础和技术栈，只缺题目来源",
+            "slots": base_slots,
+            "question": {
+                "prompt": "你手上有没有已经收集的真实面试题？",
+                "slot": "interview_question_source",
+                "options": [
+                    {"id": "has-questions", "label": "有面试题，接下来粘贴", "detail": "先收录原题，再按题目缺口生成计划"},
+                    {"id": "no-questions", "label": "没有现成面试题", "detail": "根据岗位和技术栈检索并构建题图"},
+                ],
+            },
+            "onboarding": None,
+        })
+    if (
+        base_slots["interview_question_source"] == "has_questions"
+        and int(base_slots["interview_question_count"] or 0) < 1
+    ):
+        return IntentDecision.model_validate({
+            "action": "interview_bank_intake", "confidence": 0.99,
+            "summary": "请直接粘贴已经收集的面试题，收录后再生成计划",
+            "slots": base_slots, "question": None, "onboarding": None,
+        })
     return IntentDecision.model_validate({
         "action": "ready_for_plan",
         "confidence": 0.99,

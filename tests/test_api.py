@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 
 from backend import main
 from backend.curriculum import curriculum_from_plan
-from backend.lesson_generator import parse_lesson_response
+from backend.lesson_generator import load_lesson_bundle, parse_lesson_response, save_lesson_bundle
+from backend.lesson_manifest import build_starter_lesson
 from backend.practice_bank import PracticeBankStore
 from backend.interview_bank import InterviewBankStore
 from backend.review_cards import add_question_card
@@ -184,14 +185,9 @@ def test_generate_supplemental_practice_reads_skills_validates_and_saves_bank(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     captured: dict[str, str] = {}
-    skill_root = tmp_path / "workspace/dev/.codex/skills"
-    for name in ("practice-drill", "quiz-designer"):
-        path = skill_root / name / "SKILL.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"# {name}\n{name} teaching rules", encoding="utf-8")
 
-    def fake_model(prompt: str, system: str, **_: object) -> str:
-        captured.update({"prompt": prompt, "system": system})
+    def fake_model(user_id: str, prompt: str, release: Path) -> str:
+        captured.update({"user_id": user_id, "prompt": prompt, "release": str(release)})
         return json.dumps({"questions": [
             {"title": f"练习 {index}", "prompt": f"问题 {index}？", "options": [
                 {"id": "a", "label": "正确"}, {"id": "b", "label": "错误"},
@@ -200,7 +196,8 @@ def test_generate_supplemental_practice_reads_skills_validates_and_saves_bank(
         ]}, ensure_ascii=False)
 
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
-    monkeypatch.setattr(main, "llm_chat", fake_model)
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "workspace/releases/current")
+    monkeypatch.setattr(main, "chat", fake_model)
     response = client.post("/api/practice/supplemental/generate", json={
         "user_id": "learner", "module": "Go 变量", "level": "beginner", "count": 3,
     })
@@ -208,11 +205,132 @@ def test_generate_supplemental_practice_reads_skills_validates_and_saves_bank(
 
     assert response.status_code == 200
     assert response.json()["added_count"] == 3
-    assert "practice-drill teaching rules" in captured["system"]
-    assert "quiz-designer teaching rules" in captured["system"]
+    assert ".codex/skills/practice-drill/SKILL.md" in captured["prompt"]
+    assert ".codex/skills/quiz-designer/SKILL.md" in captured["prompt"]
+    assert captured["user_id"] == "learner"
     assert len(bank["questions"]) == 3
     assert all(item["source"] == "supplemental" for item in bank["questions"])
     assert all("answer" not in item for item in bank["questions"])
+
+
+def test_generate_supplemental_practice_appends_to_current_lesson_and_registers_bank(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    original = build_starter_lesson(
+        topic="Go", language="go", session_minutes=25, goal_route="foundation_engineer",
+    )
+    save_lesson_bundle(tmp_path, "learner", original)
+
+    def fake_model(_: str, __: str, ___: Path) -> str:
+        return json.dumps({"questions": [
+            {"title": f"练习 {index}", "prompt": f"迁移问题 {index}？", "options": [
+                {"id": "a", "label": "正确"}, {"id": "b", "label": "错误"},
+            ], "correct_option_id": "a", "explanation": f"解析 {index}"}
+            for index in range(1, 4)
+        ]}, ensure_ascii=False)
+
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "workspace/releases/current")
+    monkeypatch.setattr(main, "chat", fake_model)
+    response = client.post("/api/practice/supplemental/generate", json={
+        "user_id": "learner", "module": "Go 变量", "level": "beginner", "count": 3,
+        "lesson_id": original.manifest.lesson_id, "append_to_lesson": True,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["appended_to_lesson"] is True
+    updated = load_lesson_bundle(tmp_path, "learner", original.manifest.knowledge_point_id)
+    assert len(updated.manifest.pages) == len(original.manifest.pages) + 3
+    assert "解析 1" not in json.dumps(response.json()["lesson"], ensure_ascii=False)
+    supplemental_id = response.json()["item_ids"][0]
+    reveal = client.post("/api/practice/review/reveal", json={
+        "user_id": "learner", "item_id": supplemental_id,
+    })
+    assert reveal.json()["explanation"] == "解析 1"
+    bank = client.get("/api/practice/bank?user_id=learner").json()
+    assert sum(item["source"] == "classroom" for item in bank["questions"]) >= 3
+
+
+def test_supplemental_bank_failure_restores_original_lesson(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    original = build_starter_lesson(
+        topic="Go", language="go", session_minutes=25, goal_route="foundation_engineer",
+    )
+    save_lesson_bundle(tmp_path, "learner", original)
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "workspace/releases/current")
+    monkeypatch.setattr(main, "chat", lambda *_: json.dumps({"questions": [
+        {"title": f"练习 {index}", "prompt": f"迁移问题 {index}？", "options": [
+            {"id": "a", "label": "正确"}, {"id": "b", "label": "错误"},
+        ], "correct_option_id": "a", "explanation": f"解析 {index}"}
+        for index in range(1, 4)
+    ]}, ensure_ascii=False))
+    monkeypatch.setattr(main.PracticeBankStore, "register_lesson", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")))
+
+    response = client.post("/api/practice/supplemental/generate", json={
+        "user_id": "learner", "module": "Go 变量", "level": "beginner", "count": 3,
+        "lesson_id": original.manifest.lesson_id, "append_to_lesson": True,
+    })
+
+    assert response.status_code == 500
+    restored = load_lesson_bundle(tmp_path, "learner", original.manifest.knowledge_point_id)
+    assert len(restored.manifest.pages) == len(original.manifest.pages)
+
+
+def test_generate_supplemental_practice_repairs_one_structurally_invalid_codex_response(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    invalid = json.dumps({"questions": [
+        {"title": f"练习 {index}", "prompt": f"问题 {index}？", "options": [
+            {"id": "", "label": "正确"}, {"id": "b", "label": "错误"},
+        ], "correct_option_id": "a", "explanation": f"解析 {index}"}
+        for index in range(1, 4)
+    ]}, ensure_ascii=False)
+    valid = json.dumps({"questions": [
+        {"title": f"练习 {index}", "prompt": f"问题 {index}？", "options": [
+            {"id": "a", "label": "正确"}, {"id": "b", "label": "错误"},
+        ], "correct_option_id": "a", "explanation": f"解析 {index}"}
+        for index in range(1, 4)
+    ]}, ensure_ascii=False)
+
+    def fake_model(_: str, prompt: str, __: Path) -> str:
+        calls.append(prompt)
+        return invalid if len(calls) == 1 else valid
+
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "workspace/releases/current")
+    monkeypatch.setattr(main, "chat", fake_model)
+    response = client.post("/api/practice/supplemental/generate", json={
+        "user_id": "learner", "module": "Go 变量", "level": "beginner", "count": 3,
+        "append_to_lesson": False,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["added_count"] == 3
+    assert len(calls) == 2
+    assert "contains an invalid option" in calls[1]
+
+
+def test_supplemental_practice_rejects_unsafe_user_id_before_codex_call(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    def forbidden_call(*_: object) -> str:
+        nonlocal called
+        called = True
+        return "{}"
+
+    monkeypatch.setattr(main, "chat", forbidden_call)
+    response = client.post("/api/practice/supplemental/generate", json={
+        "user_id": "x/../../outside", "module": "Go", "count": 3,
+        "append_to_lesson": False,
+    })
+
+    assert response.status_code == 422
+    assert called is False
 
 
 def test_cached_lesson_is_reloaded_through_current_teaching_contract_before_use(
@@ -444,6 +562,8 @@ def test_onboarding_intent_allows_two_repair_attempts_for_explicit_interview_lev
         "slots": {
             **repeated_level["slots"], "desired_outcome": "完成 AI 产品经理模拟面试",
             "level_evidence": "熟练的产品经理",
+            "target_role": "AI 产品经理", "tech_stack": ["大模型应用", "RAG"],
+            "interview_question_source": "none",
         },
         "question": None,
         "onboarding": {
@@ -473,7 +593,7 @@ def test_onboarding_intent_allows_two_repair_attempts_for_explicit_interview_lev
     assert len(calls) == 3
 
 
-def test_onboarding_intent_recovers_unambiguous_interview_after_three_invalid_model_outputs(
+def test_onboarding_intent_recovery_uses_named_java_stack_then_asks_question_source(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     calls: list[str] = []
@@ -491,8 +611,11 @@ def test_onboarding_intent_recovers_unambiguous_interview_after_three_invalid_mo
 
     assert response.status_code == 200
     assert response.json()["slots"]["topic"] == "Java 后端"
-    assert response.json()["onboarding"]["level_claim"] == "some"
-    assert response.json()["onboarding"]["goal_route"] == "interview_sprint"
+    assert response.json()["slots"]["level_evidence"] == "有一点基础"
+    assert response.json()["onboarding"] is None
+    assert response.json()["action"] == "clarify"
+    assert response.json()["slots"]["tech_stack"] == ["Java"]
+    assert response.json()["question"]["slot"] == "interview_question_source"
     assert len(calls) == 3
 
 
@@ -827,6 +950,35 @@ def test_stream_is_event_stream(
     assert 'data: {"text": "你好"}' in response.text
 
 
+def test_stream_persists_user_and_assistant_conversation_events(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
+    monkeypatch.setattr(main, "read_learning_context", lambda *_: {"topic": "Go"})
+    monkeypatch.setattr(
+        main,
+        "stream_chat",
+        lambda *args, **kwargs: iter([
+            {"event": "message.delta", "data": {"text": "先看变量的生命周期。"}},
+            {"event": "message.completed", "data": {}},
+        ]),
+    )
+    client = TestClient(main.app)
+
+    response = client.post("/api/chat/stream", json={
+        "user_id": "memory-user", "message": "闭包为什么捕获变量？", "history": [],
+    })
+
+    assert response.status_code == 200
+    path = tmp_path / "userdir/u_memory-user/memory/conversation-events.jsonl"
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [(item["role"], item["content"]) for item in events] == [
+        ("user", "闭包为什么捕获变量？"),
+        ("assistant", "先看变量的生命周期。"),
+    ]
+
+
 def test_stream_persists_lesson_note_summary_reward_and_emits_refresh_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
@@ -967,6 +1119,68 @@ def test_interview_intake_returns_questions_and_inline_study_choices(
         "from_scratch", "systematic", "assess_first",
     ]
     assert payload["coverage"]["total"] == 2
+
+
+def test_interview_intake_persists_the_authoritative_question_count(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    main.persist_intent_decision(
+        tmp_path,
+        "learner",
+        message="我有现成面试题",
+        decision={
+            "action": "interview_bank_intake", "summary": "等待入库",
+            "slots": {
+                "topic": "AI 前端", "target_role": "AI 前端", "tech_stack": ["React"],
+                "interview_question_source": "has_questions", "interview_question_count": 999,
+            },
+            "question": None, "onboarding": None,
+        },
+    )
+
+    response = client.post("/api/interview/intake", json={
+        "user_id": "learner", "raw_text": "1. React Server Components 如何工作？\n2. 如何设计流式 UI？",
+    })
+    state = client.get("/api/onboarding/intent-state?user_id=learner").json()
+
+    assert response.status_code == 200
+    assert state["action"] == "interview_bank_intake"
+    assert state["slots"]["interview_question_count"] == 2
+
+
+def test_onboarding_does_not_trust_a_spoofed_interview_question_count(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    ready = {
+        "action": "ready_for_plan", "confidence": 0.99, "summary": "可以开始",
+        "slots": {
+            "intent_family": "面试准备", "topic": "AI 前端", "goal": "准备面试",
+            "desired_outcome": "完成模拟面试", "target_context": "AI 前端岗位",
+            "level_evidence": "初学", "target_role": "AI 前端", "tech_stack": ["React"],
+            "interview_question_source": "has_questions", "interview_question_count": 999,
+            "constraints": [],
+        },
+        "question": None,
+        "onboarding": {
+            "goal_route": "interview_sprint", "learning_mode": "practice", "level_claim": "zero",
+            "session_minutes": 25, "concept_scope": "not_applicable", "topic_type": "custom",
+            "deadline_days": None, "teaching_preference": "balanced",
+        },
+    }
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "release")
+    monkeypatch.setattr(main, "_intent_skill_text", lambda _: "intent skill")
+    monkeypatch.setattr(main, "intent_chat", lambda *_: json.dumps(ready, ensure_ascii=False))
+
+    response = client.post("/api/onboarding/intent", json={
+        "user_id": "learner", "message": "我有现成面试题",
+        "slots": ready["slots"],
+    })
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "interview_bank_intake"
+    assert response.json()["slots"]["interview_question_count"] == 0
 
 
 def test_interview_bank_question_and_mastery_endpoints(

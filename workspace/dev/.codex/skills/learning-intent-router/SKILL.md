@@ -13,6 +13,10 @@ description: Use when a learner freely types a new goal, concept, interview need
 
 - `intent_family`：新学习、当前答疑、项目理解、面试准备、面试题入库、复习等。
 - `topic`、`goal`、`desired_outcome`、`target_context`。
+- `target_role`：面试目标岗位；不得只用“前端 / 后端”覆盖用户写出的完整岗位名。
+- `tech_stack`：与目标岗位相关且由用户确认的技术栈列表。
+- `interview_question_source`：`unknown`、`has_questions` 或 `none`。
+- `interview_question_count`：已经成功写入个人 Interview Bank 的题目数量；未真正入库时必须为 0。
 - `level_evidence`：仅记录用户已表达的基础，不伪造掌握证据。优先复制用户原话或已有槽位中的证据，不得凭空写入“有基础”“熟练”等词。
 - `deadline`、`learning_scope`、`constraints`。
 
@@ -57,13 +61,17 @@ description: Use when a learner freely types a new goal, concept, interview need
 
 ### 明确的面试目标
 
-用户一句话已经给出“面试 + 目标岗位/主题 + 起点”时，例如“我想面试 AI 前端，初学”，信息已足够生成第一版 Plan：
+用户一句话已经给出“面试 + 目标岗位/主题 + 起点”时，例如“我想面试 AI 前端，初学”，先保留岗位和起点，再补齐真正会改变面试范围的两个槽位：
 
-- 直接 `ready_for_plan`，路线为 `interview_sprint`，模式为 `practice`，`concept_scope=not_applicable`。
+- `target_role` 使用用户的完整岗位表达；路线固定为 `interview_sprint`，模式为 `practice`，`concept_scope=not_applicable`。
 - “初学”、“零基础”归一为 `level_claim=zero`，但 Plan 仍要从先修能力逐层进入面试实战。
 - 用户没有明说验收句时，可将 `desired_outcome` 规范为“完成目标岗位模拟面试，能独立讲解核心问题”。
 - 不再追问“理解概念 / 掌握语法 / 完成项目”这类通用学习深度；面试已经决定了教学路线。
-- 期限、具体 JD 或现有面试题可以之后在 Plan 中滚动补充，不得阻塞首版 Plan。
+- 如果 `tech_stack` 为空，只问一次岗位相关的技术栈。给 2–3 个紧凑、动态选项；用户也始终可以直接输入，例如 AI 前端可问 React / Vue / 原生 Web 与 AI SDK 组合，而不是抛出语言通用题。
+- 技术栈明确后，如果 `interview_question_source=unknown`，只问“有没有从小红书、面经或 JD 收集的真实面试题？”选项只需“有，我直接粘贴”“暂时没有”。
+- 用户选择有题时，设为 `has_questions` 并返回 `interview_bank_intake`；必须等实际题目入库、`interview_question_count > 0` 后才可 `ready_for_plan`。
+- 用户选择没有题时，设为 `none` 并 `ready_for_plan`；Plan 随后必须让 `new-topic-research` 依据完整岗位和技术栈搜索可靠资料与公开面试能力维度。
+- 用户在第一句话已同时写明岗位、起点、技术栈和“没有现成题”时，可以直接 `ready_for_plan`；已写明“我有这些题：……”时直接入库，不重复追问。
 
 如果用户只给出“面试 + 目标岗位”，却没有任何基础证据，不得猜测 `zero` / `some` / `experienced`，也不得直接进入技术诊断。只追问一次“你目前的基础更接近哪种？”：
 
@@ -72,6 +80,8 @@ description: Use when a learner freely types a new goal, concept, interview need
 - `熟练`：记入 `level_evidence`，归一为 `experienced`，再做 3–4 道岗位专属情境诊断。
 
 这一题只填 `level_evidence`，已经明确的岗位、面试目标、`desired_outcome`、场景和约束必须原样保留；用户没有明确说“改成 / 不对 / 其实要换”时不得换主题。
+
+面试槽位的追问顺序是：缺基础证据时先问基础；再问缺失的技术栈；最后问题目来源。一次仍只出现一个问题。岗位、技术栈或题目来源已经明确时跳过对应问题。
 
 ## 同主题项目
 

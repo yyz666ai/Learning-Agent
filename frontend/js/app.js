@@ -16,6 +16,7 @@
   resetLegacyClientRecords();
   const STORAGE_MESSAGES = `learning-agent.messages.v3.${USER_ID}`;
   const STORAGE_PREVIOUS_MESSAGES = `learning-agent.messages.previous.v1.${USER_ID}`;
+  const STORAGE_PROJECT_SNAPSHOT = `learning-agent.pending-project-snapshot.v1.${USER_ID}`;
   const PROJECT_LONG_PRESS_MS = 600;
   const PROJECT_SWIPE_THRESHOLD = 64;
   const state = {
@@ -25,7 +26,7 @@
     previousMessages: loadJSON(STORAGE_PREVIOUS_MESSAGES, []),
     guidedFinalPages: new Set(),
     onboardingSnapshot: null,
-    projectSnapshotId: null,
+    projectSnapshotId: localStorage.getItem(STORAGE_PROJECT_SNAPSHOT),
     startupGateActive: false,
     busy: false,
     ready: false,
@@ -217,14 +218,25 @@
           module: state.context?.current_task || state.context?.topic || instruction,
           level: state.context?.level || "beginner",
           count: 3,
+          lesson_id: window.ArtifactController?.currentLessonId?.() || null,
+          append_to_lesson: true,
         }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || "练习题暂时没有生成成功");
-      addMessage("agent", `已把 **${result.added_count || 0} 道针对性练习**加入题库。现在可以直接开始做；重复题不会再次收录。`);
+      if (result.appended_to_lesson) {
+        const manifest = await window.ArtifactController?.loadCurrentLesson?.();
+        const firstItemId = String(result.item_ids?.[0] || "");
+        const firstPageId = firstItemId.split(":").pop();
+        const firstAdded = manifest?.pages?.findIndex((page) => String(page.id || "") === firstPageId);
+        if (firstAdded >= 0) window.ArtifactController?.showPage?.(firstAdded);
+        addMessage("agent", `已把 **${result.added_count || 0} 道针对性练习**追加到当前讲义末尾，也同步进入题库。现在直接在左侧 PPT 点击作答即可。`);
+      } else {
+        addMessage("agent", `已把 **${result.added_count || 0} 道针对性练习**加入题库。现在可以直接开始做；重复题不会再次收录。`);
+      }
       await window.InterviewBankController?.load?.();
-      await window.InterviewBankController?.startReview?.();
-      window.LearningActivity.finish("针对性练习已准备好", "题目已经加入题库，并打开复习卡。 ");
+      if (!result.appended_to_lesson) await window.InterviewBankController?.startReview?.();
+      window.LearningActivity.finish("针对性练习已准备好", result.appended_to_lesson ? "已定位到讲义中的第一道追加题。" : "题目已经加入题库，并打开复习卡。 ");
     } catch (error) {
       addMessage("agent", `这次练习没有生成成功：${error.message}。你可以直接重新发送刚才的要求。`);
       window.LearningActivity.finish("练习暂时没有生成", "你的要求已经保留，可以直接重试。 ");
@@ -600,24 +612,26 @@
       localStorage.setItem(STORAGE_PREVIOUS_MESSAGES, JSON.stringify(state.archivedMessages));
       state.previousMessages = [...state.archivedMessages];
     }
+    if (archiveCurrent && !state.projectSnapshotId) {
+      const response = await fetch("/api/projects/snapshot", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: USER_ID }),
+      });
+      const backup = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(backup.detail?.message || "当前课程暂时无法安全备份。");
+      state.projectSnapshotId = backup.snapshot_id;
+      localStorage.setItem(STORAGE_PROJECT_SNAPSHOT, state.projectSnapshotId);
+    }
     if (!archiveCurrent) {
       $("#appShell").classList.remove("is-chat-first");
       $("#appShell").classList.add("is-onboarding");
     }
     window.OnboardingController.begin({
       hasActiveProject: archiveCurrent || Boolean(state.context),
+      restorePersistedIntent: !archiveCurrent && !initialTopic,
       addAgent: (content) => addMessage("agent", content),
       addUser: (content) => addMessage("user", content),
       onIntentReady: async () => {
-        if (archiveCurrent && !state.projectSnapshotId) {
-          const response = await fetch("/api/projects/snapshot", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: USER_ID }),
-          });
-          const backup = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(backup.detail?.message || "当前课程暂时无法安全备份。");
-          state.projectSnapshotId = backup.snapshot_id;
-        }
         $("#returnCurrentCourseBtn").hidden = !archiveCurrent;
         $("#promptChips").hidden = true;
         $("#chatPrimaryAction").hidden = true;
@@ -657,14 +671,17 @@
             body: JSON.stringify({ user_id: USER_ID, snapshot_id: state.projectSnapshotId }),
           });
           if (!response.ok) throw new Error("新课程已创建，但旧课程暂时没有归档成功。请稍后重试。 ");
+          state.projectSnapshotId = null;
+          localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT);
           await refreshProjectArchive();
         }
         $("#returnCurrentCourseBtn").hidden = true;
         state.onboardingSnapshot = null;
         state.projectSnapshotId = null;
+        localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT);
       },
       onFailed: async () => {
-        if (!archiveCurrent || !state.projectSnapshotId) return;
+        if (!state.projectSnapshotId) return;
         try {
           await restoreCurrentCourse();
           showToast("已回到原来的课程；你的新主题选择仍会保留在对话记录里。 ");
@@ -677,7 +694,7 @@
 
   async function restoreCurrentCourse() {
     const snapshot = state.onboardingSnapshot;
-    if (!snapshot) return;
+    if (!snapshot && !state.projectSnapshotId) return;
     if (state.projectSnapshotId) {
       const response = await fetch("/api/projects/restore", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -685,6 +702,13 @@
       });
       const restored = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(restored.detail?.message || "原课程恢复失败，请重试。");
+    }
+    localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT);
+    state.projectSnapshotId = null;
+    if (!snapshot) {
+      window.OnboardingController.stop();
+      await enterLearning();
+      return;
     }
     window.OnboardingController.stop();
     state.messages = [...snapshot.messages]; state.context = snapshot.context;
@@ -740,6 +764,16 @@
     if (!response.ok) throw new Error("计划确认失败，请重试。 ");
     $("#choiceTray").hidden = true;
     await enterLearning();
+    if (state.projectSnapshotId) {
+      const archiveResponse = await fetch("/api/projects/snapshot/archive", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: USER_ID, snapshot_id: state.projectSnapshotId }),
+      });
+      if (!archiveResponse.ok) throw new Error("计划已确认，但旧课程暂时没有归档成功。请重试。");
+      state.projectSnapshotId = null;
+      localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT);
+      await refreshProjectArchive();
+    }
   }
 
   async function initialize() {

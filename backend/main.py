@@ -31,7 +31,7 @@ try:
         summarize_diagnosis,
     )
     from .learning_content import default_exercise, read_learning_context
-    from .learning_intent import IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
+    from .learning_intent import IntentDecision, IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
     from .knowledge_library import load_completed_chapter, save_completed_chapter
     from .lesson_generator import generate_and_save_lesson, load_lesson_bundle, save_lesson_bundle
     from .lesson_manifest import ensure_practice_workspace, resolve_practice_folder
@@ -48,13 +48,14 @@ try:
     from .review_material import append_attempt, append_learning_question, append_lesson_note, read_lesson_notes, read_review_document
     from .reminders import ReminderScheduler, read_reminder, save_reminder
     from .review_cards import rate_card, read_cards
-    from .supplemental_practice import parse_supplemental_response
+    from .supplemental_practice import append_supplemental_questions, parse_supplemental_response
+    from .user_memory import append_conversation_event, persist_intent_decision, read_intent_state
 except ImportError:
     from codex_driver import chat, latest_release, stream_chat
     from curriculum import curriculum_from_plan, load_curriculum, render_curriculum_plan, save_curriculum
     from diagnostics import answer_diagnosis, build_diagnosis_prompt, has_curated_bank, parse_generated_diagnosis, public_session, start_diagnosis, summarize_diagnosis
     from learning_content import default_exercise, read_learning_context
-    from learning_intent import IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
+    from learning_intent import IntentDecision, IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
     from knowledge_library import load_completed_chapter, save_completed_chapter
     from lesson_generator import generate_and_save_lesson, load_lesson_bundle, save_lesson_bundle
     from lesson_manifest import ensure_practice_workspace, resolve_practice_folder
@@ -71,7 +72,8 @@ except ImportError:
     from review_material import append_attempt, append_learning_question, append_lesson_note, read_lesson_notes, read_review_document
     from reminders import ReminderScheduler, read_reminder, save_reminder
     from review_cards import rate_card, read_cards
-    from supplemental_practice import parse_supplemental_response
+    from supplemental_practice import append_supplemental_questions, parse_supplemental_response
+    from user_memory import append_conversation_event, persist_intent_decision, read_intent_state
 
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = SERVER_ROOT / "frontend"
@@ -163,13 +165,15 @@ class GradeRequest(BaseModel):
 
 
 class ExerciseGenerateRequest(BaseModel):
-    user_id: str = Field(default="yang", max_length=64)
+    user_id: str = Field(default="yang", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     module: str = Field(min_length=1, max_length=500)
     level: str = Field(default="beginner", max_length=64)
 
 
 class SupplementalPracticeRequest(ExerciseGenerateRequest):
     count: int = Field(default=3, ge=3, le=5)
+    lesson_id: str | None = Field(default=None, max_length=96, pattern=r"^[A-Za-z0-9_-]+$")
+    append_to_lesson: bool = True
 
 
 class OnboardingConfirmRequest(OnboardingSubmission):
@@ -527,6 +531,20 @@ def interview_intake(request: InterviewIntakeRequest) -> dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    intent_state = read_intent_state(SERVER_ROOT, request.user_id)
+    intent_slots = intent_state.get("slots") if isinstance(intent_state.get("slots"), dict) else {}
+    if intent_slots.get("interview_question_source") == "has_questions":
+        intent_slots = {
+            **intent_slots,
+            "interview_question_count": len(InterviewBankStore(SERVER_ROOT).list_questions(request.user_id)),
+        }
+        persist_intent_decision(
+            SERVER_ROOT, request.user_id, message="面试题已完成入库",
+            decision={
+                "action": "interview_bank_intake", "summary": "真实面试题已入库，等待生成计划",
+                "slots": intent_slots, "question": None, "onboarding": None,
+            },
+        )
     payload = _interview_payload(request.user_id)
     return {"intake": result, "study_choices": INTERVIEW_STUDY_CHOICES, **payload}
 
@@ -628,37 +646,96 @@ def practice_review_rate(request: PracticeReviewRateRequest) -> dict[str, Any]:
 
 @app.post("/api/practice/supplemental/generate")
 def generate_supplemental_practice(request: SupplementalPracticeRequest) -> dict[str, Any]:
-    skill_texts = []
-    for skill_name in ("practice-drill", "quiz-designer"):
-        candidates = (
-            SERVER_ROOT / "workspace/dev/.codex/skills" / skill_name / "SKILL.md",
-            SERVER_ROOT / "workspace/releases/current/.codex/skills" / skill_name / "SKILL.md",
-        )
-        skill_path = next((path for path in candidates if path.is_file()), None)
-        if skill_path is None:
-            raise HTTPException(status_code=503, detail=f"教学 Skill 不可用：{skill_name}")
-        skill_texts.append(skill_path.read_text(encoding="utf-8"))
-    system = (
-        "你是 Learning Agent 的针对性练习设计器。必须严格遵守下面两个教学 Skill。\n\n"
-        + "\n\n---\n\n".join(skill_texts)
-        + "\n\n只输出 JSON：{\"questions\":[...]}。每题字段为 title、prompt、options、"
+    release = latest_release()
+    if release is None:
+        raise HTTPException(status_code=503, detail="教学 Agent 暂时不可用，请稍后重试。")
+    prompt = (
+        "先完整读取 `.codex/skills/practice-drill/SKILL.md` 和 "
+        "`.codex/skills/quiz-designer/SKILL.md`，再为当前学习者生成针对性练习。\n"
+        f"模块：{request.module}\n学习程度：{request.level}\n数量：{request.count}\n"
+        "只输出 JSON：{\"questions\":[...]}。每题字段为 title、prompt、options、"
         "correct_option_id、explanation。options 必须有 2 至 4 项且只有一个最佳答案；"
         "答案 id 必须属于 options。题目不得重复，必须检验理解或迁移，不考无意义术语背诵。"
     )
-    raw = llm_chat(
-        f"模块：{request.module}\n学习程度：{request.level}\n请生成 {request.count} 道题。",
-        system=system,
-        max_tokens=3200,
-        temperature=0.2,
-    )
+    raw = chat(request.user_id, prompt, release)
     try:
         questions = parse_supplemental_response(raw, expected_count=request.count)
-    except ValueError as exc:
-        raise HTTPException(status_code=502, detail=f"练习题没有通过结构校验：{exc}") from exc
+    except ValueError as first_error:
+        repair_prompt = (
+            prompt
+            + "\n\n上一个回答没有通过结构校验："
+            + str(first_error)
+            + "\n请完整重写 JSON，不要解释，不要沿用错误字段。上一个回答如下：\n"
+            + raw[-20_000:]
+        )
+        repaired = chat(request.user_id, repair_prompt, release)
+        try:
+            questions = parse_supplemental_response(repaired, expected_count=request.count)
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail=f"练习题没有通过结构校验：{exc}") from exc
+    if request.append_to_lesson and request.lesson_id:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", request.user_id):
+            raise HTTPException(status_code=422, detail="invalid user_id")
+        lesson_root = SERVER_ROOT / "userdir" / f"u_{request.user_id}" / "lessons"
+        bundle = None
+        for path in sorted(lesson_root.glob("*.json"))[:200]:
+            if path.name.endswith(".answers.json"):
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if payload.get("lesson_id") == request.lesson_id:
+                    bundle = load_lesson_bundle(
+                        SERVER_ROOT, request.user_id, str(payload["knowledge_point_id"]),
+                    )
+                    break
+            except (OSError, KeyError, ValueError, json.JSONDecodeError):
+                continue
+        if bundle is None:
+            raise HTTPException(status_code=404, detail="当前讲义不存在，无法追加练习。")
+        prior_page_ids = {page.id for page in bundle.manifest.pages}
+        try:
+            updated = append_supplemental_questions(bundle, questions)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        private_explanations = {
+            page.id: str(question["explanation"])
+            for page in updated.manifest.pages
+            for question in questions
+            if page.id not in prior_page_ids
+            and page.question
+            and " ".join(page.question.casefold().split())
+            == " ".join(str(question["prompt"]).casefold().split())
+        }
+        save_lesson_bundle(SERVER_ROOT, request.user_id, updated)
+        try:
+            records = PracticeBankStore(SERVER_ROOT).register_lesson(
+                request.user_id,
+                updated.manifest,
+                answer_keys=updated.answer_keys,
+                explanations=private_explanations,
+            )
+        except Exception as exc:
+            # Do not leave a visible lesson update when its private answer records failed.
+            save_lesson_bundle(SERVER_ROOT, request.user_id, bundle)
+            raise HTTPException(status_code=500, detail="练习题保存失败，原讲义已恢复。") from exc
+        added_ids = [
+            f"lesson:{updated.manifest.lesson_id}:{page.id}"
+            for page in updated.manifest.pages
+            if page.id.startswith("supplemental-") and page.id not in prior_page_ids
+        ]
+        return {
+            "added_count": len(added_ids), "duplicate_count": 0, "item_ids": added_ids,
+            "requested_count": request.count, "source": "classroom",
+            "appended_to_lesson": True, "lesson": updated.public_manifest(),
+            "bank_record_count": len(records),
+        }
     result = PracticeBankStore(SERVER_ROOT).add_supplemental_questions(
         request.user_id, topic=request.module, questions=questions,
     )
-    return {**result, "requested_count": request.count, "source": "supplemental"}
+    return {
+        **result, "requested_count": request.count, "source": "supplemental",
+        "appended_to_lesson": False,
+    }
 
 
 @app.get("/api/interview/questions/{question_id}")
@@ -1133,10 +1210,15 @@ def onboarding_intent(request: IntentRequest) -> dict[str, Any]:
                 "recovery": "retry_intent",
             },
         )
+    authoritative_slots = request.slots.model_dump()
+    if authoritative_slots.get("interview_question_source") == "has_questions":
+        authoritative_slots["interview_question_count"] = len(
+            InterviewBankStore(SERVER_ROOT).list_questions(request.user_id)
+        )
     prompt = build_intent_prompt(
         message=request.message,
         history=[item.model_dump() for item in request.history],
-        slots=request.slots.model_dump(),
+        slots=authoritative_slots,
         has_active_project=request.has_active_project,
         clarification_count=request.clarification_count,
     )
@@ -1155,10 +1237,17 @@ def onboarding_intent(request: IntentRequest) -> dict[str, Any]:
             last_error = exc
             break
         try:
+            parsed_decision = parse_intent_response(raw_decision)
+            if parsed_decision.slots.interview_question_source == "has_questions":
+                actual_count = len(InterviewBankStore(SERVER_ROOT).list_questions(request.user_id))
+                parsed_decision = IntentDecision.model_validate({
+                    **parsed_decision.model_dump(),
+                    "slots": {**parsed_decision.slots.model_dump(), "interview_question_count": actual_count},
+                })
             decision = validate_intent_against_message(
-                parse_intent_response(raw_decision), request.message,
+                parsed_decision, request.message,
                 history=request.history,
-                existing_slots=request.slots,
+                existing_slots=IntentSlots.model_validate(authoritative_slots),
             )
             break
         except Exception as exc:
@@ -1166,7 +1255,9 @@ def onboarding_intent(request: IntentRequest) -> dict[str, Any]:
             if attempt < 2:
                 prompt = build_intent_correction_prompt(prompt, str(exc))
     if decision is None:
-        decision = recover_explicit_interview_intent(request.message, request.slots)
+        decision = recover_explicit_interview_intent(
+            request.message, IntentSlots.model_validate(authoritative_slots),
+        )
     if decision is None:
         raise HTTPException(
             status_code=502,
@@ -1176,7 +1267,24 @@ def onboarding_intent(request: IntentRequest) -> dict[str, Any]:
                 "recovery": "retry_intent",
             },
         ) from last_error
-    return decision.model_dump()
+    payload = decision.model_dump()
+    persist_intent_decision(
+        SERVER_ROOT,
+        request.user_id,
+        message=request.message,
+        decision=payload,
+    )
+    return payload
+
+
+@app.get("/api/onboarding/intent-state")
+def onboarding_intent_state(
+    user_id: str = Query(default="yang", min_length=1, max_length=64),
+) -> dict[str, Any]:
+    try:
+        return read_intent_state(SERVER_ROOT, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"message": "用户标识不合法。"}) from exc
 
 
 @app.post("/api/onboarding/start")
@@ -1461,6 +1569,14 @@ def chat_stream(request: ChatRequest) -> StreamingResponse:
     append_learning_question(
         SERVER_ROOT, request.user_id, question=request.message, topic=str(context.get("topic") or ""),
     )
+    append_conversation_event(
+        SERVER_ROOT,
+        request.user_id,
+        role="user",
+        content=request.message,
+        lesson_id=request.lesson_id,
+        status="submitted",
+    )
     prompt = build_prompt(request.user_id, request.history, request.message)
 
     def events() -> Iterator[str]:
@@ -1486,6 +1602,14 @@ def chat_stream(request: ChatRequest) -> StreamingResponse:
                     "event": "notes.updated",
                     "data": {"lesson_id": request.lesson_id, "important": note["important"]},
                 })
+            if answer_parts:
+                append_conversation_event(
+                    SERVER_ROOT,
+                    request.user_id,
+                    role="assistant",
+                    content="".join(answer_parts),
+                    lesson_id=request.lesson_id,
+                )
         except Exception:
             yield format_sse(
                 {

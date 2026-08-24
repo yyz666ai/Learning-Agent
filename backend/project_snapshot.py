@@ -18,7 +18,21 @@ except ImportError:
 
 
 SNAPSHOT_ID = re.compile(r"^[a-f0-9]{24}$")
-PROJECT_PATHS = ("learning-state.json", "profile.md", "curriculum.json", "plans", "lessons", "attempts", "memory", "reviews", "interview-bank")
+PROJECT_PATHS = (
+    "learning-state.json",
+    "profile.md",
+    "profile.json",
+    "curriculum.json",
+    "plans",
+    "lessons",
+    "attempts",
+    "memory",
+    "reviews",
+    "interview-bank",
+    "practice-bank",
+    "projects",
+    "onboarding",
+)
 
 
 def normalize_project_topic(topic: str) -> str:
@@ -197,18 +211,66 @@ def delete_learning_project(server_root: Path, user_id: str, project_id: str) ->
 
 
 def _replace_project_paths(user_dir: Path, source: Path) -> None:
-    for relative in PROJECT_PATHS:
-        target = user_dir / relative
-        if target.is_dir():
-            shutil.rmtree(target)
-        elif target.exists():
-            target.unlink()
-        source_item = source / relative
-        if source_item.is_dir():
-            shutil.copytree(source_item, target)
-        elif source_item.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source_item, target)
+    """Replace project-owned paths only after a complete staged copy exists."""
+
+    operation_id = secrets.token_hex(12)
+    staging = user_dir / f".project-restore-stage-{operation_id}"
+    backup = user_dir / f".project-restore-backup-{operation_id}"
+    staging.mkdir(parents=True, exist_ok=False)
+    backup.mkdir(parents=True, exist_ok=False)
+    cleanup_backup = False
+    moved_current: list[str] = []
+    moved_staged: list[str] = []
+    try:
+        # A failed source copy cannot touch the active project.
+        for relative in PROJECT_PATHS:
+            source_item = source / relative
+            staged_item = staging / relative
+            if source_item.is_dir():
+                shutil.copytree(source_item, staged_item)
+            elif source_item.is_file():
+                staged_item.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_item, staged_item)
+
+        try:
+            for relative in PROJECT_PATHS:
+                target = user_dir / relative
+                if target.exists() or target.is_symlink():
+                    backup_item = backup / relative
+                    backup_item.parent.mkdir(parents=True, exist_ok=True)
+                    target.replace(backup_item)
+                    moved_current.append(relative)
+            for relative in PROJECT_PATHS:
+                staged_item = staging / relative
+                if staged_item.exists() or staged_item.is_symlink():
+                    target = user_dir / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    staged_item.replace(target)
+                    moved_staged.append(relative)
+            cleanup_backup = True
+        except Exception:
+            try:
+                for relative in reversed(moved_staged):
+                    target = user_dir / relative
+                    if target.is_dir() and not target.is_symlink():
+                        shutil.rmtree(target)
+                    elif target.exists() or target.is_symlink():
+                        target.unlink()
+                for relative in reversed(moved_current):
+                    backup_item = backup / relative
+                    target = user_dir / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    backup_item.replace(target)
+                cleanup_backup = True
+            except Exception as rollback_error:
+                raise RuntimeError(
+                    f"project restore failed; recovery backup preserved at {backup}"
+                ) from rollback_error
+            raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+        if cleanup_backup or not moved_current:
+            shutil.rmtree(backup, ignore_errors=True)
 
 
 def switch_project_archive(server_root: Path, user_id: str, project_id: str) -> dict[str, Any]:

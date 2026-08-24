@@ -62,8 +62,14 @@ Learning Agent 不是一次性问答工具。它要理解学习者的真实目�
 - 使用场景 `goal_route`
 - 可用时间 `session_minutes`
 - 项目或岗位上下文 `project_or_role_context`
+- 面试目标岗位 `target_role`
+- 面试技术栈 `tech_stack`
+- 面试题来源 `interview_question_source`
+- 已入库真实题数量 `interview_question_count`
 
 只有缺失槽位会实质改变课程时才继续追问。用户可随时直接打字修正选择。
+
+面试路线按“基础证据 → 技术栈 → 真实题来源”补槽；每轮仍只问一个问题。用户有小红书、面经或 JD 中收集的题时，必须先完成入库再生成 Plan；没有现成题时，按完整岗位与技术栈做权威资料研究后生成 Plan。
 
 ### 5.2 个性化 Plan
 
@@ -131,7 +137,9 @@ Plan 在对话中以 Markdown 渲染。用户确认后锁定当前版本；修�
 - 选择题答案必须属于选项；
 - 不得重复已有题；
 - 生成成功后自动进入统一题库；
-- 前端明确提示新增数量并打开题库。
+- 当前 HTML PPT 已打开时，把题目作为可点击的 `check` 页面插入总结页之前，并自动定位到第一道新题；同时注册到统一题库。
+- 没有活动讲义时只进入题库并打开复习；前端明确提示新增数量和落点。
+- 内容生成必须通过项目配置的 Codex harness 读取 `practice-drill` 与 `quiz-designer` Skills；Python 只负责结构校验、原子保存和确定性判分。
 
 ### 5.8 面试学习
 
@@ -155,9 +163,21 @@ Plan 在对话中以 Markdown 渲染。用户确认后锁定当前版本；修�
 
 进度按完成的知识点与课程证据计算，不按打开页面计算。题库掌握率独立显示，不能替代课程进度。
 
+### 5.10 用户目录、项目隔离与记忆
+
+每个本地使用者的数据都保存在 `userdir/u_<user_id>/`，不进入公开仓库。当前事实与变化历史分开保存：
+
+- `profile.json`：稳定画像和已确认的 onboarding 槽位；
+- `onboarding/intent-state.json`：可恢复的当前 slot filling 状态；
+- `onboarding/intent-events.jsonl`：每轮意图、证据、选择和纠正历史；
+- `memory/conversation-events.jsonl`：需要长期保留的用户与 Agent 对话事件；
+- `profile.md`、`plans/*.md`：供用户阅读，也供后续 Agent 在最小范围内读取。
+
+每门学习项目的归档快照同时包含画像、onboarding、Plan、课程、题库、复习、面试题和真实 `projects/` 练习目录。切换项目必须整体恢复，不能让两门课程混用题库或代码目录。浏览器 `localStorage` 只作界面缓存，不是学习记忆的唯一来源。
+
 掌握状态：`unseen → introduced → practicing → provisional → mastered`。遗忘或重复错误进入 `needs_review`。
 
-### 5.10 知识库自生长
+### 5.11 知识库自生长
 
 - 模型生成且通过结构校验的讲义可进入课程缓存。
 - 重要问题先进入 `curation/pending/`。
@@ -165,7 +185,7 @@ Plan 在对话中以 Markdown 渲染。用户确认后锁定当前版本；修�
 - 复核后才能合并成公共知识原子或题库资产。
 - 用户学习记录、答案和隐私内容永不进入公共知识库。
 
-### 5.11 流式与等待反馈
+### 5.12 流式与等待反馈
 
 对话使用 FastAPI SSE 流式返回。Plan、讲义、练习和评价等长任务必须展示当前阶段、动态进度和预计剩余时间；预计时间是基于历史阶段耗时的估计，不冒充精确完成时间。
 

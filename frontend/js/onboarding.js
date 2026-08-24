@@ -6,7 +6,8 @@
   const EMPTY_SLOTS = {
     intent_family: null, topic: null, goal: null, desired_outcome: null,
     target_context: null, level_evidence: null, deadline: null,
-    learning_scope: null, constraints: [],
+    learning_scope: null, constraints: [], target_role: null, tech_stack: [],
+    interview_question_source: "unknown", interview_question_count: 0,
   };
   const state = {
     active: false, stage: "topic", topic: "", topicType: "custom",
@@ -118,6 +119,43 @@
 
   function recentIntentHistory() { return state.intentHistory.slice(-8); }
 
+  async function restoreIntentState() {
+    try {
+      const response = await fetch(`/api/onboarding/intent-state?user_id=${encodeURIComponent(userId)}`);
+      if (!response.ok) return false;
+      const persisted = await response.json();
+      state.slots = { ...EMPTY_SLOTS, ...(persisted.slots || {}) };
+      state.topic = state.slots.topic || "";
+      if (persisted.action === "interview_bank_intake") {
+        if (Number(state.slots.interview_question_count || 0) > 0) {
+          addAgent(`已恢复 ${state.slots.interview_question_count} 道已入库面试题，继续生成针对性计划。`);
+          await analyzeIntent(
+            `已经收录 ${state.slots.interview_question_count} 道真实面试题，请生成针对性计划`,
+            { recordUser: false },
+          );
+          return true;
+        }
+        state.stage = "interview_intake";
+        addAgent("继续上次没有完成的建档：把你收集的面试题直接粘贴到输入框，我会先去重入库，再生成针对性 Plan。");
+        byId("chatInput").placeholder = "直接粘贴面试题，支持编号列表或多行问题…";
+        return true;
+      }
+      if (persisted.action !== "clarify" || !persisted.question?.options?.length) return false;
+      state.stage = "clarifying";
+      state.clarificationCount = 1;
+      addAgent(`继续上次没有完成的建档：${persisted.question.prompt}`);
+      showChoices(persisted.question.options, {
+        hint: "选一个最接近的；也可以直接输入修改或补充",
+        progress: "已恢复上次进度",
+        intent: true,
+      });
+      byId("chatInput").placeholder = "也可以直接输入你真正想要的结果…";
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function findExistingProject(topic) {
     const query = new URLSearchParams({ user_id: userId, topic });
     const response = await fetch(`/api/projects/match?${query.toString()}`);
@@ -190,9 +228,16 @@
         else await beginDiagnosis();
         return;
       }
+      if (decision.action === "interview_bank_intake") {
+        state.stage = "interview_intake";
+        hideChoices();
+        addAgent("把你收集的面试题直接粘贴到输入框即可；可以一次发多道，我会先去重收录，再生成针对性 Plan。");
+        byId("chatInput").placeholder = "直接粘贴面试题，支持编号列表或多行问题…";
+        global.LearningActivity?.finish("等待你粘贴面试题", "题目会先保存到你的个人题库。 ");
+        return;
+      }
       state.active = false; hideChoices();
-      if (decision.action === "interview_bank_intake") await state.callbacks.onInterviewIntake?.(message);
-      else await state.callbacks.onAnswerInContext?.(message);
+      await state.callbacks.onAnswerInContext?.(message);
       global.LearningActivity?.finish("已切换到对应处理方式", "不会为这句话新建学习计划。");
     } catch (error) {
       showError(error);
@@ -320,6 +365,27 @@
     const text = value.trim();
     if (!state.active || !text || state.busy) return false;
     if (state.stage === "plan_review") { addUser(text); await revisePlan(text); }
+    else if (state.stage === "interview_intake") {
+      addUser(text); setBusy(true); clearError();
+      global.LearningActivity?.start("正在收录面试题", "正在去重、分类并保存到你的个人题库。 ");
+      try {
+        const payload = await request("/api/interview/intake", {
+          user_id: userId, raw_text: text, source: "chat",
+        });
+        state.slots.interview_question_source = "has_questions";
+        state.slots.interview_question_count = Number(payload.intake?.source_count || 0);
+        addAgent(`已收录 ${payload.intake?.source_count || 0} 道题，其中新增 ${payload.intake?.new_count || 0} 道。现在根据这些题生成学习方案。`);
+        await analyzeIntent(`已经收录 ${state.slots.interview_question_count} 道真实面试题，请生成针对性计划`, { recordUser: false });
+      } catch (error) {
+        byId("chatInput").value = text;
+        state.pendingAction = () => {
+          byId("chatInput").value = "";
+          handleText(text);
+        };
+        showError(error);
+      }
+      finally { setBusy(false); }
+    }
     else if (state.stage === "diagnostic") {
       addUser(text);
       addAgent("这几道是用来定起点的点击题，直接点上方选项就行；做完后继续用输入框问任何问题。");
@@ -336,7 +402,10 @@
       clarificationCount: 0, diagnostic: null, pendingAction: null, confirmationResult: null,
       existingProject: null, existingDecision: null,
     });
-    if (initialTopic.trim()) analyzeIntent(initialTopic); else askTopic();
+    if (initialTopic.trim()) analyzeIntent(initialTopic);
+    else if (callbacks.restorePersistedIntent) {
+      restoreIntentState().then((restored) => { if (!restored) askTopic(); });
+    } else askTopic();
   }
 
   function stop() { state.active = false; hideChoices(); }

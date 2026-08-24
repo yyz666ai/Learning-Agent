@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -68,9 +69,55 @@ class PracticeBankStore:
         manifest: LessonManifest,
         *,
         answer_keys: dict[str, str] | None = None,
+        explanations: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Register a whole lesson atomically, including every generated item."""
+
+        root = self._root(user_id)
+        transaction = Path(tempfile.mkdtemp(prefix="learning-agent-practice-bank-"))
+        backup = transaction / "items"
+        if root.is_dir():
+            shutil.copytree(root, backup)
+        cleanup_transaction = False
+        try:
+            result = self._register_lesson_unchecked(
+                user_id,
+                manifest,
+                answer_keys=answer_keys,
+                explanations=explanations,
+            )
+            cleanup_transaction = True
+            return result
+        except Exception:
+            try:
+                if root.is_dir():
+                    shutil.rmtree(root)
+                elif root.exists():
+                    root.unlink()
+                if backup.is_dir():
+                    root.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(backup, root)
+                cleanup_transaction = True
+            except Exception as rollback_error:
+                raise RuntimeError(
+                    f"practice bank write failed; recovery backup preserved at {backup}"
+                ) from rollback_error
+            raise
+        finally:
+            if cleanup_transaction:
+                shutil.rmtree(transaction, ignore_errors=True)
+
+    def _register_lesson_unchecked(
+        self,
+        user_id: str,
+        manifest: LessonManifest,
+        *,
+        answer_keys: dict[str, str] | None = None,
+        explanations: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         keys = answer_keys or {}
+        private_explanations = explanations or {}
         for page in manifest.pages:
             if page.question and page.options:
                 item_id = f"lesson:{manifest.lesson_id}:{page.id}"
@@ -91,7 +138,7 @@ class PracticeBankStore:
                         (option.label for option in page.options if option.id.casefold() == str(keys.get(page.id) or "").casefold()),
                         previous.get("answer", ""),
                     ),
-                    "explanation": page.completion_criteria or previous.get("explanation", ""),
+                    "explanation": private_explanations.get(page.id) or page.completion_criteria or previous.get("explanation", ""),
                     "practice_path": page.practice_path or manifest.practice_path,
                     "status": previous.get("status", "unattempted"),
                     "attempt_count": int(previous.get("attempt_count") or 0),

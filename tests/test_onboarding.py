@@ -12,6 +12,7 @@ from backend.onboarding import (
     render_plan,
 )
 from backend.learning_plan_personalizer import build_plan_prompt, normalize_and_validate_plan
+from backend.user_memory import persist_intent_decision
 
 
 def submission(
@@ -130,6 +131,37 @@ def test_confirm_onboarding_writes_resolvable_plan(tmp_path):
     assert result["first_lesson"]["forbid_more_onboarding"] is True
     assert state["diagnosis"]["strengths"] == ["能识别基本语法"]
     assert state["diagnosis"]["gaps"] == ["并发心智模型"]
+
+
+def test_confirm_onboarding_writes_machine_readable_profile_with_intent_slots(tmp_path):
+    persist_intent_decision(
+        tmp_path,
+        "learner",
+        message="React，没有现成题",
+        decision={
+            "action": "ready_for_plan",
+            "summary": "面试信息完整",
+            "slots": {
+                "target_role": "AI 前端",
+                "tech_stack": ["React", "TypeScript"],
+                "interview_question_source": "none",
+            },
+        },
+    )
+
+    selected = submission(level="zero", topic="AI 前端", goal_route="interview_sprint")
+    confirm_onboarding(tmp_path, selected, diagnosis=None)
+
+    profile = json.loads(
+        (tmp_path / "userdir/u_learner/profile.json").read_text(encoding="utf-8")
+    )
+    assert profile["goal_route"] == "interview_sprint"
+    assert profile["intent_slots"]["target_role"] == "AI 前端"
+    assert profile["intent_slots"]["tech_stack"] == ["React", "TypeScript"]
+    profile_markdown = (tmp_path / "userdir/u_learner/profile.md").read_text(encoding="utf-8")
+    assert "目标岗位：AI 前端" in profile_markdown
+    assert "技术栈：React、TypeScript" in profile_markdown
+    assert "面试题来源：暂时没有现成题" in profile_markdown
 
 
 def test_complete_mastery_plan_rejects_shallow_outline_and_accepts_detailed_capstone():

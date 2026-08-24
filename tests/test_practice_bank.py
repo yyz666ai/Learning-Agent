@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import shutil
 from datetime import date
+from pathlib import Path
+
+import pytest
 
 from backend.lesson_manifest import InterviewPrompt, LessonManifest, build_starter_lesson
+from backend import practice_bank
 from backend.practice_bank import PracticeBankStore
 
 
@@ -31,6 +36,54 @@ def test_register_lesson_collects_choices_and_homework_without_duplicates(tmp_pa
     assert len(choice["options"]) == 3
     assert homework["practice_path"]
     assert homework["status"] == "pending"
+
+
+def test_register_lesson_rolls_back_every_item_after_a_partial_write(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = PracticeBankStore(tmp_path)
+    bundle = lesson_bundle()
+    original_save = store._save
+    calls = 0
+
+    def fail_after_first(user_id: str, record: dict[str, object]):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("disk full")
+        return original_save(user_id, record)
+
+    monkeypatch.setattr(store, "_save", fail_after_first)
+    with pytest.raises(OSError, match="disk full"):
+        store.register_lesson("learner", bundle.manifest, answer_keys=bundle.answer_keys)
+
+    assert store.list_items("learner") == []
+
+
+def test_register_lesson_preserves_backup_when_rollback_copy_fails(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = PracticeBankStore(tmp_path)
+    bundle = lesson_bundle()
+    store.register_lesson("learner", bundle.manifest, answer_keys=bundle.answer_keys)
+    original_copytree = shutil.copytree
+    calls = 0
+
+    def fail_restore(source, target, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("restore failed")
+        return original_copytree(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(practice_bank.shutil, "copytree", fail_restore)
+    monkeypatch.setattr(store, "_save", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("write failed")))
+    with pytest.raises(RuntimeError, match="recovery backup preserved") as failure:
+        store.register_lesson("learner", bundle.manifest, answer_keys=bundle.answer_keys)
+
+    backup = str(failure.value).split(" at ", 1)[1]
+    assert Path(backup).is_dir()
+    shutil.rmtree(Path(backup).parent)
 
 
 def test_choice_attempts_preserve_wrong_history_after_correct_retry(tmp_path) -> None:

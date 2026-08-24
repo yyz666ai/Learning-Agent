@@ -20,6 +20,7 @@ description: Use when a learner requests a library, framework, API, project, int
 1. 先用 `python tools/web_search.py "<主题> official documentation getting started"` 搜索。
 2. 优先官方文档、官方仓库、标准或原始论文；必要时用 `curl` 读取具体页面。
 3. 只收集影响学习路线的事实：当前版本、先修、最小安装、核心心智模型、运行机制、测试调试、工程边界、性能安全、最小运行例和常见破坏性差异。
+   面试路线必须使用“完整目标岗位 + 已确认技术栈”限定范围：优先官方技术文档、公开岗位能力要求和权威工程资料；公开面经只用来发现题型与表达场景，不把无来源答案当作事实。研究结果同时列出岗位能力域、技术栈核心主题、常见追问链和初学者先修缺口。
 4. 输出结构化 `sources.json`，字段必须严格使用：
    - 顶层：`topic`, `researched_at`, `version`, `sources`, `teaching_facts`, `coverage_areas`, `prerequisites`, `graduation_project`；
    - 每个 source：`id`, `title`, `url`, `kind`；

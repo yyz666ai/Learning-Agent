@@ -8,6 +8,7 @@ from backend import learning_intent
 
 from backend.learning_intent import (
     IntentDecision,
+    IntentSlots,
     build_intent_prompt,
     parse_intent_response,
     recover_explicit_interview_intent,
@@ -74,10 +75,11 @@ def test_explicit_beginner_interview_goal_does_not_route_to_concept_depth_choice
         history=[], slots={}, has_active_project=False, clarification_count=0,
     )
 
-    assert "明确面试目标" in prompt
+    assert "完整 target_role" in prompt
     assert "interview_sprint" in prompt
-    assert "concept_scope=not_applicable" in prompt
-    assert "理解概念 / 掌握语法 / 完成项目" in prompt
+    assert "tech_stack" in prompt
+    assert "interview_question_source" in prompt
+    assert "interview_bank_intake" in prompt
 
 
 def test_parse_clarification_accepts_two_or_three_specific_options() -> None:
@@ -220,6 +222,7 @@ def test_ready_intent_rejects_model_authored_level_evidence_not_found_in_learner
         "slots": {
             **payload["slots"], "topic": "前端", "goal": "准备前端面试",
             "desired_outcome": "完成模拟面试", "level_evidence": "有基础",
+            "target_role": "前端", "tech_stack": ["React"], "interview_question_source": "none",
         },
         "onboarding": {
             "goal_route": "interview_sprint", "learning_mode": "practice",
@@ -240,6 +243,7 @@ def test_ready_intent_rejects_verbatim_text_that_is_not_level_evidence() -> None
         "slots": {
             **payload["slots"], "topic": "前端", "goal": "准备前端面试",
             "desired_outcome": "完成模拟面试", "level_evidence": "面试",
+            "target_role": "前端", "tech_stack": ["React"], "interview_question_source": "none",
         },
         "onboarding": {
             "goal_route": "interview_sprint", "learning_mode": "practice",
@@ -286,6 +290,7 @@ def test_model_authored_prior_level_slot_is_not_treated_as_learner_evidence() ->
         "slots": {
             **payload["slots"], "topic": "前端", "goal": "前端面试",
             "desired_outcome": "完成模拟面试", "level_evidence": "有基础",
+            "target_role": "前端", "tech_stack": ["React"], "interview_question_source": "none",
         },
         "onboarding": {
             "goal_route": "interview_sprint", "learning_mode": "practice",
@@ -310,6 +315,7 @@ def test_latest_user_level_correction_wins_over_older_history() -> None:
         "slots": {
             **payload["slots"], "topic": "前端", "goal": "前端面试",
             "desired_outcome": "完成模拟面试", "level_evidence": "已经熟练",
+            "target_role": "前端", "tech_stack": ["React"], "interview_question_source": "none",
         },
         "onboarding": {
             "goal_route": "interview_sprint", "learning_mode": "practice",
@@ -352,12 +358,130 @@ def test_explicit_interview_recovery_uses_stated_level_and_role() -> None:
     decision = recover_explicit_interview_intent("我是一名熟练的产品经理，想准备 AI 产品经理面试")
 
     assert decision is not None
-    assert decision.action == "ready_for_plan"
+    assert decision.action == "clarify"
     assert decision.slots.topic == "AI 产品经理"
     assert decision.slots.level_evidence == "熟练"
-    assert decision.onboarding is not None
-    assert decision.onboarding.level_claim == "experienced"
-    assert decision.onboarding.goal_route == "interview_sprint"
+    assert decision.slots.target_role == "AI 产品经理"
+    assert decision.question is not None
+    assert decision.question.slot == "tech_stack"
+
+
+def test_interview_recovery_preserves_prior_level_when_user_only_adds_stack() -> None:
+    prior = {
+        "intent_family": "面试准备", "topic": "AI 前端", "target_role": "AI 前端",
+        "goal": "准备 AI 前端面试", "desired_outcome": "完成岗位模拟面试",
+        "level_evidence": "初学",
+    }
+
+    decision = recover_explicit_interview_intent("React 和 TypeScript", prior)
+
+    assert decision is not None
+    assert decision.action == "clarify"
+    assert decision.slots.level_evidence == "初学"
+    assert decision.slots.tech_stack == ["React", "TypeScript"]
+    assert decision.question is not None
+    assert decision.question.slot == "interview_question_source"
+
+
+def test_stack_only_reply_cannot_replace_confirmed_interview_role() -> None:
+    payload = clarification_payload()
+    payload["slots"].update({
+        "topic": "Java 后端", "target_role": "Java 后端", "tech_stack": ["React"],
+        "goal": "准备 Java 后端面试", "desired_outcome": "完成岗位模拟面试",
+        "level_evidence": "初学",
+    })
+    decision = parse_intent_response(json.dumps(payload, ensure_ascii=False))
+
+    with pytest.raises(ValueError, match="preserve confirmed topic"):
+        validate_intent_against_message(
+            decision, "React 和 TypeScript",
+            existing_slots={
+                "topic": "AI 前端", "target_role": "AI 前端",
+                "goal": "准备 AI 前端面试", "desired_outcome": "完成岗位模拟面试",
+                "level_evidence": "初学",
+            },
+        )
+
+
+def test_interview_plan_requires_role_tech_stack_and_question_source() -> None:
+    payload = clarification_payload()
+    payload.update({
+        "action": "ready_for_plan", "summary": "AI 前端面试", "question": None,
+        "slots": {
+            **payload["slots"], "topic": "AI 前端", "target_role": "AI 前端",
+            "goal": "准备 AI 前端面试", "desired_outcome": "完成模拟面试",
+            "level_evidence": "初学", "tech_stack": [],
+            "interview_question_source": "unknown",
+        },
+        "onboarding": {
+            "goal_route": "interview_sprint", "learning_mode": "practice",
+            "level_claim": "zero", "session_minutes": 25,
+            "concept_scope": "not_applicable",
+        },
+    })
+
+    with pytest.raises((ValueError, ValidationError), match="tech stack"):
+        parse_intent_response(json.dumps(payload, ensure_ascii=False))
+
+    payload["slots"]["tech_stack"] = ["React", "TypeScript"]
+    with pytest.raises((ValueError, ValidationError), match="question source"):
+        parse_intent_response(json.dumps(payload, ensure_ascii=False))
+
+    payload["slots"]["interview_question_source"] = "none"
+    decision = parse_intent_response(json.dumps(payload, ensure_ascii=False))
+    assert decision.action == "ready_for_plan"
+    assert decision.slots.tech_stack == ["React", "TypeScript"]
+
+
+def test_interview_question_source_has_questions_routes_to_intake_before_plan() -> None:
+    payload = clarification_payload()
+    payload.update({
+        "action": "interview_bank_intake", "summary": "等待粘贴面试题", "question": None,
+        "slots": {
+            **payload["slots"], "topic": "AI 前端", "target_role": "AI 前端",
+            "goal": "准备 AI 前端面试", "desired_outcome": "完成模拟面试",
+            "level_evidence": "初学", "tech_stack": ["React", "TypeScript"],
+            "interview_question_source": "has_questions",
+        },
+        "onboarding": None,
+    })
+
+    decision = parse_intent_response(json.dumps(payload, ensure_ascii=False))
+    assert decision.action == "interview_bank_intake"
+    assert decision.slots.interview_question_source == "has_questions"
+
+
+def test_confirmed_interview_question_source_cannot_change_without_user_correction() -> None:
+    payload = clarification_payload()
+    payload.update({
+        "action": "ready_for_plan", "summary": "准备开始", "question": None,
+        "slots": {
+            **payload["slots"], "topic": "AI 前端", "target_role": "AI 前端",
+            "goal": "准备面试", "desired_outcome": "完成模拟面试",
+            "level_evidence": "初学", "tech_stack": ["React"],
+            "interview_question_source": "none",
+        },
+        "onboarding": {
+            "goal_route": "interview_sprint", "learning_mode": "practice", "level_claim": "zero",
+            "session_minutes": 25, "concept_scope": "not_applicable", "topic_type": "custom",
+            "deadline_days": None, "teaching_preference": "balanced",
+        },
+    })
+    decision = parse_intent_response(json.dumps(payload, ensure_ascii=False))
+    prior = IntentSlots.model_validate({
+        **payload["slots"], "interview_question_source": "has_questions", "interview_question_count": 0,
+    })
+
+    with pytest.raises(ValueError, match="interview_question_source"):
+        validate_intent_against_message(
+            decision, "其实这些题比较难，但继续", existing_slots=prior,
+            history=[{"role": "user", "content": "我是初学，有现成面试题"}],
+        )
+
+
+def test_interview_question_source_understands_double_negation() -> None:
+    assert learning_intent._interview_source_from_text("不是没有题，我有收集的面试题") == "has_questions"
+    assert learning_intent._interview_source_from_text("我并非有现成面试题") == "none"
 
 
 def test_explicit_interview_recovery_does_not_guess_for_unrelated_learning_request() -> None:
