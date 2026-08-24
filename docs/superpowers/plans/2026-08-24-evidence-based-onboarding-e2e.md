@@ -74,7 +74,7 @@
 
 - [x] Run full pytest, workspace validation, JavaScript syntax, JSON validation, and `git diff --check`.
 - [x] Restart the local launch service and verify health plus the current frontend asset version.
-- [ ] Commit, push GitHub `main`, and verify the remote SHA.
+- [x] Commit, push GitHub `main`, and verify the remote SHA.
 
 ## Verification record
 
