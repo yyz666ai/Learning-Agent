@@ -27,11 +27,15 @@
   }
 
   function inline(value) {
-    return escapeHtml(value)
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/==([^=]+)==/g, "<mark>$1</mark>")
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    return escapeHtml(value).split(/(`[^`]+`)/g).map((segment) => {
+      if (segment.startsWith("`") && segment.endsWith("`")) {
+        return `<code>${segment.slice(1, -1)}</code>`;
+      }
+      return segment
+        .replace(/==([^=]+)==/g, "<mark>$1</mark>")
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    }).join("");
   }
 
   function render(markdown) {

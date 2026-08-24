@@ -632,6 +632,20 @@ console.log(rendered);
     assert 'class="markdown-copy-code"' in result.stdout
     assert "复制代码" in result.stdout
     assert "markdown-copy-code:not([data-bound])" in read(MARKDOWN_JS)
+
+
+def test_markdown_does_not_highlight_equals_inside_inline_code() -> None:
+    script = r"""
+const markdown = require('./frontend/js/markdown.js');
+console.log(markdown.render('`=== 我的待办清单 ===`'));
+"""
+    result = subprocess.run(
+        ["node", "-e", script], cwd=ROOT, capture_output=True, text=True, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "<code>=== 我的待办清单 ===</code>" in result.stdout
+    assert "<mark>" not in result.stdout
     assert "已复制" in read(MARKDOWN_JS)
 
 
