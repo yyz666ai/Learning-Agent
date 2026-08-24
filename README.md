@@ -38,7 +38,7 @@ Learning Agent 会先理解你想学什么、目前会多少、最后想达到�
 | 流式交互 | FastAPI + SSE 持续返回消息，并显示长任务的阶段、进度与预计等待时间 |
 | 知识库共创 | Skills、知识原子、路线与题目可通过 PR 扩充；复核后的内容可进入公共知识库 |
 
-完整产品范围见 [产品需求文档](product/PRD.md)，不同用户的完整路径见 [工作流说明](product/WORKFLOWS.md)。
+完整产品范围见 [产品需求文档](product/PRD.md)，不同用户的完整路径见 [工作流说明](product/WORKFLOWS.md)；模型、阿里云年度成本以及 Codex / Skills / Python / 知识库的真实执行边界见 [成本与执行工作流](product/COST_AND_EXECUTION_WORKFLOW.md)；知识原子动态组合、个性化 HTML PPT、Plan 降本与云端收费的目标架构见 [知识库与个性化课件设计](product/KNOWLEDGE_BASE_PERSONALIZED_DECK_DESIGN.md)。
 
 <div align="center">
   <img src="assets/learning-agent-ui.jpg" width="920" alt="Learning Agent interface" />
