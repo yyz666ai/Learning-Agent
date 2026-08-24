@@ -14,7 +14,6 @@ MARKDOWN_JS = ROOT / "frontend/js/markdown.js"
 STYLE = ROOT / "frontend/css/style.css"
 INTERVIEW_JS = ROOT / "frontend/js/interview-bank.js"
 TOPIC_INTENT_JS = ROOT / "frontend/js/topic-intent.js"
-VOICE_INPUT_JS = ROOT / "frontend/js/voice-input.js"
 ACTIVITY_PROGRESS_JS = ROOT / "frontend/js/activity-progress.js"
 
 
@@ -125,7 +124,7 @@ def test_primary_controls_use_a_standard_icon_library_instead_of_text_glyphs() -
     app = read(APP_JS)
     onboarding = read(ONBOARDING_JS)
 
-    for icon in ("bi-mortarboard-fill", "bi-plus-lg", "bi-mic", "bi-arrow-up", "bi-gear"):
+    for icon in ("bi-mortarboard-fill", "bi-plus-lg", "bi-arrow-up", "bi-gear"):
         assert icon in html
     assert "bi-three-dots" in app
     assert "bi-info-circle" in onboarding
@@ -206,39 +205,17 @@ def test_dynamic_intent_choices_are_compact_and_keep_composer_as_the_correction_
     assert ".choice-tooltip" in css
 
 
-def test_voice_input_delivers_final_transcript_to_the_shared_composer_flow() -> None:
-    script = """
-const voice = require('./frontend/js/voice-input.js');
-let clickHandler = null;
-const recognition = { start() { this.onstart(); }, stop() { this.onend(); } };
-const button = {
-  disabled: false,
-  classList: { toggle() {} },
-  setAttribute() {},
-  addEventListener(name, handler) { if (name === 'click') clickHandler = handler; }
-};
-let transcript = '';
-const controller = voice.create({
-  button,
-  recognitionFactory: () => recognition,
-  onTranscript: (value) => { transcript = value; },
-  onStatus: () => {}
-});
-clickHandler();
-recognition.onresult({ results: [[{ transcript: '我想学 LangGraph' }]] });
-console.log(JSON.stringify({ transcript, listening: controller.listening }));
-"""
-    result = subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == {"transcript": "我想学 LangGraph", "listening": True}
-
+def test_unsupported_voice_input_is_not_shown_or_loaded() -> None:
     html = read(INDEX)
     app = read(APP_JS)
-    assert 'id="voiceInputBtn"' in html
-    assert 'src="/js/voice-input.js' in html
-    assert "VoiceInput.create" in app
-    assert '$("#chatForm").requestSubmit()' in app
+    css = read(STYLE)
+
+    assert 'id="voiceInputBtn"' not in html
+    assert 'src="/js/voice-input.js' not in html
+    assert "bindVoiceInput" not in app
+    assert "VoiceInput" not in app
+    assert ".voice-input-button" not in css
+    assert not (ROOT / "frontend/js/voice-input.js").exists()
 
 
 def test_onboarding_requires_a_model_personalized_plan_before_opening_lesson() -> None:
@@ -539,7 +516,6 @@ def test_learning_mode_prioritizes_outline_and_keeps_projects_in_settings() -> N
 def test_composer_icon_buttons_are_visually_compact_with_stronger_icons() -> None:
     css = read(STYLE)
 
-    assert ".voice-input-button" in css and "width: 36px; height: 36px" in css
     assert ".send-button" in css and "width: 36px; height: 36px" in css
     assert ".composer-actions i" in css
     assert "-webkit-text-stroke" in css
@@ -640,6 +616,7 @@ console.log(JSON.stringify(progress.estimate(30000, 120000)));
     assert "预计还需" in payload["label"]
     assert 'id="activityCurrentStep"' in read(INDEX)
     assert 'setText("#activityCurrentStep"' in read(APP_JS)
+    assert 'setText("#activityStatusDetail", phases[phaseIndex])' not in read(APP_JS)
 
 
 def test_learning_sidebar_is_compact_and_keeps_more_space_for_outline() -> None:
@@ -811,7 +788,7 @@ def test_outline_pager_moves_one_full_sidebar_page_and_updates_nearest_page_labe
 
 
 def test_all_frontend_javascript_parses() -> None:
-    for path in (APP_JS, ONBOARDING_JS, ARTIFACT_JS, MARKDOWN_JS, INTERVIEW_JS, TOPIC_INTENT_JS, VOICE_INPUT_JS):
+    for path in (APP_JS, ONBOARDING_JS, ARTIFACT_JS, MARKDOWN_JS, INTERVIEW_JS, TOPIC_INTENT_JS):
         result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
         assert result.returncode == 0, f"{path.name}: {result.stderr}"
 

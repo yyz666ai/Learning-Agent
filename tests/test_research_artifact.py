@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from backend.research_artifact import load_valid_research, render_research_evidence, research_path
 
 
@@ -92,3 +94,29 @@ def test_deep_research_normalizes_common_agent_string_lists(tmp_path) -> None:
 
     assert artifact.prerequisites == ["会使用终端", "能够安装 Go"]
     assert artifact.graduation_project.evidence == ["测试通过", "安全扫描通过"]
+
+
+def test_research_topic_accepts_only_display_qualifiers_and_is_canonicalized(tmp_path) -> None:
+    path = research_path(tmp_path, "learner", "AI前端")
+    path.parent.mkdir(parents=True)
+    payload = {
+        "topic": "AI前端工程师（面试冲刺 · 零基础 · meaning_only）",
+        "researched_at": "2026-08-24",
+        "version": "current",
+        "sources": [{"id": "docs", "title": "AI SDK", "url": "https://ai-sdk.dev/docs/introduction", "kind": "official_docs"}],
+        "teaching_facts": [{"statement": "AI SDK 支持流式 AI 界面。", "source_ids": ["docs"]}],
+        "coverage_areas": ["前端基础", "模型 API", "流式交互", "安全", "面试表达"],
+        "prerequisites": ["JavaScript"],
+        "graduation_project": "完成 AI 前端模拟面试",
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    artifact = load_valid_research(tmp_path, "learner", "AI前端", require_deep=True)
+
+    assert artifact.topic == "AI前端"
+    assert json.loads(path.read_text(encoding="utf-8"))["topic"] == "AI前端"
+
+    payload["topic"] = "AI后端工程师（面试冲刺）"
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="does not match"):
+        load_valid_research(tmp_path, "learner", "AI前端", require_deep=True)

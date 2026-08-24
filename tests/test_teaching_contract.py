@@ -91,6 +91,7 @@ def test_intent_router_skill_owns_multiturn_slot_filling_and_dynamic_questions()
     for case_id in (
         "concept-question", "ambiguous-langgraph", "interview-with-evidence",
         "current-debugging", "interview-intake", "correct-previous-slot",
+        "explicit-beginner-interview",
     ):
         assert case_id in evals
 

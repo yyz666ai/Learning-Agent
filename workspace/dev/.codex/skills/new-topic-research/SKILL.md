@@ -25,6 +25,7 @@ description: Use when a learner requests a library, framework, API, project, int
    - 每个 source：`id`, `title`, `url`, `kind`；
    - 每个 teaching fact：`statement`, `source_ids`；
    每个事实必须引用一个已存在的 source id，不要改成 `fact` / `source` 等近义字段。
+   顶层 `topic` 必须与用户的原始学习主题一致；路线、起点、学习范围只是元数据，不得追加到 `topic` 或放进括号。
 5. 完整掌握路线的 `coverage_areas` 至少覆盖五个真正不同的能力域。`graduation_project` 可以是详细字符串，也可以是含 `name`、`goal`、`evidence` 的对象；必须是可验收的大型综合产出。
 6. 把研究结果交给 `learning-plan`；每章生成时只注入与本章相关的来源事实，不要在研究阶段直接生成整章课件。
 

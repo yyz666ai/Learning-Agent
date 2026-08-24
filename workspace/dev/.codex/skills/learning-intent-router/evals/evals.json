@@ -17,6 +17,11 @@
       "expectations": ["复用期限和经验槽位", "不重复问基础", "进入面试路线或只问一个高价值问题"]
     },
     {
+      "id": "explicit-beginner-interview",
+      "prompt": "我想面试 AI 前端，初学",
+      "expectations": ["直接识别为 interview_sprint", "level_claim 为 zero", "concept_scope 为 not_applicable", "不再询问理解概念、掌握语法或完成项目", "最终目标是通过岗位模拟面试"]
+    },
+    {
       "id": "current-debugging",
       "prompt": "这段代码为什么报错？",
       "expectations": ["返回 answer_in_context", "不新建课程", "不进入建档"]

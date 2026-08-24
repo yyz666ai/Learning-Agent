@@ -45,6 +45,16 @@ description: Use when a learner freely types a new goal, concept, interview need
 
 这 3 个选项只用于主题意图仍模糊的情况。用户在原话里已经明确“看懂项目”“从零到工程师”“准备面试”“只懂概念”等目标时，直接填槽或提出更具体的单一问题，不重复这层路由。
 
+### 明确的面试目标
+
+用户一句话已经给出“面试 + 目标岗位/主题 + 起点”时，例如“我想面试 AI 前端，初学”，信息已足够生成第一版 Plan：
+
+- 直接 `ready_for_plan`，路线为 `interview_sprint`，模式为 `practice`，`concept_scope=not_applicable`。
+- “初学”、“零基础”归一为 `level_claim=zero`，但 Plan 仍要从先修能力逐层进入面试实战。
+- 用户没有明说验收句时，可将 `desired_outcome` 规范为“完成目标岗位模拟面试，能独立讲解核心问题”。
+- 不再追问“理解概念 / 掌握语法 / 完成项目”这类通用学习深度；面试已经决定了教学路线。
+- 期限、具体 JD 或现有面试题可以之后在 Plan 中滚动补充，不得阻塞首版 Plan。
+
 ## 同主题项目
 
 - 进入 Plan 前必须检查同主题项目；大小写、空格或常见标点差异不代表新主题。

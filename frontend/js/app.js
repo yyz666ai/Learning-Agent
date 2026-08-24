@@ -78,7 +78,6 @@
       let phaseIndex = 0;
       activityPhaseTimer = window.setInterval(() => {
         phaseIndex = (phaseIndex + 1) % phases.length;
-        setText("#activityStatusDetail", phases[phaseIndex]);
         setText("#activityCurrentStep", `当前：${phases[phaseIndex].replace(/…+$/, "")}`);
       }, 2800);
     }
@@ -823,30 +822,6 @@
     } catch (error) { showToast(error.message); }
   }
 
-  function bindVoiceInput() {
-    const button = $("#voiceInputBtn");
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Recognition || !window.VoiceInput) {
-      button.addEventListener("click", () => showToast("当前浏览器暂不支持语音识别，可以直接打字。"));
-      button.setAttribute("aria-label", "当前浏览器不支持语音输入");
-      return;
-    }
-    window.VoiceInput.create({
-      button,
-      recognitionFactory: () => new Recognition(),
-      onTranscript: (transcript) => {
-        $("#chatInput").value = transcript;
-        setText("#coachContext", `已识别：${transcript}`);
-        $("#chatForm").requestSubmit();
-      },
-      onStatus: (status, message) => {
-        button.setAttribute("aria-label", message);
-        if (status === "listening") setText("#coachContext", message);
-        if (status === "error") showToast(message);
-      },
-    });
-  }
-
   function bind() {
     window.InterviewBankController?.init({ userId: USER_ID, addUser: (content) => addMessage("user", content), addAgent: (content) => addMessage("agent", content), showToast });
     $("#chatForm").addEventListener("submit", async (event) => {
@@ -901,7 +876,6 @@
       if (response.ok) renderLearningContext(await response.json());
       addMessage("agent", `已经为你打开：**${event.detail.cta_label}**。从第 1 页开始，继续按讲义里的提示往下走。`);
     });
-    bindVoiceInput();
   }
 
   document.addEventListener("DOMContentLoaded", () => { bind(); initialize(); }, { once: true });

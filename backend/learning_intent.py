@@ -160,7 +160,8 @@ def build_intent_prompt(
 5. 不得生成“其他”“都不符合”“我直接补充”或 Other 选项；用户会直接在输入框补充。
 6. 当前课程答疑、一次性报错返回 answer_in_context；一批面试题入库返回 interview_bank_intake。
 7. ready_for_plan 时由你根据语义填写 onboarding；不要要求用户为内部默认时间预算再答一题。
-8. 只输出一个 JSON 对象，不要 Markdown，不要解释。
+8. 用户已明确面试目标、主题与起点时，这就是“明确面试目标”：直接 ready_for_plan，设为 interview_sprint + practice + concept_scope=not_applicable；“初学/零基础”对应 zero。可将默认验收结果规范为“完成目标岗位模拟面试并会讲解核心题”，不得再询问“理解概念 / 掌握语法 / 完成项目”。
+9. 只输出一个 JSON 对象，不要 Markdown，不要解释。
 
 JSON Schema：
 {json.dumps(schema, ensure_ascii=False)}

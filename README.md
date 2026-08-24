@@ -108,6 +108,10 @@ DEEPSEEK_API_KEY=你的_DeepSeek_API_Key
 
 本地记录保存在 `userdir/`，关闭网页或重启服务不会清空。该目录不会提交到 GitHub。
 
+### workspace 发布快照
+
+这里的 `publish` 不是上传 GitHub，也不是发布 npm / PyPI 包。它会把 `workspace/dev/manifest.json` 白名单中已验证的 Skills 和知识库文件，复制成当前服务使用的稳定快照 `workspace/releases/current/`。开发中的临时文件、用户数据和密钥不会进入快照；首次启动如果没有快照，`run.sh` 会自动生成。
+
 ## 项目结构
 
 ```text

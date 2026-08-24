@@ -115,10 +115,13 @@ def load_valid_research(
     }
     artifact = ResearchArtifact.model_validate(normalized)
     def topic_key(value: str) -> str:
-        key = re.sub(r"[\s\W_]+", "", value.casefold())
-        return re.sub(r"(?:语言|是什么)$", "", key)
+        # 研究产物可以有展示用的路线标签，但不能悄悄换成另一个主题。
+        without_qualifiers = re.sub(r"[（(][^）)]*[）)]", "", value.casefold())
+        key = re.sub(r"[\s\W_]+", "", without_qualifiers)
+        return re.sub(r"(?:工程师|开发者|语言|课程|学习|是什么)$", "", key)
     if topic_key(artifact.topic) != topic_key(topic):
         raise ValueError("research topic does not match the learning plan")
+    artifact = artifact.model_copy(update={"topic": topic})
     if require_deep:
         if len(artifact.coverage_areas) < 5:
             raise ValueError("deep research must cover at least five capability areas")

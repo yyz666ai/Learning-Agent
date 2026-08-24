@@ -65,6 +65,18 @@ def test_intent_prompt_includes_skill_recent_history_existing_slots_and_correcti
     assert "不得重复已填槽位" in prompt
 
 
+def test_explicit_beginner_interview_goal_does_not_route_to_concept_depth_choices() -> None:
+    prompt = build_intent_prompt(
+        message="我想面试 AI 前端，初学",
+        history=[], slots={}, has_active_project=False, clarification_count=0,
+    )
+
+    assert "明确面试目标" in prompt
+    assert "interview_sprint" in prompt
+    assert "concept_scope=not_applicable" in prompt
+    assert "理解概念 / 掌握语法 / 完成项目" in prompt
+
+
 def test_parse_clarification_accepts_two_or_three_specific_options() -> None:
     decision = parse_intent_response(json.dumps(clarification_payload(), ensure_ascii=False))
 
