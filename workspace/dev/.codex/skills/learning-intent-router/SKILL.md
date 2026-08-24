@@ -13,10 +13,11 @@ description: Use when a learner freely types a new goal, concept, interview need
 
 - `intent_family`：新学习、当前答疑、项目理解、面试准备、面试题入库、复习等。
 - `topic`、`goal`、`desired_outcome`、`target_context`。
-- `level_evidence`：仅记录用户已表达的基础，不伪造掌握证据。
+- `level_evidence`：仅记录用户已表达的基础，不伪造掌握证据。优先复制用户原话或已有槽位中的证据，不得凭空写入“有基础”“熟练”等词。
 - `deadline`、`learning_scope`、`constraints`。
 
 用户说“不对”“其实”或显式改变目标时，**新输入优先**，覆盖冲突的旧槽位。不重复询问已明确信息。
+“零基础 / 初学 / 小白”“有一点基础 / 有基础 / 学过一点”“熟练 / 资深”等原话本身就是有效的 `level_evidence`；必须分别归一为 `zero`、`some`、`experienced`，不得漏填后再次追问。
 
 ## 决策
 
@@ -45,6 +46,15 @@ description: Use when a learner freely types a new goal, concept, interview need
 
 这 3 个选项只用于主题意图仍模糊的情况。用户在原话里已经明确“看懂项目”“从零到工程师”“准备面试”“只懂概念”等目标时，直接填槽或提出更具体的单一问题，不重复这层路由。
 
+### 明确的概念解释
+
+用户明确问“X 是什么”“X 是什么意思”“什么叫 X”或“解释一下 X”时，目标已经足够明确：
+
+- 直接 `ready_for_plan`，使用 `goal_route=concept_clarity`、`concept_scope=meaning_only`。
+- 不再弹“初学 / 精进 / 面试”，也不追问每天学习多久或当前基础。
+- 可将验收结果规范为“能用自己的话解释该概念，并判断一个典型场景是否属于它”。
+- 只有用户明确要求代码实现时，才使用 `code_walkthrough`；不要把“是什么意思”擅自扩大成完整工程路线。
+
 ### 明确的面试目标
 
 用户一句话已经给出“面试 + 目标岗位/主题 + 起点”时，例如“我想面试 AI 前端，初学”，信息已足够生成第一版 Plan：
@@ -54,6 +64,14 @@ description: Use when a learner freely types a new goal, concept, interview need
 - 用户没有明说验收句时，可将 `desired_outcome` 规范为“完成目标岗位模拟面试，能独立讲解核心问题”。
 - 不再追问“理解概念 / 掌握语法 / 完成项目”这类通用学习深度；面试已经决定了教学路线。
 - 期限、具体 JD 或现有面试题可以之后在 Plan 中滚动补充，不得阻塞首版 Plan。
+
+如果用户只给出“面试 + 目标岗位”，却没有任何基础证据，不得猜测 `zero` / `some` / `experienced`，也不得直接进入技术诊断。只追问一次“你目前的基础更接近哪种？”：
+
+- `初学`：记入 `level_evidence`，归一为 `zero`，跳过技术诊断。
+- `有基础`：记入 `level_evidence`，归一为 `some`，再做 3–4 道岗位专属诊断。
+- `熟练`：记入 `level_evidence`，归一为 `experienced`，再做 3–4 道岗位专属情境诊断。
+
+这一题只填 `level_evidence`，已经明确的岗位、面试目标、`desired_outcome`、场景和约束必须原样保留；用户没有明确说“改成 / 不对 / 其实要换”时不得换主题。
 
 ## 同主题项目
 

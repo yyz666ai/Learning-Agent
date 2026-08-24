@@ -163,6 +163,13 @@ def _bank_for(topic: str) -> list[dict[str, Any]]:
     return GENERIC_BANK
 
 
+def has_curated_bank(topic: str, goal_route: str | None = None) -> bool:
+    if goal_route == "interview_sprint":
+        return False
+    lowered = topic.casefold()
+    return lowered == "go" or "golang" in lowered or "python" in lowered
+
+
 def build_diagnosis_prompt(topic: str, level_claim: str, goal_route: str) -> str:
     return f"""你在 Learning Agent workspace 中工作。先读取 `adaptive-onboarding` Skill，再根据主题、目标和水平生成点击式诊断题。
 
@@ -170,16 +177,25 @@ def build_diagnosis_prompt(topic: str, level_claim: str, goal_route: str) -> str
 用户自述水平：{level_claim}
 学习目标路线：{goal_route}
 
-只输出 JSON：{{"questions":[...]}}。questions 必须有 3 或 4 道题；每题含 id、prompt、dimension、options、correct_option_id。
-options 为 2–4 个 {{"id":"a","label":"..."}}，correct_option_id 必须引用本题 option。题目应针对主题与路线；不要要求用户写代码、输入文本或解释。
+只输出 JSON：{{"topic":"{topic}","questions":[...]}}。顶层 topic 必须原样保留为“{topic}”。questions 必须有 3 或 4 道题；每题含 id、prompt、dimension、options、correct_option_id。
+options 为 2–4 个 {{"id":"a","label":"..."}}，correct_option_id 必须引用本题 option。题目应针对主题与路线；不要要求用户写代码、输入文本或解释。每一道 prompt 或 dimension 都必须原样包含完整主题“{topic}”，方便服务端校验没有串岗；只写 AI、Go、前端等局部通用词不算通过。
+先确定该目标岗位的岗位核心能力，再从中选择能区分起点的判断题。不得复用通用题库，不得输出与“{topic}”无关的技术或岗位问题。
 """
 
 
-def parse_generated_diagnosis(response: str) -> list[dict[str, Any]]:
+def parse_generated_diagnosis(response: str, *, expected_topic: str | None = None) -> list[dict[str, Any]]:
     start, end = response.find("{"), response.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("diagnosis response is not JSON")
     payload = json.loads(response[start:end + 1])
+    if expected_topic is not None:
+        actual_topic = str(payload.get("topic") or "") if isinstance(payload, dict) else ""
+        topic_key = lambda value: re.sub(r"[\s\W_]+", "", value.casefold())
+        if topic_key(actual_topic) != topic_key(expected_topic):
+            raise ValueError("diagnosis topic does not match the target role")
+        required_topic_anchor = topic_key(expected_topic)
+    else:
+        required_topic_anchor = ""
     questions = payload.get("questions") if isinstance(payload, dict) else None
     if not isinstance(questions, list) or not 3 <= len(questions) <= 4:
         raise ValueError("diagnosis requires three or four questions")
@@ -195,6 +211,9 @@ def parse_generated_diagnosis(response: str) -> list[dict[str, Any]]:
         answer = str(raw.get("correct_option_id") or "")
         if not re.fullmatch(r"[a-z0-9-]{1,96}", identifier) or identifier in seen or not prompt.strip() or not dimension.strip():
             raise ValueError("diagnosis question metadata is invalid")
+        searchable = re.sub(r"[\s\W_]+", "", f"{prompt} {dimension}".casefold())
+        if required_topic_anchor and required_topic_anchor not in searchable:
+            raise ValueError("diagnosis question is not anchored to the target role")
         if not isinstance(options, list) or not 2 <= len(options) <= 4:
             raise ValueError("diagnosis options must contain two to four choices")
         clean_options = []

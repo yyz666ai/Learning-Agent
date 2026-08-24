@@ -24,13 +24,14 @@ try:
     from .diagnostics import (
         answer_diagnosis,
         build_diagnosis_prompt,
+        has_curated_bank,
         parse_generated_diagnosis,
         public_session,
         start_diagnosis,
         summarize_diagnosis,
     )
     from .learning_content import default_exercise, read_learning_context
-    from .learning_intent import IntentSlots, build_intent_prompt, parse_intent_response
+    from .learning_intent import IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
     from .knowledge_library import load_completed_chapter, save_completed_chapter
     from .lesson_generator import generate_and_save_lesson, load_lesson_bundle, save_lesson_bundle
     from .lesson_manifest import ensure_practice_workspace, resolve_practice_folder
@@ -51,9 +52,9 @@ try:
 except ImportError:
     from codex_driver import chat, latest_release, stream_chat
     from curriculum import curriculum_from_plan, load_curriculum, render_curriculum_plan, save_curriculum
-    from diagnostics import answer_diagnosis, build_diagnosis_prompt, parse_generated_diagnosis, public_session, start_diagnosis, summarize_diagnosis
+    from diagnostics import answer_diagnosis, build_diagnosis_prompt, has_curated_bank, parse_generated_diagnosis, public_session, start_diagnosis, summarize_diagnosis
     from learning_content import default_exercise, read_learning_context
-    from learning_intent import IntentSlots, build_intent_prompt, parse_intent_response
+    from learning_intent import IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
     from knowledge_library import load_completed_chapter, save_completed_chapter
     from lesson_generator import generate_and_save_lesson, load_lesson_bundle, save_lesson_bundle
     from lesson_manifest import ensure_practice_workspace, resolve_practice_folder
@@ -1139,9 +1140,34 @@ def onboarding_intent(request: IntentRequest) -> dict[str, Any]:
         has_active_project=request.has_active_project,
         clarification_count=request.clarification_count,
     )
-    try:
-        decision = parse_intent_response(intent_chat(prompt, _intent_skill_text(release)))
-    except Exception as exc:
+    skill_text = _intent_skill_text(release)
+    decision = None
+    last_error: Exception | None = None
+    # Flash models occasionally need one structural repair followed by one
+    # semantic repair (for example: malformed JSON, then a repeated level
+    # question). Keep the normal path at one call while allowing both repairs.
+    for attempt in range(3):
+        try:
+            raw_decision = intent_chat(prompt, skill_text)
+        except Exception as exc:
+            # Transport, provider, authentication and timeout failures are not
+            # repaired by asking the same unavailable service two more times.
+            last_error = exc
+            break
+        try:
+            decision = validate_intent_against_message(
+                parse_intent_response(raw_decision), request.message,
+                history=request.history,
+                existing_slots=request.slots,
+            )
+            break
+        except Exception as exc:
+            last_error = exc
+            if attempt < 2:
+                prompt = build_intent_correction_prompt(prompt, str(exc))
+    if decision is None:
+        decision = recover_explicit_interview_intent(request.message, request.slots)
+    if decision is None:
         raise HTTPException(
             status_code=502,
             detail={
@@ -1149,7 +1175,7 @@ def onboarding_intent(request: IntentRequest) -> dict[str, Any]:
                 "retryable": True,
                 "recovery": "retry_intent",
             },
-        ) from exc
+        ) from last_error
     return decision.model_dump()
 
 
@@ -1162,10 +1188,19 @@ def onboarding_start(request: OnboardingSubmission) -> dict[str, Any]:
     release = latest_release()
     if release is not None:
         try:
-            questions = parse_generated_diagnosis(chat(request.user_id, build_diagnosis_prompt(request.topic.value, request.level_claim, request.goal_route), release))
+            questions = parse_generated_diagnosis(
+                chat(request.user_id, build_diagnosis_prompt(request.topic.value, request.level_claim, request.goal_route), release),
+                expected_topic=request.topic.value,
+            )
             source = "skill_generated"
         except (ValueError, json.JSONDecodeError):
             questions = None
+    if questions is None and not has_curated_bank(request.topic.value, request.goal_route):
+        raise HTTPException(status_code=502, detail={
+            "message": "这次岗位专属诊断没有生成完成，你的目标已保留。",
+            "retryable": True,
+            "recovery": "retry_diagnosis",
+        })
     session = start_diagnosis(request.topic.value, request.level_claim, questions=questions)
     session["diagnostic_source"] = source
     session["submission"] = request.model_dump()

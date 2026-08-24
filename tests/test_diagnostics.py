@@ -2,7 +2,9 @@ import pytest
 
 from backend.diagnostics import (
     answer_diagnosis,
+    build_diagnosis_prompt,
     parse_generated_diagnosis,
+    has_curated_bank,
     public_session,
     start_diagnosis,
     summarize_diagnosis,
@@ -90,3 +92,61 @@ def test_skill_generated_diagnosis_is_a_small_clickable_topic_specific_question_
     assert len(session["bank"]) == 3
     assert all(2 <= len(question["options"]) <= 4 for question in session["bank"])
     assert session["bank"][0]["id"] == "java-generics"
+
+
+def test_generated_diagnosis_rejects_a_different_target_role() -> None:
+    response = json.dumps({
+        "topic": "前端",
+        "questions": [
+            {"id": f"q{index}", "prompt": f"React 问题 {index}", "dimension": "React", "options": [
+                {"id": "a", "label": "A"}, {"id": "b", "label": "B"},
+            ], "correct_option_id": "a"}
+            for index in range(1, 4)
+        ],
+    }, ensure_ascii=False)
+
+    with pytest.raises(ValueError, match="topic"):
+        parse_generated_diagnosis(response, expected_topic="Java后端")
+
+
+def test_generated_diagnosis_rejects_questions_not_anchored_to_target_role() -> None:
+    response = json.dumps({
+        "topic": "AI产品经理",
+        "questions": [
+            {"id": f"q{index}", "prompt": f"React 事件流问题 {index}", "dimension": "React", "options": [
+                {"id": "a", "label": "A"}, {"id": "b", "label": "B"},
+            ], "correct_option_id": "a"}
+            for index in range(1, 4)
+        ],
+    }, ensure_ascii=False)
+
+    with pytest.raises(ValueError, match="anchored"):
+        parse_generated_diagnosis(response, expected_topic="AI产品经理")
+
+
+def test_generated_diagnosis_rejects_short_generic_anchor_with_unrelated_content() -> None:
+    response = json.dumps({
+        "topic": "AI产品经理",
+        "questions": [
+            {"id": f"q{index}", "prompt": f"AI：Go 指针如何工作？{index}", "dimension": "AI", "options": [
+                {"id": "a", "label": "A"}, {"id": "b", "label": "B"},
+            ], "correct_option_id": "a"}
+            for index in range(1, 4)
+        ],
+    }, ensure_ascii=False)
+
+    with pytest.raises(ValueError, match="anchored"):
+        parse_generated_diagnosis(response, expected_topic="AI产品经理")
+
+
+def test_interview_route_never_uses_language_fallback_bank() -> None:
+    assert has_curated_bank("Python 产品经理", "interview_sprint") is False
+    assert has_curated_bank("Go", "foundation_engineer") is True
+
+
+def test_diagnosis_prompt_forbids_generic_bank_substitution() -> None:
+    prompt = build_diagnosis_prompt("AI产品经理", "experienced", "interview_sprint")
+
+    assert "岗位核心能力" in prompt
+    assert "不得复用通用题库" in prompt
+    assert '"topic":"AI产品经理"' in prompt

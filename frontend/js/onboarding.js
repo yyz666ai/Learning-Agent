@@ -102,6 +102,8 @@
 
   function hideChoices() {
     byId("choiceTray").hidden = true;
+    byId("choiceTrayQuestion").hidden = true;
+    byId("choiceTrayQuestion").textContent = "";
     byId("choiceTray").classList.remove("is-plan-confirmation", "is-intent-question");
     byId("inlineChoices").replaceChildren();
   }
@@ -199,7 +201,9 @@
   }
 
   function renderDiagnostic(result) {
-    state.stage = "diagnostic"; state.diagnostic = result; addAgent(result.question.prompt);
+    state.stage = "diagnostic"; state.diagnostic = result;
+    byId("choiceTrayQuestion").textContent = result.question.prompt;
+    byId("choiceTrayQuestion").hidden = false;
     showChoices(result.question.options.map((option) => ({ ...option, value: option.id })), {
       hint: "真实选择题，直接点击", progress: `诊断 ${result.answered_count + 1} / 最多 4`,
     });

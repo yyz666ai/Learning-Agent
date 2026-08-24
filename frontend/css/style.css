@@ -342,6 +342,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .inline-choice strong { font-size: 13px; font-weight: 600; }
 .inline-choice small { margin-top: 2px; color: var(--ink-soft); font-size: 9px; line-height: 1.4; }
 .choice-tray.is-intent-question { width: 100%; margin-left: 0; padding: 0; }
+.choice-tray-question { margin: 0 0 8px; color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.55; }
 .choice-tray.is-intent-question .choice-tray-head { margin-bottom: 7px; font-size: 10px; }
 .choice-tray.is-intent-question .inline-choices { gap: 5px; }
 .intent-choice-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 6px; align-items: stretch; }

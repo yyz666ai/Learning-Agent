@@ -22,6 +22,11 @@
       "expectations": ["直接识别为 interview_sprint", "level_claim 为 zero", "concept_scope 为 not_applicable", "不再询问理解概念、掌握语法或完成项目", "最终目标是通过岗位模拟面试"]
     },
     {
+      "id": "interview-missing-level",
+      "prompt": "我要面试前端岗",
+      "expectations": ["不猜测用户水平", "只追问一次当前基础", "选项为初学、有基础、熟练", "保留前端面试目标"]
+    },
+    {
       "id": "current-debugging",
       "prompt": "这段代码为什么报错？",
       "expectations": ["返回 answer_in_context", "不新建课程", "不进入建档"]

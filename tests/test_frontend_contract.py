@@ -134,11 +134,16 @@ def test_primary_controls_use_a_standard_icon_library_instead_of_text_glyphs() -
 
 def test_inline_diagnosis_is_clickable_and_bounded() -> None:
     js = read(ONBOARDING_JS)
+    html = read(INDEX)
     assert "diagnostic" in js
     assert 'className = "inline-choice"' in js
     assert '"/api/diagnostics/answer"' in js
     assert "最多 4" in js
     assert "textarea" not in js
+    assert 'id="choiceTrayQuestion"' in html
+    assert 'byId("choiceTrayQuestion").textContent = result.question.prompt' in js
+    assert 'byId("choiceTrayQuestion").hidden = false' in js
+    assert 'byId("choiceTrayQuestion").hidden = true' in js
 
 
 def test_onboarding_uses_model_intent_and_multiturn_slot_filling() -> None:

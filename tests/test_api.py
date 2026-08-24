@@ -272,10 +272,10 @@ def test_nonzero_onboarding_uses_codex_generated_click_diagnosis(
 ) -> None:
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
-    monkeypatch.setattr(main, "chat", lambda *_: json.dumps({"questions": [
-        {"id": "java-list", "prompt": "List 的作用？", "dimension": "syntax", "options": [{"id": "a", "label": "保存多个值"}, {"id": "b", "label": "启动服务"}], "correct_option_id": "a"},
-        {"id": "java-http", "prompt": "200 的意思？", "dimension": "api", "options": [{"id": "a", "label": "成功"}, {"id": "b", "label": "未找到"}], "correct_option_id": "a"},
-        {"id": "java-error", "prompt": "异常出现时？", "dimension": "debugging", "options": [{"id": "a", "label": "处理它"}, {"id": "b", "label": "忽略项目"}], "correct_option_id": "a"},
+    monkeypatch.setattr(main, "chat", lambda *_: json.dumps({"topic": "Java API", "questions": [
+        {"id": "java-list", "prompt": "Java API 中 List 的作用？", "dimension": "Java syntax", "options": [{"id": "a", "label": "保存多个值"}, {"id": "b", "label": "启动服务"}], "correct_option_id": "a"},
+        {"id": "java-http", "prompt": "Java API 返回 200 的意思？", "dimension": "Java API", "options": [{"id": "a", "label": "成功"}, {"id": "b", "label": "未找到"}], "correct_option_id": "a"},
+        {"id": "java-error", "prompt": "Java API 异常出现时？", "dimension": "Java debugging", "options": [{"id": "a", "label": "处理它"}, {"id": "b", "label": "忽略项目"}], "correct_option_id": "a"},
     ]}, ensure_ascii=False))
 
     response = client.post("/api/onboarding/start", json={
@@ -287,6 +287,24 @@ def test_nonzero_onboarding_uses_codex_generated_click_diagnosis(
     assert response.status_code == 200
     assert response.json()["question"]["id"] == "java-list"
     assert response.json()["diagnostic_source"] == "skill_generated"
+
+
+def test_custom_role_diagnosis_generation_failure_is_recoverable_not_generic(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
+    monkeypatch.setattr(main, "chat", lambda *_: '{"topic":"前端","questions":[]}')
+
+    response = client.post("/api/onboarding/start", json={
+        "user_id": "learner", "topic": {"type": "custom", "value": "AI产品经理"},
+        "learning_mode": "practice", "goal_route": "interview_sprint",
+        "level_claim": "experienced", "session_minutes": 25,
+    })
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["recovery"] == "retry_diagnosis"
+    assert not (tmp_path / "userdir/u_learner/onboarding/diagnostic.json").exists()
 
 
 def test_onboarding_intent_uses_fast_skill_prompt_with_recent_history_and_slots(
@@ -350,6 +368,201 @@ def test_onboarding_intent_rejects_malformed_model_output_without_fixed_fallback
     assert response.json()["detail"]["retryable"] is True
     assert response.json()["detail"]["recovery"] == "retry_intent"
     assert "固定选项" not in response.text
+
+
+def test_onboarding_intent_retries_once_when_model_invents_interview_level(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    invented = {
+        "action": "ready_for_plan", "confidence": 0.9, "summary": "前端面试",
+        "slots": {
+            "intent_family": "面试准备", "topic": "前端", "goal": "面试前端岗",
+            "desired_outcome": "完成前端模拟面试", "target_context": None,
+            "level_evidence": None, "deadline": None, "learning_scope": None, "constraints": [],
+        },
+        "question": None,
+        "onboarding": {
+            "goal_route": "interview_sprint", "learning_mode": "practice", "level_claim": "some",
+            "session_minutes": 25, "concept_scope": "not_applicable", "topic_type": "custom",
+            "deadline_days": None, "teaching_preference": "balanced",
+        },
+    }
+    clarified = {
+        "action": "clarify", "confidence": 0.98, "summary": "还缺真实基础",
+        "slots": invented["slots"], "onboarding": None,
+        "question": {
+            "prompt": "你目前的前端基础更接近哪种？", "slot": "level_evidence",
+            "options": [
+                {"id": "beginner", "label": "初学", "detail": "从必要基础开始"},
+                {"id": "some", "label": "有基础", "detail": "做过小项目"},
+                {"id": "experienced", "label": "熟练", "detail": "有真实工程经验"},
+            ],
+        },
+    }
+    calls: list[str] = []
+    def fake_intent_chat(prompt: str, _skill: str) -> str:
+        calls.append(prompt)
+        return json.dumps(invented if len(calls) == 1 else clarified, ensure_ascii=False)
+
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "release")
+    monkeypatch.setattr(main, "intent_chat", fake_intent_chat)
+
+    response = client.post("/api/onboarding/intent", json={
+        "user_id": "learner", "message": "我要面试前端岗",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "clarify"
+    assert [option["label"] for option in response.json()["question"]["options"]] == ["初学", "有基础", "熟练"]
+    assert len(calls) == 2
+    assert "不得猜测水平" in calls[1]
+
+
+def test_onboarding_intent_allows_two_repair_attempts_for_explicit_interview_level(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    malformed = '{"action":"ready_for_plan"}'
+    repeated_level = {
+        "action": "clarify", "confidence": 0.7, "summary": "需要确认基础",
+        "slots": {
+            "intent_family": "面试准备", "topic": "AI 产品经理", "goal": "准备面试",
+            "desired_outcome": None, "target_context": "AI 产品经理岗位",
+            "level_evidence": None, "deadline": None, "learning_scope": None, "constraints": [],
+        },
+        "question": {
+            "prompt": "你目前是什么水平？", "slot": "level_evidence",
+            "options": [
+                {"id": "beginner", "label": "初学", "detail": "从基础开始"},
+                {"id": "some", "label": "有基础", "detail": "有部分经验"},
+                {"id": "experienced", "label": "熟练", "detail": "有完整经验"},
+            ],
+        },
+        "onboarding": None,
+    }
+    ready = {
+        "action": "ready_for_plan", "confidence": 0.97, "summary": "AI 产品经理面试冲刺",
+        "slots": {
+            **repeated_level["slots"], "desired_outcome": "完成 AI 产品经理模拟面试",
+            "level_evidence": "熟练的产品经理",
+        },
+        "question": None,
+        "onboarding": {
+            "goal_route": "interview_sprint", "learning_mode": "practice",
+            "level_claim": "experienced", "session_minutes": 25,
+            "concept_scope": "not_applicable", "topic_type": "custom",
+            "deadline_days": None, "teaching_preference": "balanced",
+        },
+    }
+    responses = iter([malformed, json.dumps(repeated_level, ensure_ascii=False), json.dumps(ready, ensure_ascii=False)])
+    calls: list[str] = []
+
+    def fake_intent_chat(prompt: str, _skill: str) -> str:
+        calls.append(prompt)
+        return next(responses)
+
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "release")
+    monkeypatch.setattr(main, "intent_chat", fake_intent_chat)
+
+    response = client.post("/api/onboarding/intent", json={
+        "user_id": "learner", "message": "我是一名熟练的产品经理，想准备 AI 产品经理面试",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["onboarding"]["level_claim"] == "experienced"
+    assert response.json()["onboarding"]["goal_route"] == "interview_sprint"
+    assert len(calls) == 3
+
+
+def test_onboarding_intent_recovers_unambiguous_interview_after_three_invalid_model_outputs(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    def invalid_intent(prompt: str, _skill: str) -> str:
+        calls.append(prompt)
+        return '{"action":"ready_for_plan"}'
+
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "release")
+    monkeypatch.setattr(main, "intent_chat", invalid_intent)
+
+    response = client.post("/api/onboarding/intent", json={
+        "user_id": "learner", "message": "我要面试 Java 后端岗，有一点基础",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["slots"]["topic"] == "Java 后端"
+    assert response.json()["onboarding"]["level_claim"] == "some"
+    assert response.json()["onboarding"]["goal_route"] == "interview_sprint"
+    assert len(calls) == 3
+
+
+def test_onboarding_intent_does_not_retry_transport_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def timeout(*_args) -> str:
+        nonlocal calls
+        calls += 1
+        raise TimeoutError("provider timed out")
+
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "release")
+    monkeypatch.setattr(main, "intent_chat", timeout)
+
+    response = client.post("/api/onboarding/intent", json={
+        "user_id": "learner", "message": "我要面试前端岗",
+    })
+
+    assert response.status_code == 200  # explicit request uses evidence-only recovery
+    assert response.json()["action"] == "clarify"
+    assert calls == 1
+
+
+def test_onboarding_intent_retries_generic_choices_for_explicit_concept_request(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    generic = {
+        "action": "clarify", "confidence": 0.7, "summary": "还要选择路线",
+        "slots": {
+            "intent_family": "新学习", "topic": "RAG", "goal": "理解 RAG",
+            "desired_outcome": None, "target_context": None, "level_evidence": None,
+            "deadline": None, "learning_scope": None, "constraints": [],
+        },
+        "question": {
+            "prompt": "你想怎么学？", "slot": "intent_family",
+            "options": [
+                {"id": "beginner", "label": "初学", "detail": "从基础开始"},
+                {"id": "advanced", "label": "精进", "detail": "深入学习"},
+            ],
+        },
+        "onboarding": None,
+    }
+    concept = {
+        "action": "ready_for_plan", "confidence": 0.98, "summary": "解释 RAG",
+        "slots": {**generic["slots"], "desired_outcome": "能用自己的话解释 RAG 并判断典型场景"},
+        "question": None,
+        "onboarding": {
+            "goal_route": "concept_clarity", "learning_mode": "systematic",
+            "level_claim": "zero", "session_minutes": 25, "concept_scope": "meaning_only",
+            "topic_type": "custom", "deadline_days": None, "teaching_preference": "visual",
+        },
+    }
+    calls = []
+    def fake_intent_chat(prompt: str, _skill: str) -> str:
+        calls.append(prompt)
+        return json.dumps(generic if len(calls) == 1 else concept, ensure_ascii=False)
+
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "release")
+    monkeypatch.setattr(main, "intent_chat", fake_intent_chat)
+
+    response = client.post("/api/onboarding/intent", json={
+        "user_id": "learner", "message": "我想弄懂大模型的 RAG 是什么意思",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["action"] == "ready_for_plan"
+    assert response.json()["onboarding"]["goal_route"] == "concept_clarity"
+    assert "不得再问初学、精进或面试" in calls[1]
 
 
 def test_ready_intent_does_not_persist_or_confirm_project(

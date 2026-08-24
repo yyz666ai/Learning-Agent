@@ -342,6 +342,82 @@ def test_generator_normalizes_common_model_answer_key_list_before_validation(tmp
     assert bundle.answer_keys == {"check": "b"}
 
 
+def test_generator_retries_once_when_model_omits_choice_answer_key(tmp_path: Path) -> None:
+    curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
+    broken = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
+    broken["answer_keys"] = {}
+    corrected = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
+    corrected["pages"][2]["question"] = "package main、func main、go run 与 go build 分别负责什么？"
+    corrected["scope_evidence"] = [
+        {"knowledge_point_id": "package-main", "page_ids": ["intuition", "example"]},
+        {"knowledge_point_id": "func-main", "page_ids": ["example", "check"]},
+        {"knowledge_point_id": "go-run-go-build", "page_ids": ["check", "practice"]},
+    ]
+    prompts = []
+
+    def fake_model(prompt: str) -> str:
+        prompts.append(prompt)
+        return json.dumps(broken if len(prompts) == 1 else corrected, ensure_ascii=False)
+
+    bundle = generate_and_save_lesson(
+        tmp_path, "learner", curriculum=curriculum, profile="零基础",
+        recent_evidence=[], session_minutes=25, model_call=fake_model,
+    )
+
+    assert bundle.answer_keys == {"check": "b"}
+    assert len(prompts) == 2
+    assert "every choice page must have an answer key" in prompts[1]
+    assert "只输出一个完整 JSON 对象" in prompts[1]
+    assert "当前知识点：package-main" in prompts[1]
+    assert "程序结构与运行" in prompts[1]
+
+
+def test_generator_rejects_structurally_repaired_lesson_that_changes_the_knowledge_point(tmp_path: Path) -> None:
+    curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
+    broken = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
+    broken["answer_keys"] = {}
+    drifted = json.loads(model_lesson_json(curriculum.current_knowledge_point_id, title="HTTP 路由基础"))
+    drifted["pages"][0]["title"] = "先理解 HTTP 路由"
+    drifted["pages"][0]["markdown"] = "路由把 URL 映射到处理函数。"
+    drifted["pages"][2]["question"] = "哪个状态码表示创建成功？"
+    drifted["pages"][2]["options"] = [{"id": "a", "label": "201"}, {"id": "b", "label": "500"}]
+    drifted["answer_keys"] = {"check": "a"}
+    drifted["pages"][3]["title"] = "运行路由示例"
+    drifted["pages"][3]["markdown"] = "启动服务并访问 URL。"
+    drifted["scope_evidence"] = [
+        {"knowledge_point_id": "package-main", "page_ids": ["intuition", "example"]},
+        {"knowledge_point_id": "func-main", "page_ids": ["example", "check"]},
+        {"knowledge_point_id": "go-run-go-build", "page_ids": ["check", "practice"]},
+    ]
+    responses = iter([json.dumps(broken, ensure_ascii=False), json.dumps(drifted, ensure_ascii=False)])
+
+    with pytest.raises(ValueError, match="drifted"):
+        generate_and_save_lesson(
+            tmp_path, "learner", curriculum=curriculum, profile="零基础",
+            recent_evidence=[], session_minutes=25, model_call=lambda _prompt: next(responses),
+        )
+
+    assert not (tmp_path / "userdir/u_learner/lessons/package-main.json").exists()
+
+
+def test_generator_rejects_scope_evidence_that_repeats_one_page(tmp_path: Path) -> None:
+    curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
+    broken = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
+    broken["answer_keys"] = {}
+    corrected = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
+    corrected["scope_evidence"] = [
+        {"knowledge_point_id": point.id, "page_ids": ["example", "example"]}
+        for point in curriculum.current_chapter_remaining_points()
+    ]
+    responses = iter([json.dumps(broken, ensure_ascii=False), json.dumps(corrected, ensure_ascii=False)])
+
+    with pytest.raises(ValueError, match="at least two pages"):
+        generate_and_save_lesson(
+            tmp_path, "learner", curriculum=curriculum, profile="零基础",
+            recent_evidence=[], session_minutes=25, model_call=lambda _prompt: next(responses),
+        )
+
+
 def test_first_long_code_dump_without_progressive_build_up_is_rejected() -> None:
     payload = json.loads(model_lesson_json("package-main"))
     payload["pages"][1]["code"] = "\n".join(

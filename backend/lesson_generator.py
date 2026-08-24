@@ -543,6 +543,73 @@ def generate_and_save_lesson(
     try:
         bundle = parse_lesson_response(response, **parse_kwargs)
     except ValueError:
-        bundle = parse_lesson_response(_repair_generated_wire_format(response, curriculum.topic), **parse_kwargs)
+        try:
+            bundle = parse_lesson_response(_repair_generated_wire_format(response, curriculum.topic), **parse_kwargs)
+        except ValueError as repaired_error:
+            chapter = curriculum.current_chapter()
+            remaining_points = curriculum.current_chapter_remaining_points()
+            scope = "\n".join(f"- {point.id}: {point.title}" for point in remaining_points)
+            repair_prompt = f"""你刚才生成的课程 JSON 没有通过结构校验：{repaired_error}
+
+请完整修正原课程，严格保留以下教学范围，不得换主题、换章节或加入无关课程：
+- 主题：{curriculum.topic}
+- 路线：{curriculum.route}
+- 当前章节：{chapter.id} · {chapter.title}
+- 当前知识点：{curriculum.current_knowledge_point_id}
+- 本次可覆盖的知识点：
+{scope}
+
+额外输出顶层 `scope_evidence` 数组，必须逐一覆盖上面所有知识点：
+`{{"knowledge_point_id":"原 id","page_ids":["至少两个真实页面 id"]}}`。
+每个 page_ids 引用的页面必须确实讲该知识点，且这些页面的标题、讲解或代码合起来必须原样出现对应知识点名称。不得只在总标题点名后讲别的内容。
+请保留渐进讲解和中文注释。
+特别检查：每个含 options 的页面必须在 answer_keys 中有且只有一个答案；答案 id 必须属于该页 options；page id 不得重复。
+只输出一个完整 JSON 对象，不要 Markdown 代码围栏，不要解释，也不要省略任何页面。
+
+原课程 JSON：
+{response}
+""".strip()
+            corrected = model_call(repair_prompt)
+            try:
+                bundle = parse_lesson_response(corrected, **parse_kwargs)
+            except ValueError:
+                bundle = parse_lesson_response(
+                    _repair_generated_wire_format(corrected, curriculum.topic), **parse_kwargs,
+                )
+            corrected_payload = _extract_json(corrected)
+            raw_scope = corrected_payload.get("scope_evidence")
+            if not isinstance(raw_scope, list):
+                raise ValueError("repaired lesson must include scope evidence")
+            page_by_id = {page.id: page for page in bundle.manifest.pages}
+            evidence_by_point: dict[str, list[str]] = {}
+            for item in raw_scope:
+                if not isinstance(item, dict) or not isinstance(item.get("knowledge_point_id"), str):
+                    raise ValueError("repaired lesson scope evidence is invalid")
+                page_ids = item.get("page_ids")
+                if (
+                    not isinstance(page_ids, list)
+                    or not all(isinstance(page_id, str) for page_id in page_ids)
+                    or len(set(page_ids)) < 2
+                ):
+                    raise ValueError("repaired lesson scope evidence needs at least two pages per knowledge point")
+                if any(page_id not in page_by_id for page_id in page_ids):
+                    raise ValueError("repaired lesson scope evidence references an unknown page")
+                evidence_by_point[item["knowledge_point_id"]] = page_ids
+            expected_ids = set(bundle.manifest.covered_knowledge_point_ids)
+            if set(evidence_by_point) != expected_ids:
+                raise ValueError("repaired lesson scope evidence must match covered knowledge points")
+            point_by_id = {point.id: point for point in remaining_points}
+            for point_id, page_ids in evidence_by_point.items():
+                point = point_by_id.get(point_id)
+                if point is None:
+                    raise ValueError("repaired lesson claimed an out-of-scope knowledge point")
+                narrative = "\n".join(
+                    f"{page_by_id[page_id].title}\n{page_by_id[page_id].markdown}\n"
+                    f"{page_by_id[page_id].question or ''}\n{page_by_id[page_id].code}"
+                    for page_id in page_ids
+                )
+                marker = re.sub(r"\s+", "", point.title).casefold()
+                if marker not in re.sub(r"\s+", "", narrative).casefold():
+                    raise ValueError("repaired lesson drifted away from a covered knowledge point")
     save_lesson_bundle(server_root, user_id, bundle)
     return bundle

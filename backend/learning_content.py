@@ -22,8 +22,9 @@ def resolve_user_dir(user_id: str, server_root: Path) -> Path:
 def resolve_plan_path(user_dir: Path, active_plan: object) -> Path | None:
     if not isinstance(active_plan, str) or not active_plan.strip():
         return None
-    target = (user_dir / active_plan.strip()).resolve()
-    if target != user_dir and user_dir not in target.parents:
+    resolved_user_dir = user_dir.resolve()
+    target = (resolved_user_dir / active_plan.strip()).resolve()
+    if target != resolved_user_dir and resolved_user_dir not in target.parents:
         return None
     return target if target.is_file() else None
 

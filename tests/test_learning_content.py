@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from backend.learning_content import read_learning_context
+from backend.learning_content import read_learning_context, resolve_plan_path
 
 
 def make_user(root: Path, active_plan: str) -> Path:
@@ -66,6 +66,21 @@ def test_rejects_plan_path_outside_user_dir(tmp_path: Path) -> None:
 
     assert context["plan"]["content"] == ""
     assert context["plan"]["source"] == ""
+
+
+def test_resolves_plan_inside_symlinked_user_dir(tmp_path: Path) -> None:
+    real_user = tmp_path / "persistent" / "u_yang"
+    real_user.mkdir(parents=True)
+    plan = real_user / "plans" / "frontend-interview.md"
+    plan.parent.mkdir()
+    plan.write_text("# 前端面试路线", encoding="utf-8")
+    linked_user = tmp_path / "runtime" / "userdir" / "u_yang"
+    linked_user.parent.mkdir(parents=True)
+    linked_user.symlink_to(real_user, target_is_directory=True)
+
+    resolved = resolve_plan_path(linked_user, "plans/frontend-interview.md")
+
+    assert resolved == plan.resolve()
 
 
 def test_rejects_unsafe_user_id(tmp_path: Path) -> None:

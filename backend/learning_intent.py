@@ -103,6 +103,8 @@ class IntentDecision(BaseModel):
                 raise ValueError("ready_for_plan action cannot include a question")
             if not self.slots.topic or not self.slots.desired_outcome:
                 raise ValueError("ready_for_plan requires topic and desired_outcome slots")
+            if self.onboarding.goal_route != "concept_clarity" and not (self.slots.level_evidence or "").strip():
+                raise ValueError("ready_for_plan requires level evidence from the learner")
         elif self.question is not None or self.onboarding is not None:
             raise ValueError("non-onboarding actions cannot include question or onboarding")
         return self
@@ -182,3 +184,208 @@ def parse_intent_response(response: str) -> IntentDecision:
     if not isinstance(payload, dict):
         raise ValueError("intent response must be an object")
     return IntentDecision.model_validate(payload)
+
+
+def _level_from_text(value: str) -> str | None:
+    matches: list[tuple[int, str]] = []
+    for level, pattern in (
+        ("zero", r"零基础|从零|初学(?:者)?|小白"),
+        ("experienced", r"熟练|资深|经验丰富"),
+        ("some", r"有一(?:点|些|定)基础|学过一点|有基础"),
+    ):
+        matches.extend((match.start(), level) for match in re.finditer(pattern, value, flags=re.IGNORECASE))
+    return max(matches, default=(-1, None), key=lambda item: item[0])[1]
+
+
+def validate_intent_against_message(
+    decision: IntentDecision,
+    message: str,
+    *,
+    history: list[dict[str, Any]] | None = None,
+    existing_slots: dict[str, Any] | IntentSlots | None = None,
+) -> IntentDecision:
+    """Reject routing that contradicts learner-authored evidence or stable slots."""
+
+    normalized = re.sub(r"\s+", "", message).casefold()
+    prior_slots = existing_slots if isinstance(existing_slots, IntentSlots) else IntentSlots.model_validate(existing_slots or {})
+    learner_history_parts: list[str] = []
+    for item in history or []:
+        role = item.get("role") if isinstance(item, dict) else getattr(item, "role", None)
+        content = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
+        if role == "user" and content:
+            learner_history_parts.append(str(content))
+    learner_history = " ".join(learner_history_parts)
+    # Request slots are model-authored state, not independent user evidence.
+    # Trust only current/prior user messages, with the newest correction first.
+    learner_context = " ".join(filter(None, [learner_history, message]))
+    explicit_level = _level_from_text(message)
+    if explicit_level is None:
+        for item in reversed(history or []):
+            role = item.get("role") if isinstance(item, dict) else getattr(item, "role", None)
+            content = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
+            if role == "user" and content:
+                explicit_level = _level_from_text(str(content))
+                if explicit_level is not None:
+                    break
+    if (
+        explicit_level
+        and decision.action == "clarify"
+        and decision.question is not None
+        and decision.question.slot == "level_evidence"
+    ):
+        raise ValueError("explicit learner level must fill level_evidence and must not be asked again")
+    if decision.action == "ready_for_plan" and decision.onboarding is not None and decision.onboarding.goal_route != "concept_clarity":
+        evidence = (decision.slots.level_evidence or "").strip()
+        evidence_level = _level_from_text(evidence)
+        compact_context = re.sub(r"\s+", "", learner_context).casefold()
+        compact_evidence = re.sub(r"\s+", "", evidence).casefold()
+        evidence_is_verbatim = len(compact_evidence) >= 2 and compact_evidence in compact_context
+        if explicit_level:
+            if decision.onboarding.level_claim != explicit_level:
+                raise ValueError("model level claim contradicts learner-authored level evidence")
+            if evidence_level != explicit_level:
+                raise ValueError("level evidence must come from learner context")
+        elif evidence_level is None or evidence_level != decision.onboarding.level_claim or not evidence_is_verbatim:
+            raise ValueError("level evidence must come from learner context")
+
+    if _level_from_text(message) and re.fullmatch(
+        r"[\s，,。.!！?？]*(?:我是|我属于|选择)?[\s]*(?:零基础|从零|初学(?:者)?|小白|有一(?:点|些|定)基础|学过一点|有基础|熟练|资深|经验丰富)[\s，,。.!！?？]*",
+        message,
+        flags=re.IGNORECASE,
+    ):
+        for field in ("topic", "goal", "desired_outcome", "target_context"):
+            prior = getattr(prior_slots, field)
+            current = getattr(decision.slots, field)
+            if prior and current != prior:
+                raise ValueError(f"level-only reply must preserve confirmed {field}")
+    explicit_definition = bool(re.search(
+        r"(是什么意思|是什么(?:[？?。！!]|$)|什么叫|解释一下|弄懂.+(?:意思|概念)|what(?:is|'s))",
+        normalized,
+    ))
+    if not explicit_definition:
+        return decision
+    if decision.action != "ready_for_plan" or decision.onboarding is None:
+        raise ValueError("explicit concept-definition request must be ready_for_plan without generic routing choices")
+    if decision.onboarding.goal_route != "concept_clarity":
+        raise ValueError("explicit concept-definition request must use concept_clarity")
+    if decision.onboarding.concept_scope != "meaning_only":
+        raise ValueError("explicit concept-definition request must use meaning_only")
+    return decision
+
+
+def recover_explicit_interview_intent(
+    message: str,
+    existing_slots: dict[str, Any] | IntentSlots | None = None,
+) -> IntentDecision | None:
+    """Recover only an unambiguous interview request after model validation fails.
+
+    The model remains the primary router. This narrow guard extracts facts the
+    learner wrote verbatim so a transient malformed response cannot turn a
+    basic interview request into a 502 or an unrelated quiz.
+    """
+
+    slots = existing_slots if isinstance(existing_slots, IntentSlots) else IntentSlots.model_validate(existing_slots or {})
+    text = re.sub(r"\s+", " ", message).strip()
+    context = " ".join(filter(None, [slots.intent_family, slots.goal, slots.target_context]))
+    if "面试" not in text and "面试" not in context:
+        return None
+
+    topic: str | None = None
+    topic_patterns = (
+        r"(?:想|要|想要)?面试\s*([^，。！？!?]+?)(?:岗(?:位)?|面试|$)",
+        r"(?:想|要|想要)?准备\s*([^，。！？!?]+?)面试",
+    )
+    for pattern in topic_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            topic = match.group(1).strip(" ：:，,。.!！?")
+            break
+    topic = topic or (slots.topic or "").strip()
+    if not topic:
+        return None
+
+    level_claim: str | None = None
+    level_evidence: str | None = None
+    combined_level_text = text
+    level_claim = _level_from_text(combined_level_text)
+    if level_claim is not None:
+        evidence_pattern = {
+            "zero": r"零基础|从零|初学(?:者)?|小白",
+            "experienced": r"熟练|资深|经验丰富",
+            "some": r"有一(?:点|些|定)基础|学过一点|有基础",
+        }[level_claim]
+        level_evidence = re.search(evidence_pattern, combined_level_text, flags=re.IGNORECASE).group(0)
+
+    base_slots = {
+        **slots.model_dump(),
+        "intent_family": "面试准备",
+        "topic": topic,
+        "goal": slots.goal or f"准备 {topic} 岗位面试",
+        "desired_outcome": slots.desired_outcome or f"完成 {topic} 岗位模拟面试并能独立讲解核心问题",
+        "target_context": slots.target_context or f"{topic} 岗位面试",
+        "level_evidence": None,
+    }
+    if level_claim is None:
+        return IntentDecision.model_validate({
+            "action": "clarify",
+            "confidence": 0.99,
+            "summary": f"已确认目标是 {topic} 岗位面试，只缺真实基础",
+            "slots": base_slots,
+            "question": {
+                "prompt": "你目前的基础更接近哪种？",
+                "slot": "level_evidence",
+                "options": [
+                    {"id": "beginner", "label": "初学", "detail": f"从 {topic} 岗位必要基础开始"},
+                    {"id": "some", "label": "有基础", "detail": f"已有部分 {topic} 知识或项目经验"},
+                    {"id": "experienced", "label": "熟练", "detail": f"有真实经验，重点练高阶追问"},
+                ],
+            },
+            "onboarding": None,
+        })
+
+    base_slots["level_evidence"] = slots.level_evidence or level_evidence
+    return IntentDecision.model_validate({
+        "action": "ready_for_plan",
+        "confidence": 0.99,
+        "summary": f"已确认 {topic} 岗位面试目标和真实基础，可以生成个性化方案",
+        "slots": base_slots,
+        "question": None,
+        "onboarding": {
+            "goal_route": "interview_sprint",
+            "learning_mode": "practice",
+            "level_claim": level_claim,
+            "session_minutes": 25,
+            "concept_scope": "not_applicable",
+            "topic_type": "custom",
+            "deadline_days": None,
+            "teaching_preference": "balanced",
+        },
+    })
+
+
+def build_intent_correction_prompt(original_prompt: str, validation_error: str) -> str:
+    """Ask for one corrected decision without discarding known slot evidence."""
+
+    concept_correction = ""
+    if "explicit concept-definition" in validation_error:
+        concept_correction = """
+用户已经明确在问一个概念“是什么意思/是什么”，不得再问初学、精进或面试。
+直接返回 ready_for_plan：goal_route=concept_clarity、concept_scope=meaning_only、level_claim=zero；
+将 desired_outcome 规范为“能用自己的话解释该概念并判断一个典型场景”。
+"""
+    level_correction = ""
+    if "explicit learner level" in validation_error:
+        level_correction = """
+用户原话已经明确给出基础水平，不得重复追问。把原话作为 slots.level_evidence：
+“零基础/初学/小白”映射 zero；“有一点基础/有基础/学过一点”映射 some；“熟练/资深”映射 experienced。
+如果主题、目标和验收结果已足够，直接 ready_for_plan。
+"""
+    return f"""{original_prompt}
+
+上一个 JSON 没有通过语义校验：{validation_error}
+不得猜测水平，也不得改写已确认的主题和目标。
+{concept_correction}
+{level_correction}
+如果只缺用户的真实基础，返回 clarify，仅询问一题，选项必须是“初学”、“有基础”、“熟练”。
+用户选择后把该回答写入 slots.level_evidence，再生成 ready_for_plan。
+只输出修正后的一个 JSON 对象。""".strip()
