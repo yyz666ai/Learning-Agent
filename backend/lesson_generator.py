@@ -173,6 +173,19 @@ def _repair_generated_wire_format(response: str, topic: str) -> str:
                 normalized_keys[item["id"]] = answer
     if normalized_keys:
         payload["answer_keys"] = normalized_keys
+    repaired_interview_prompts: list[object] = []
+    for raw_prompt in payload.get("interview_prompts") or []:
+        if not isinstance(raw_prompt, dict):
+            repaired_interview_prompts.append(raw_prompt)
+            continue
+        prompt = dict(raw_prompt)
+        for field in ("answer_structure", "common_omissions"):
+            value = prompt.get(field)
+            if isinstance(value, str) and value.strip():
+                prompt[field] = [value.strip()]
+        repaired_interview_prompts.append(prompt)
+    if repaired_interview_prompts:
+        payload["interview_prompts"] = repaired_interview_prompts
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -433,7 +446,7 @@ choice 与 self_practice 都必须令 output_patterns=[]、output_requirements=[
 practice_starter_mode：第一个非常简单的例子可用 provided；课后需要独立完成时用 blank，给清晰步骤和最多 3 条提示，但不要给答案代码。
 讲解、代码、题量和实践必须针对当前能力与当前知识点；不得输出其他语言的固定首课。选择题答案只放 answer_keys，不写进 markdown。
 当路线为 interview_sprint 时，interview_prompts 必须有 2–4 项；每项字段为 id, question, reference_answer,
-answer_structure, common_omissions, follow_ups。follow_ups 每项字段为 prompt, answer_points。即使用户没有提供面试题也必须生成，答案要适合口述并能应对追问；其他路线可返回空数组。
+answer_structure, common_omissions, follow_ups。answer_structure 和 common_omissions 必须是字符串数组，不能返回单个字符串。follow_ups 每项字段为 prompt, answer_points，其中 answer_points 也必须是字符串数组。即使用户没有提供面试题也必须生成，答案要适合口述并能应对追问；其他路线可返回空数组。
 """
 
 

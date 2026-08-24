@@ -98,6 +98,7 @@ def test_generator_prompt_contains_profile_point_prerequisites_evidence_and_time
     assert "concept-teaching" in prompt
     assert "先读取上述 Skill" in prompt
     assert "不要扫描用户历史、知识库或其他文件" in prompt
+    assert "answer_structure 和 common_omissions 必须是字符串数组" in prompt
     assert bundle.manifest.knowledge_point_id == curriculum.current_knowledge_point_id
     assert load_lesson_bundle(tmp_path, "learner", curriculum.current_knowledge_point_id) == bundle
 
@@ -340,6 +341,49 @@ def test_generator_normalizes_common_model_answer_key_list_before_validation(tmp
     )
 
     assert bundle.answer_keys == {"check": "b"}
+
+
+def test_generator_normalizes_interview_prompt_string_lists_without_second_model_call(tmp_path: Path) -> None:
+    curriculum = curriculum_from_plan(GO_PLAN, topic="Go 面试", route="interview_sprint", level="zero")
+    payload = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
+    payload["interview_prompts"] = [
+        {
+            "id": "package-main",
+            "question": "package main 有什么作用？",
+            "reference_answer": "它声明这是可以构建成可执行程序的包。",
+            "answer_structure": "先说定义，再说和 func main 的关系",
+            "common_omissions": "只说程序入口，没有区分包和函数",
+            "follow_ups": [],
+        },
+        {
+            "id": "go-run-build",
+            "question": "go run 和 go build 有什么区别？",
+            "reference_answer": "go run 便于快速运行，go build 会生成可执行文件。",
+            "answer_structure": "先说用途，再说是否保留可执行文件",
+            "common_omissions": "忽略构建产物",
+            "follow_ups": [],
+        },
+    ]
+    calls = 0
+
+    def fake_model(_prompt: str) -> str:
+        nonlocal calls
+        calls += 1
+        return json.dumps(payload, ensure_ascii=False)
+
+    bundle = generate_and_save_lesson(
+        tmp_path,
+        "learner",
+        curriculum=curriculum,
+        profile="零基础",
+        recent_evidence=[],
+        session_minutes=25,
+        model_call=fake_model,
+    )
+
+    assert calls == 1
+    assert bundle.manifest.interview_prompts[0].answer_structure == ["先说定义，再说和 func main 的关系"]
+    assert bundle.manifest.interview_prompts[0].common_omissions == ["只说程序入口，没有区分包和函数"]
 
 
 def test_generator_retries_once_when_model_omits_choice_answer_key(tmp_path: Path) -> None:
