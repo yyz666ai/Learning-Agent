@@ -1,5 +1,9 @@
 # 产品变更记录
 
+## 2026-08-26
+
+- 新增单文件《Learning Agent 产品与系统总说明》HTML：从产品定位开始，统一说明不同用户路线、Onboarding、Plan、HTML PPT、题库复习、聊天答疑、Codex Harness、Workspace Skills、Python 职责、用户目录、前后端 API、修改决策、安全恢复以及云同步和知识共创演进，并明确区分当前实现与目标方案。
+
 ## 2026-08-24
 
 - 新增《知识库、个性化课件与降本架构设计》：完整盘点现有知识原子和整章缓存，确定采用“知识原子 + 自动编译 + Plan/Lesson Composer + 用户 Overlay”方案，明确个性化维度、Markdown 与 HTML 的单一事实源关系、Token 节省测算、分阶段迁移、测试指标及 ¥30/月或 ¥199/年的云端收费边界。
