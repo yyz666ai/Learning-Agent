@@ -153,6 +153,11 @@ def normalize_and_validate_plan(
         return None
     candidate = candidate[title.start():].strip()
     candidate = re.sub(
+        r"(?m)^## (\u9636\u6bb5\s*\d+[^\n]*)$",
+        r"### \1",
+        candidate,
+    )
+    candidate = re.sub(
         r"`?\$USER_DIR(?:/[^\s`)），。]+)+`?",
         "已核对的资料来源",
         candidate,

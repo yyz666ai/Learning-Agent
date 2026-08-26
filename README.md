@@ -92,9 +92,17 @@ DEEPSEEK_API_KEY=你的_DeepSeek_API_Key
 ./run.sh
 ```
 
-首次启动会自动准备教学知识库。随后打开：
+每次启动都会先检查 Codex、DeepSeek 配置和教学文件，再同步当前版本的 Skills 与知识库，避免拉取更新后继续使用旧快照。随后打开：
 
 <http://127.0.0.1:8787>
+
+如果部署在服务器或局域网，并需要从其他设备访问：
+
+```bash
+LEARNING_AGENT_HOST=0.0.0.0 ./run.sh
+```
+
+再通过服务器域名或局域网 IP 的 `8787` 端口访问。反向代理应允许普通短请求；Plan 与 HTML PPT 已在后台生成，网页通过短轮询读取结果，不要求代理维持数分钟的单次连接。
 
 ## 怎么用
 
@@ -110,7 +118,7 @@ DEEPSEEK_API_KEY=你的_DeepSeek_API_Key
 
 ### workspace 发布快照
 
-这里的 `publish` 不是上传 GitHub，也不是发布 npm / PyPI 包。它会把 `workspace/dev/manifest.json` 白名单中已验证的 Skills 和知识库文件，复制成当前服务使用的稳定快照 `workspace/releases/current/`。开发中的临时文件、用户数据和密钥不会进入快照；首次启动如果没有快照，`run.sh` 会自动生成。
+这里的 `publish` 不是上传 GitHub，也不是发布 npm / PyPI 包。它会把 `workspace/dev/manifest.json` 白名单中已验证的 Skills 和知识库文件，复制成当前服务使用的稳定快照 `workspace/releases/current/`。开发中的临时文件、用户数据和密钥不会进入快照；`run.sh` 每次启动都会重新生成快照，确保 Git 更新后的教学规则立即生效。
 
 ## 项目结构
 

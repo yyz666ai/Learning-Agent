@@ -126,3 +126,26 @@ def test_curriculum_keeps_semicolons_inside_code_as_one_knowledge_point() -> Non
     assert "`for i := 0; i < n; i++` 计数循环" in titles
     assert not any(title in {"i < n", "i++` 计数循环"} for title in titles)
     assert "`if` 判断" in titles
+
+
+def test_estimated_sessions_bullet_is_not_a_knowledge_point() -> None:
+    plan = """# Go 学习计划
+
+### 阶段 1：环境准备
+- 本阶段要学：安装 Go 并跑通第一个程序
+- 练习：运行 go version 和 go run
+- 完成证据：终端留下成功输出
+
+#### 知识点
+- Go 工具链负责编译与运行
+- go version 用于验证安装
+- 预计课次：2
+"""
+
+    curriculum = curriculum_from_plan(
+        plan, topic="Go", route="concept_clarity", level="zero",
+    )
+
+    titles = [point.title for point in curriculum.knowledge_points()]
+    assert titles == ["Go 工具链负责编译与运行", "go version 用于验证安装"]
+    assert curriculum.chapters[0].knowledge_points[0].estimated_sessions == 1

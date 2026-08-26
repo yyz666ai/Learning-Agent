@@ -52,10 +52,15 @@ class IntentOption(BaseModel):
 class IntentQuestion(BaseModel):
     prompt: str = Field(min_length=1, max_length=300)
     slot: str = Field(min_length=1, max_length=96, pattern=r"^[a-z_]+$")
-    options: list[IntentOption] = Field(min_length=2, max_length=3)
+    options: list[IntentOption] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def validate_unique_options(self) -> "IntentQuestion":
+        if self.slot == "interview_question_source":
+            if self.options:
+                raise ValueError("interview question source must use open text without choice options")
+        elif len(self.options) < 2:
+            raise ValueError("clickable intent questions require two or three options")
         ids = [option.id for option in self.options]
         labels = [option.label.casefold().strip() for option in self.options]
         if len(ids) != len(set(ids)) or len(labels) != len(set(labels)):
@@ -180,13 +185,13 @@ def build_intent_prompt(
 决策要求：
 1. 先用新输入填充或修正槽位；用户明确否定时，新输入优先于旧槽位。
 2. 信息足够生成有明确结果的 Plan 就返回 ready_for_plan，不为了补齐表单而追问。
-3. 只有一个缺失槽位会真正改变路线时才返回 clarify；一次只问一题，只给 2–3 个贴合本主题的选项。
+3. 只有一个缺失槽位会真正改变路线时才返回 clarify；一次只问一题。普通追问给 2–3 个贴合主题的选项；只有 interview_question_source 必须使用开放文本回答，options 必须为空。
 4. 信息仍不足时可以继续追问，但不得重复已填槽位；一旦足够生成有明确结果的 Plan，必须立即停止追问。
 5. 不得生成“其他”“都不符合”“我直接补充”或 Other 选项；用户会直接在输入框补充。
 6. 当前课程答疑、一次性报错返回 answer_in_context；一批面试题入库返回 interview_bank_intake。
 7. ready_for_plan 时由你根据语义填写 onboarding；不要要求用户为内部默认时间预算再答一题。
 8. 面试目标要保留完整 target_role，并依次只补真正缺失的槽位：基础证据、tech_stack、interview_question_source。不要再问通用学习深度。
-9. 面试技术栈明确后，题目来源仍为 unknown 时，询问是否有从小红书、面经或 JD 收集的真实题；有题返回 interview_bank_intake，实际入库且 interview_question_count > 0 后才能 ready_for_plan；没有题才直接 ready，并由后续研究补齐。
+9. 面试技术栈明确后，题目来源仍为 unknown 时，直接在对话中请用户粘贴从小红书、面经或 JD 收集的真实题，暂时没有就回复“没有”；这题不得给选项。粘贴的题目返回 interview_bank_intake，实际入库且 interview_question_count > 0 后才能 ready_for_plan；“没有”才直接 ready，并由后续研究补齐。
 10. 只输出一个 JSON 对象，不要 Markdown，不要解释。
 
 JSON Schema：
@@ -233,6 +238,8 @@ def _tech_stack_from_text(value: str) -> list[str]:
 
 def _interview_source_from_text(value: str) -> str:
     compact = re.sub(r"\s+", "", value).casefold()
+    if re.fullmatch(r"(?:暂时)?没有(?:了)?[.!！？?]?", compact):
+        return "none"
     if re.search(r"(?:不是|并非)没有(?:现成|收集|准备)?(?:的)?(?:面试)?题", compact):
         return "has_questions"
     if re.search(r"(?:不是|并非)有(?:现成|收集|准备)?(?:的)?(?:面试)?题", compact):
@@ -455,12 +462,9 @@ def recover_explicit_interview_intent(
             "summary": f"已确认 {topic} 岗位、基础和技术栈，只缺题目来源",
             "slots": base_slots,
             "question": {
-                "prompt": "你手上有没有已经收集的真实面试题？",
+                "prompt": "如果你有从小红书、面经或 JD 收集的真实面试题，直接粘贴到输入框；暂时没有就输入“没有”。",
                 "slot": "interview_question_source",
-                "options": [
-                    {"id": "has-questions", "label": "有面试题，接下来粘贴", "detail": "先收录原题，再按题目缺口生成计划"},
-                    {"id": "no-questions", "label": "没有现成面试题", "detail": "根据岗位和技术栈检索并构建题图"},
-                ],
+                "options": [],
             },
             "onboarding": None,
         })

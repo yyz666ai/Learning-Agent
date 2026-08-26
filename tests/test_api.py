@@ -471,6 +471,67 @@ def test_custom_role_diagnosis_generation_failure_is_recoverable_not_generic(
     assert not (tmp_path / "userdir/u_learner/onboarding/diagnostic.json").exists()
 
 
+def test_custom_role_diagnosis_repairs_one_invalid_model_response(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
+    valid = json.dumps({"topic": "AI 前端", "questions": [
+        {
+            "id": f"q{index}",
+            "prompt": f"AI 前端岗位情境题 {index}",
+            "dimension": "AI 前端",
+            "options": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+            "correct_option_id": "a",
+        }
+        for index in range(1, 4)
+    ]}, ensure_ascii=False)
+    responses = iter(['{"topic":"AI 前端","questions":[]}', valid])
+    prompts: list[str] = []
+
+    def diagnosis_chat(_user_id: str, prompt: str, _release: Path) -> str:
+        prompts.append(prompt)
+        return next(responses)
+
+    monkeypatch.setattr(main, "chat", diagnosis_chat)
+
+    response = client.post("/api/onboarding/start", json={
+        "user_id": "learner", "topic": {"type": "custom", "value": "AI 前端"},
+        "learning_mode": "practice", "goal_route": "interview_sprint",
+        "level_claim": "some", "session_minutes": 25,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["diagnostic_source"] == "skill_generated_repaired"
+    assert len(prompts) == 2
+    assert "上一次输出没有通过结构校验" in prompts[1]
+
+
+def test_custom_role_diagnosis_does_not_retry_transport_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
+    calls = 0
+
+    def diagnosis_timeout(*_args) -> str:
+        nonlocal calls
+        calls += 1
+        raise TimeoutError("provider timed out")
+
+    monkeypatch.setattr(main, "chat", diagnosis_timeout)
+
+    response = client.post("/api/onboarding/start", json={
+        "user_id": "learner", "topic": {"type": "custom", "value": "AI 前端"},
+        "learning_mode": "practice", "goal_route": "interview_sprint",
+        "level_claim": "some", "session_minutes": 25,
+    })
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["recovery"] == "retry_diagnosis"
+    assert calls == 1
+
+
 def test_onboarding_intent_uses_fast_skill_prompt_with_recent_history_and_slots(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
@@ -1407,6 +1468,91 @@ def test_plan_personalization_uses_codex_and_persists_valid_markdown(
     assert curriculum["current_knowledge_point_id"]
     assert "## 教学策略" in plan
     assert "### 阶段 1" in plan
+
+
+def test_plan_personalization_background_api_starts_and_polls_short_requests(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    payload = onboarding_payload("background-plan")
+    confirmation = client.post("/api/onboarding/confirm", json=payload).json()
+    payload["generation_id"] = confirmation["generation_id"]
+    calls: list[tuple[str, str]] = []
+
+    class FakeRegistry:
+        def start(self, user_id, generation_id, work):
+            calls.append((user_id, generation_id))
+            return {
+                "user_id": user_id,
+                "generation_id": generation_id,
+                "status": "running",
+                "result": None,
+            }
+
+        def get(self, user_id, generation_id):
+            return {
+                "user_id": user_id,
+                "generation_id": generation_id,
+                "status": "completed",
+                "result": {"personalized": True, "plan_status": "awaiting_confirmation"},
+            }
+
+    monkeypatch.setattr(main, "PLAN_GENERATION_JOBS", FakeRegistry())
+
+    started = client.post("/api/plans/personalize/start", json=payload)
+    status = client.get(
+        "/api/plans/personalize/status",
+        params={"user_id": "background-plan", "generation_id": confirmation["generation_id"]},
+    )
+
+    assert started.status_code == 202
+    assert started.json()["status"] == "running"
+    assert calls == [("background-plan", confirmation["generation_id"])]
+    assert status.status_code == 200
+    assert status.json()["result"]["personalized"] is True
+
+
+def test_lesson_generation_background_api_starts_and_polls_short_requests(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakeRegistry:
+        def start(self, user_id, generation_id, work):
+            calls.append((user_id, generation_id))
+            return {
+                "user_id": user_id,
+                "generation_id": generation_id,
+                "status": "running",
+                "result": None,
+            }
+
+        def get(self, user_id, generation_id):
+            return {
+                "user_id": user_id,
+                "generation_id": generation_id,
+                "status": "completed",
+                "result": {"ok": True, "lesson": {"lesson_id": "lesson-1", "pages": []}},
+            }
+
+    monkeypatch.setattr(main, "LESSON_GENERATION_JOBS", FakeRegistry())
+
+    started = client.post("/api/lesson/generate/start", json={"user_id": "background-lesson"})
+    generation_id = started.json()["generation_id"]
+    status = client.get(
+        "/api/lesson/generate/status",
+        params={"user_id": "background-lesson", "job_id": generation_id},
+    )
+
+    assert started.status_code == 202
+    assert started.json()["status"] == "running"
+    assert len(generation_id) == 32
+    assert calls == [("background-lesson", generation_id)]
+    assert status.status_code == 200
+    assert status.json()["result"]["lesson"]["lesson_id"] == "lesson-1"
 
 
 def test_plan_personalization_rejects_a_generation_from_an_old_project(

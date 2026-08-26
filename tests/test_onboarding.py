@@ -244,6 +244,48 @@ def test_complete_mastery_plan_rejects_shallow_outline_and_accepts_detailed_caps
     assert normalize_and_validate_plan(detailed, "Go", "foundation_engineer") is not None
 
 
+def test_complete_mastery_plan_normalizes_model_h2_stage_headings() -> None:
+    """A valid plan must not be discarded only because stages use H2."""
+
+    plan = """# Go 从零到工程师学习计划
+
+## 当前任务
+安装 Go 并跑通第一个程序。
+
+## 学习成果
+能够独立设计、实现、测试、调试和交付 Go 服务。
+
+## 教学策略
+从核心直觉到工程实战，逐步练习并延迟复习。
+
+## 知识覆盖地图
+覆盖语法、运行机制、测试、调试、工程、性能和安全。
+
+## 最终达成标准
+在陌生需求下独立交付可运行的 Go 项目。
+
+## 毕业项目
+完成包含 API、持久化、测试、性能和安全验收的 Go 服务。
+
+""" + "\n\n".join(
+        f"## 阶段 {index}：{'毕业项目交付' if index == 12 else f'具体能力 {index}'}\n"
+        "- 本阶段要学：建立本阶段的 Go 能力\n"
+        "- 练习：完成一个真实任务\n"
+        "- 完成证据：留下可验证产出\n\n"
+        "#### 知识点\n"
+        f"- Go 原子知识 {index}.1\n"
+        f"- Go 原子知识 {index}.2\n"
+        "- 预计课次：2"
+        for index in range(1, 13)
+    )
+
+    validated = normalize_and_validate_plan(plan, "Go", "foundation_engineer")
+
+    assert validated is not None
+    assert "### 阶段 1：具体能力 1" in validated
+    assert "\n## 阶段 1：" not in validated
+
+
 def test_complete_mastery_plan_prompt_uses_diagnosis_and_requires_research_even_for_known_topic():
     selected = submission(level="some", topic="go", goal_route="foundation_engineer")
     diagnosis = DiagnosisSummary(

@@ -68,9 +68,9 @@ description: Use when a learner freely types a new goal, concept, interview need
 - 用户没有明说验收句时，可将 `desired_outcome` 规范为“完成目标岗位模拟面试，能独立讲解核心问题”。
 - 不再追问“理解概念 / 掌握语法 / 完成项目”这类通用学习深度；面试已经决定了教学路线。
 - 如果 `tech_stack` 为空，只问一次岗位相关的技术栈。给 2–3 个紧凑、动态选项；用户也始终可以直接输入，例如 AI 前端可问 React / Vue / 原生 Web 与 AI SDK 组合，而不是抛出语言通用题。
-- 技术栈明确后，如果 `interview_question_source=unknown`，只问“有没有从小红书、面经或 JD 收集的真实面试题？”选项只需“有，我直接粘贴”“暂时没有”。
-- 用户选择有题时，设为 `has_questions` 并返回 `interview_bank_intake`；必须等实际题目入库、`interview_question_count > 0` 后才可 `ready_for_plan`。
-- 用户选择没有题时，设为 `none` 并 `ready_for_plan`；Plan 随后必须让 `new-topic-research` 依据完整岗位和技术栈搜索可靠资料与公开面试能力维度。
+- 技术栈明确后，如果 `interview_question_source=unknown`，直接在对话中问：“如果你有从小红书、面经或 JD 收集的真实面试题，直接粘贴；暂时没有就回复‘没有’。”这是资料收集问题，不得生成选项，`options=[]`。
+- 用户直接粘贴题目时，设为 `has_questions` 并返回 `interview_bank_intake`；必须等实际题目入库、`interview_question_count > 0` 后才可 `ready_for_plan`。
+- 用户回复“没有”时，设为 `none` 并 `ready_for_plan`；Plan 随后必须让 `new-topic-research` 依据完整岗位和技术栈搜索可靠资料与公开面试能力维度。
 - 用户在第一句话已同时写明岗位、起点、技术栈和“没有现成题”时，可以直接 `ready_for_plan`；已写明“我有这些题：……”时直接入库，不重复追问。
 
 如果用户只给出“面试 + 目标岗位”，却没有任何基础证据，不得猜测 `zero` / `some` / `experienced`，也不得直接进入技术诊断。只追问一次“你目前的基础更接近哪种？”：

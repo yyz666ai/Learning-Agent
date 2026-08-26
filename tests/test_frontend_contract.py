@@ -141,9 +141,19 @@ def test_inline_diagnosis_is_clickable_and_bounded() -> None:
     assert "最多 4" in js
     assert "textarea" not in js
     assert 'id="choiceTrayQuestion"' in html
-    assert 'byId("choiceTrayQuestion").textContent = result.question.prompt' in js
-    assert 'byId("choiceTrayQuestion").hidden = false' in js
+    assert 'addAgent(result.question.prompt)' in js
+    assert '你已经有一定基础，我会先问你 3–4 道小题' in js
     assert 'byId("choiceTrayQuestion").hidden = true' in js
+
+
+def test_open_text_clarification_keeps_question_in_chat_without_choice_tray() -> None:
+    js = read(ONBOARDING_JS)
+
+    assert "decision.question.options.length" in js
+    assert 'state.stage = "clarifying_text"' in js
+    assert '直接粘贴资料；暂时没有就输入“没有”' in js
+    assert 'state.pendingQuestionSlot === "interview_question_source"' in js
+    assert 'state.stage = "interview_intake"' in js
 
 
 def test_onboarding_uses_model_intent_and_multiturn_slot_filling() -> None:
@@ -267,18 +277,24 @@ def test_onboarding_requires_a_model_personalized_plan_before_opening_lesson() -
     confirm = js[js.index("async function confirm") : js.index("async function choose")]
 
     assert 'request("/api/onboarding/confirm"' in confirm
-    assert 'request("/api/plans/personalize"' in confirm
-    assert confirm.index('request("/api/onboarding/confirm"') < confirm.index('request("/api/plans/personalize"')
+    assert "waitForPersonalizedPlan" in confirm
+    assert confirm.index('request("/api/onboarding/confirm"') < confirm.index("waitForPersonalizedPlan")
     assert "result.generation_id" in confirm
-    assert "generation_id: result.generation_id" in confirm
     assert "catch" in confirm
     assert "onConfirmed" in confirm
-    assert "AbortController" in confirm
-    assert "660000" in confirm
     assert "if (!personalized.personalized) throw new Error" in confirm
     assert "onPlanReady" in confirm
     assert 'state.stage = "plan_review"' in confirm
     assert confirm.index('state.stage = "plan_review"') < confirm.index('request("/api/plans/confirm"')
+
+
+def test_plan_generation_uses_background_job_polling_instead_of_one_long_fetch() -> None:
+    onboarding = read(ONBOARDING_JS)
+    confirm = onboarding[onboarding.index("async function confirm") : onboarding.index("async function choose")]
+
+    assert 'request("/api/plans/personalize/start"' in onboarding
+    assert 'fetch(`/api/plans/personalize/status?' in onboarding
+    assert 'request("/api/plans/personalize",' not in onboarding
     assert "兜底计划" not in confirm
     assert "详细课程研究与生成超过 11 分钟" in confirm
     assert "cancelActiveGeneration" in confirm
@@ -500,7 +516,9 @@ def test_each_lesson_page_places_its_next_step_in_the_ppt_and_final_action_panel
     assert "renderHomework" in artifact
     assert "loadLessonNotes" in artifact
     assert 'fetch("/api/lesson/complete"' in artifact
-    assert 'fetch("/api/lesson/generate"' in artifact
+    assert 'fetch("/api/lesson/generate/start"' in artifact
+    assert 'fetch(`/api/lesson/generate/status?' in artifact
+    assert 'fetch("/api/lesson/generate",' not in artifact
     assert 'fetch("/api/curriculum/generate"' in artifact
     assert "generate_lesson" in artifact
     assert "开始下一课：" in artifact or "cta_label" in artifact
@@ -663,6 +681,13 @@ console.log(rendered);
     assert 'class="markdown-copy-code"' in result.stdout
     assert "复制代码" in result.stdout
     assert "markdown-copy-code:not([data-bound])" in read(MARKDOWN_JS)
+
+
+def test_terminal_snippets_use_a_terminal_label_in_the_lesson_deck() -> None:
+    artifact = read(ARTIFACT_JS)
+
+    assert 'bash: "Terminal"' in artifact
+    assert 'shell: "Terminal"' in artifact
 
 
 def test_markdown_does_not_highlight_equals_inside_inline_code() -> None:
@@ -909,7 +934,8 @@ def test_unanswered_choice_pages_cannot_be_skipped_with_dots_or_next() -> None:
 def test_run_script_prepares_workspace_on_first_start() -> None:
     source = (Path(__file__).parents[1] / "run.sh").read_text(encoding="utf-8")
 
-    assert 'if [[ ! -d "workspace/releases/current" ]]' in source
+    assert 'if [[ ! -d "workspace/releases/current" ]]' not in source
+    assert '"$PYTHON" -m backend.deployment_check' in source
     assert '"$PYTHON" -m backend.publish' in source
     assert 'if [[ ! -s ".secrets.env" ]]' in source
     assert "replace_with_your_deepseek_api_key" in source

@@ -121,7 +121,9 @@ def run_case(base_url: str, case: Case, through: str = "lesson") -> dict[str, An
         **data, "diagnostic_session_id": diagnostic_session_id,
     })
     stages.append({"stage": "onboarding_confirm", "seconds": round(time.monotonic() - started, 2), "active_plan": confirmed.get("active_plan")})
-    plan = post(base_url, "/api/plans/personalize", data)
+    plan = post(base_url, "/api/plans/personalize", {
+        **data, "generation_id": confirmed["generation_id"],
+    })
     if not plan.get("personalized"):
         raise JourneyError("plan", plan)
     stages.append({"stage": "plan", "seconds": round(time.monotonic() - started, 2), "knowledge_point": plan.get("current_knowledge_point_id")})

@@ -280,7 +280,27 @@ def ensure_practice_workspace(
         "java": "Main.java",
         "rust": "main.rs",
     }.get(manifest.language, "notes.md")
-    code = "" if manifest.practice_starter_mode == "blank" else next((page.code for page in manifest.pages if page.code.strip()), "")
+    if manifest.practice_starter_mode == "blank":
+        code = ""
+    else:
+        language = manifest.language.casefold()
+        matching_examples = [
+            page.code
+            for page in manifest.pages
+            if page.code.strip() and (page.language or "").casefold() == language
+        ]
+        if matching_examples:
+            # A lesson may show a minimal skeleton before the runnable example.
+            # The longest same-language block is the safest starter file.
+            code = max(matching_examples, key=len)
+        elif language not in {"go", "python", "java", "rust"}:
+            code = max(
+                (page.code for page in manifest.pages if page.code.strip()),
+                key=len,
+                default="",
+            )
+        else:
+            code = ""
     practice = next(
         (page.markdown for page in manifest.pages if page.type == "practice" and page.markdown.strip()),
         manifest.completion_prompt,

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import secrets
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -34,6 +36,7 @@ try:
     from .learning_intent import IntentDecision, IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
     from .knowledge_library import load_completed_chapter, save_completed_chapter
     from .generation_transaction import GenerationStaleError, begin_generation_lease, cancel_generation, commit_plan_generation, project_guard, project_lock, validate_generation_lease, validate_project_guard
+    from .generation_jobs import GenerationJobRegistry
     from .lesson_generator import generate_and_save_lesson, load_lesson_bundle, save_lesson_bundle
     from .lesson_manifest import ensure_practice_workspace, resolve_practice_folder
     from .lesson_progression import CompletionEvidence, QuizAttempt, apply_completion_decision, evaluate_completion
@@ -59,6 +62,7 @@ except ImportError:
     from learning_intent import IntentDecision, IntentSlots, build_intent_correction_prompt, build_intent_prompt, parse_intent_response, recover_explicit_interview_intent, validate_intent_against_message
     from knowledge_library import load_completed_chapter, save_completed_chapter
     from generation_transaction import GenerationStaleError, begin_generation_lease, cancel_generation, commit_plan_generation, project_guard, project_lock, validate_generation_lease, validate_project_guard
+    from generation_jobs import GenerationJobRegistry
     from lesson_generator import generate_and_save_lesson, load_lesson_bundle, save_lesson_bundle
     from lesson_manifest import ensure_practice_workspace, resolve_practice_folder
     from lesson_progression import CompletionEvidence, QuizAttempt, apply_completion_decision, evaluate_completion
@@ -79,9 +83,11 @@ except ImportError:
 
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = SERVER_ROOT / "frontend"
-HOST = "127.0.0.1"
+HOST = os.environ.get("LEARNING_AGENT_HOST", "127.0.0.1")
 PORT = 8787
 logger = logging.getLogger(__name__)
+PLAN_GENERATION_JOBS = GenerationJobRegistry(max_workers=2)
+LESSON_GENERATION_JOBS = GenerationJobRegistry(max_workers=2)
 
 
 def _intent_skill_text(release: Path) -> str:
@@ -214,7 +220,7 @@ class LessonCheckRequest(BaseModel):
 
 
 class LessonGenerateRequest(BaseModel):
-    user_id: str = Field(default="yang", min_length=1, max_length=64)
+    user_id: str = Field(default="yang", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     remediation: str = Field(default="", max_length=2_000)
     force: bool = False
 
@@ -1028,6 +1034,40 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
     return bundle.public_manifest()
 
 
+def _generate_lesson_job(request: LessonGenerateRequest) -> dict[str, Any]:
+    """Convert lesson HTTP errors into a pollable result envelope."""
+
+    try:
+        return {"ok": True, "lesson": generate_lesson(request)}
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+        return {"ok": False, "status_code": exc.status_code, "detail": detail}
+
+
+@app.post("/api/lesson/generate/start", status_code=202)
+def start_lesson_generation(request: LessonGenerateRequest) -> dict[str, Any]:
+    job_id = secrets.token_hex(16)
+    return LESSON_GENERATION_JOBS.start(
+        request.user_id,
+        job_id,
+        lambda: _generate_lesson_job(request),
+    )
+
+
+@app.get("/api/lesson/generate/status")
+def lesson_generation_status(
+    user_id: str = Query(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    job_id: str = Query(min_length=32, max_length=32, pattern=r"^[a-f0-9]{32}$"),
+) -> dict[str, Any]:
+    try:
+        return LESSON_GENERATION_JOBS.get(user_id, job_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"message": "这轮课件生成任务已不在当前服务中，请重新生成。"},
+        ) from exc
+
+
 @app.post("/api/lesson/remediate")
 def remediate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
     """Regenerate the current lesson with a model-authored remedial angle."""
@@ -1330,14 +1370,41 @@ def onboarding_start(request: OnboardingSubmission) -> dict[str, Any]:
     source = "fallback"
     release = latest_release()
     if release is not None:
-        try:
-            questions = parse_generated_diagnosis(
-                chat(request.user_id, build_diagnosis_prompt(request.topic.value, request.level_claim, request.goal_route), release),
-                expected_topic=request.topic.value,
-            )
-            source = "skill_generated"
-        except (ValueError, json.JSONDecodeError):
-            questions = None
+        diagnosis_prompt = build_diagnosis_prompt(
+            request.topic.value, request.level_claim, request.goal_route,
+        )
+        previous_response = ""
+        for attempt in range(2):
+            try:
+                previous_response = chat(request.user_id, diagnosis_prompt, release)
+                questions = parse_generated_diagnosis(
+                    previous_response,
+                    expected_topic=request.topic.value,
+                )
+                source = "skill_generated" if attempt == 0 else "skill_generated_repaired"
+                break
+            except (ValueError, json.JSONDecodeError) as exc:
+                questions = None
+                if attempt == 0:
+                    diagnosis_prompt = (
+                        f"{diagnosis_prompt}\n\n"
+                        "上一次输出没有通过结构校验。请根据下面的精确错误完整重写 JSON；"
+                        "不要解释，不要只修一小段。\n"
+                        f"校验错误：{exc}\n"
+                        f"上一次输出：\n{previous_response[:12_000]}"
+                    )
+                    continue
+                logger.warning(
+                    "diagnosis validation failed after repair user=%s topic=%s error=%s",
+                    request.user_id, request.topic.value, exc,
+                )
+            except Exception as exc:
+                questions = None
+                logger.warning(
+                    "diagnosis transport failed without retry user=%s topic=%s error=%s",
+                    request.user_id, request.topic.value, exc,
+                )
+                break
     if questions is None and not has_curated_bank(request.topic.value, request.goal_route):
         raise HTTPException(status_code=502, detail={
             "message": "这次岗位专属诊断没有生成完成，你的目标已保留。",
@@ -1513,6 +1580,36 @@ def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
             "error_type": type(exc).__name__,
             "user_message": user_messages.get(stage, "课程生成暂时中断，你的目标和选择都已保留，请直接重试。"),
         }
+
+
+@app.post("/api/plans/personalize/start", status_code=202)
+def start_plan_personalization(request: PlanPersonalizeRequest) -> dict[str, Any]:
+    try:
+        validate_generation_lease(SERVER_ROOT, request.user_id, request.generation_id)
+    except (GenerationStaleError, OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "这轮课程生成已被取消或已属于旧项目。", "recovery": "stale_generation"},
+        ) from exc
+    return PLAN_GENERATION_JOBS.start(
+        request.user_id,
+        request.generation_id,
+        lambda: personalize_plan(request),
+    )
+
+
+@app.get("/api/plans/personalize/status")
+def plan_personalization_status(
+    user_id: str = Query(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    generation_id: str = Query(min_length=32, max_length=32, pattern=r"^[a-f0-9]{32}$"),
+) -> dict[str, Any]:
+    try:
+        return PLAN_GENERATION_JOBS.get(user_id, generation_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"message": "这轮生成任务已不在当前服务中，请重试。"},
+        ) from exc
 
 
 @app.post("/api/plans/confirm")

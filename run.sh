@@ -21,9 +21,9 @@ if [[ ! -s ".secrets.env" ]] || ! grep -Eq '^DEEPSEEK_API_KEY=.+$' .secrets.env 
   exit 1
 fi
 
-if [[ ! -d "workspace/releases/current" ]]; then
-  echo "首次启动：正在准备教学知识库…"
-  "$PYTHON" -m backend.publish
-fi
+"$PYTHON" -m backend.deployment_check
+
+echo "正在同步教学 Skills 与知识库…"
+"$PYTHON" -m backend.publish
 
 exec "$PYTHON" -m backend.main "$PORT"

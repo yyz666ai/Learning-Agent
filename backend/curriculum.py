@@ -95,6 +95,7 @@ def _knowledge_items(section: str, fallback: str) -> list[str]:
             item.strip(" 。")
             for item in re.findall(r"(?m)^-\s+(.+)$", block.group("body"))
             if item.strip(" 。")
+            and re.match(r"^预计课次[：:]", item.strip()) is None
         ]
         if items:
             return items

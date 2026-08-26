@@ -15,7 +15,34 @@
   function startActivity(label, detail) { global.LearningActivity?.start(label, detail); }
   function startLessonGeneration() { global.LearningActivity?.startLessonGeneration?.(); }
   function finishActivity(label, detail) { global.LearningActivity?.finish(label, detail); }
-  function codeFilename(language) { return ({ python: "main.py", go: "main.go", java: "Main.java", rust: "main.rs" })[language] || "notes.md"; }
+  function codeFilename(language) {
+    return ({ python: "main.py", go: "main.go", java: "Main.java", rust: "main.rs", bash: "Terminal", shell: "Terminal", sh: "Terminal" })[language] || "notes.md";
+  }
+
+  async function requestLessonGeneration(payload) {
+    const started = await fetch("/api/lesson/generate/start", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const accepted = await started.json().catch(() => ({}));
+    if (!started.ok) return { ok: false, payload: accepted };
+    const deadline = Date.now() + (11 * 60 * 1000);
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      let response;
+      try {
+        const query = new URLSearchParams({ user_id: userId, job_id: accepted.generation_id });
+        response = await fetch(`/api/lesson/generate/status?${query.toString()}`);
+      } catch (_error) {
+        continue;
+      }
+      const status = await response.json().catch(() => ({}));
+      if (!response.ok) return { ok: false, payload: status };
+      if (status.status === "completed") return { ok: true, payload: status.result?.lesson || {} };
+      if (status.status === "failed") return { ok: false, payload: { detail: status.result?.detail || status.result } };
+    }
+    return { ok: false, payload: { detail: { message: "课件仍在后台生成，请稍后点击重试继续读取。" } } };
+  }
 
   function passedCheck(pageId) {
     return state.quizAttempts.some((attempt) => attempt.page_id === pageId && attempt.correct === true);
@@ -289,11 +316,9 @@
       }
       if (!response.ok && payload.detail?.recovery === "generate_lesson") {
         startLessonGeneration();
-        response = await fetch("/api/lesson/generate", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: userId }),
-        });
-        payload = await response.json().catch(() => ({}));
+        const generated = await requestLessonGeneration({ user_id: userId });
+        response = { ok: generated.ok };
+        payload = generated.payload;
       }
       if (!response.ok && payload.detail?.recovery === "stale_generation") {
         if (retryStale) {
@@ -367,11 +392,9 @@
     setCompletionBusy(true);
     startActivity("正在生成下一小节", "正在根据这次评价准备下一份讲义和练习。 ");
     try {
-      const response = await fetch("/api/lesson/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId, force: decision.verdict !== "advance", remediation: decision.verdict === "advance" ? "" : decision.feedback, next_knowledge_point_id: decision.next_knowledge_point_id }),
-      });
-      const payload = await response.json().catch(() => ({}));
+      const generated = await requestLessonGeneration({ user_id: userId, force: decision.verdict !== "advance", remediation: decision.verdict === "advance" ? "" : decision.feedback, next_knowledge_point_id: decision.next_knowledge_point_id });
+      const response = { ok: generated.ok };
+      const payload = generated.payload;
       if (!response.ok && payload.detail?.recovery === "stale_generation") {
         await loadCurrentLesson(false);
         finishActivity("项目已经切换", "已安全丢弃旧课件，并读取当前课程。 ");

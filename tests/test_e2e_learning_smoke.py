@@ -54,8 +54,9 @@ def test_non_beginner_journey_completes_diagnosis_plan_and_lesson(monkeypatch) -
         if path == "/api/diagnostics/answer":
             return {**diagnostic, "complete": True, "answered_count": 1, "question": None}
         if path == "/api/onboarding/confirm":
-            return {"active_plan": "plans/java.md"}
+            return {"active_plan": "plans/java.md", "generation_id": "a" * 32}
         if path == "/api/plans/personalize":
+            assert payload["generation_id"] == "a" * 32
             return {"personalized": True, "current_knowledge_point_id": "java-1"}
         if path == "/api/plans/confirm":
             return {"plan_status": "confirmed"}

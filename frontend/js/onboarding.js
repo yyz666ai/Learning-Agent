@@ -15,6 +15,7 @@
     sessionMinutes: 25, deadlineDays: null, teachingPreference: "balanced",
     conceptScope: "not_applicable", slots: { ...EMPTY_SLOTS }, intentHistory: [],
     clarificationCount: 0, diagnostic: null, pendingAction: null, callbacks: {},
+    pendingQuestionSlot: null, lastDiagnosticQuestionId: null, diagnosisPrefaced: false,
     busy: false, confirmationResult: null, generationId: null,
     existingProject: null, existingDecision: null,
   };
@@ -33,6 +34,32 @@
       }
       return result;
     });
+  }
+
+  async function waitForPersonalizedPlan(payload, generationId) {
+    await request("/api/plans/personalize/start", {
+      ...payload, generation_id: generationId,
+    });
+    const deadline = Date.now() + 660000;
+    const query = new URLSearchParams({ user_id: userId, generation_id: generationId });
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      let response;
+      try {
+        response = await fetch(`/api/plans/personalize/status?${query.toString()}`);
+      } catch (error) {
+        continue;
+      }
+      const job = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(job.detail?.message || "课程生成状态暂时无法读取。");
+      if (job.status === "completed") return job.result;
+      if (job.status === "failed") return job.result || {
+        personalized: false, user_message: "课程生成暂时中断，请直接重试。",
+      };
+    }
+    const timeout = new Error("详细课程研究与生成超过 11 分钟，请重试；你刚才的主题和目标都已保留。");
+    timeout.name = "GenerationTimeoutError";
+    throw timeout;
   }
 
   function submission() {
@@ -156,16 +183,24 @@
         byId("chatInput").placeholder = "直接粘贴面试题，支持编号列表或多行问题…";
         return true;
       }
-      if (persisted.action !== "clarify" || !persisted.question?.options?.length) return false;
-      state.stage = "clarifying";
+      if (persisted.action !== "clarify" || !persisted.question) return false;
       state.clarificationCount = 1;
       addAgent(`继续上次没有完成的建档：${persisted.question.prompt}`);
-      showChoices(persisted.question.options, {
-        hint: "选一个最接近的；也可以直接输入修改或补充",
-        progress: "已恢复上次进度",
-        intent: true,
-      });
-      byId("chatInput").placeholder = "也可以直接输入你真正想要的结果…";
+      state.pendingQuestionSlot = persisted.question.slot || null;
+      if (persisted.question.options?.length) {
+        state.stage = "clarifying";
+        showChoices(persisted.question.options, {
+          hint: "选一个最接近的；也可以直接输入修改或补充",
+          progress: "已恢复上次进度",
+          intent: true,
+        });
+        byId("chatInput").placeholder = "也可以直接输入你真正想要的结果…";
+      } else {
+        state.stage = "clarifying_text";
+        hideChoices();
+        byId("chatInput").placeholder = "直接粘贴资料；暂时没有就输入“没有”…";
+        byId("chatInput").focus();
+      }
       return true;
     } catch {
       return false;
@@ -214,14 +249,24 @@
       applyIntentDecision(decision);
       state.intentHistory.push({ role: "assistant", content: decision.question?.prompt || decision.summary });
       if (decision.action === "clarify") {
-        state.stage = "clarifying"; state.clarificationCount += 1;
+        state.clarificationCount += 1;
+        state.pendingQuestionSlot = decision.question.slot || null;
         addAgent(decision.question.prompt);
-        showChoices(decision.question.options, {
-          hint: "选一个最接近的；也可以直接打字修改或补充",
-          progress: "正在理解需求", intent: true,
-        });
-        byId("chatInput").placeholder = "不想选也没关系，直接输入你真正想要的结果…";
-        global.LearningActivity?.finish("还差一个关键决定", "点选项或直接打字都可以。");
+        if (decision.question.options.length) {
+          state.stage = "clarifying";
+          showChoices(decision.question.options, {
+            hint: "选一个最接近的；也可以直接打字修改或补充",
+            progress: "正在理解需求", intent: true,
+          });
+          byId("chatInput").placeholder = "不想选也没关系，直接输入你真正想要的结果…";
+          global.LearningActivity?.finish("还差一个关键决定", "点选项或直接打字都可以。");
+        } else {
+          state.stage = "clarifying_text";
+          hideChoices();
+          byId("chatInput").placeholder = "直接粘贴资料；暂时没有就输入“没有”…";
+          byId("chatInput").focus();
+          global.LearningActivity?.finish("等待你的资料", "有就直接粘贴，没有只需输入“没有”。");
+        }
         return;
       }
       if (decision.action === "ready_for_plan") {
@@ -263,8 +308,12 @@
 
   function renderDiagnostic(result) {
     state.stage = "diagnostic"; state.diagnostic = result;
-    byId("choiceTrayQuestion").textContent = result.question.prompt;
-    byId("choiceTrayQuestion").hidden = false;
+    byId("choiceTrayQuestion").hidden = true;
+    byId("choiceTrayQuestion").textContent = "";
+    if (state.lastDiagnosticQuestionId !== result.question.id) {
+      addAgent(result.question.prompt);
+      state.lastDiagnosticQuestionId = result.question.id;
+    }
     showChoices(result.question.options.map((option) => ({ ...option, value: option.id })), {
       hint: "真实选择题，直接点击", progress: `诊断 ${result.answered_count + 1} / 最多 4`,
     });
@@ -272,6 +321,10 @@
 
   async function beginDiagnosis() {
     setBusy(true); clearError(); state.pendingAction = beginDiagnosis;
+    if (!state.diagnosisPrefaced) {
+      addAgent("你已经有一定基础，我会先问你 3–4 道小题，快速确认从哪里开始，然后就进入学习。");
+      state.diagnosisPrefaced = true;
+    }
     global.LearningActivity?.start("正在校准起点", "只用几道点击题找到合适的第一课。");
     try {
       renderDiagnostic(await request("/api/onboarding/start", submission()));
@@ -306,12 +359,8 @@
     try {
       const result = await request("/api/onboarding/confirm", { ...submission(), ...extra });
       state.generationId = result.generation_id;
-      const controller = new AbortController();
-      const personalizationTimeout = window.setTimeout(() => controller.abort(), 660000);
       try {
-        const personalized = await request("/api/plans/personalize", {
-          ...submission(), generation_id: result.generation_id,
-        }, { signal: controller.signal });
+        const personalized = await waitForPersonalizedPlan(submission(), result.generation_id);
         if (!personalized.personalized) throw new Error(personalized.user_message || "模型还没有生成合格的详细课程大纲，请点击重试。");
         state.generationId = null;
         state.confirmationResult = result; state.stage = "plan_review";
@@ -321,10 +370,10 @@
           : "完整计划已经显示。先看看是否符合你的目标；需要修改就直接在下面说。");
         showChoices(planReviewChoices(), { hint: "满意就开始；要改直接在下面说", compact: true });
         global.LearningActivity?.finish("专属大纲已生成", "请先阅读并确认，课程不会自动开始。");
-      } finally { window.clearTimeout(personalizationTimeout); }
+      } finally { /* Background generation is polled through short requests. */ }
     } catch (error) {
       await cancelActiveGeneration();
-      const message = error?.name === "AbortError" || /aborted/i.test(error?.message || "")
+      const message = error?.name === "GenerationTimeoutError"
         ? "详细课程研究与生成超过 11 分钟，请重试；你刚才的主题和目标都已保留。"
         : error?.message || "详细课程暂时没有生成成功，请重试。";
       showError(new Error(message));
@@ -386,6 +435,19 @@
     const text = value.trim();
     if (!state.active || !text || state.busy) return false;
     if (state.stage === "plan_review") { addUser(text); await revisePlan(text); }
+    else if (state.stage === "clarifying_text" && state.pendingQuestionSlot === "interview_question_source") {
+      if (/^(?:暂时)?没有(?:了)?[.!！？?]?$/.test(text.trim())) {
+        await analyzeIntent(text);
+      } else if (/^有(?:的)?[.!！？?]?$/.test(text.trim())) {
+        addUser(text);
+        state.stage = "interview_intake";
+        addAgent("好的，直接把题目粘贴到输入框发送即可，不需要再选一次。");
+        byId("chatInput").placeholder = "直接粘贴面试题，支持编号列表或多行问题…";
+      } else {
+        state.stage = "interview_intake";
+        await handleText(text);
+      }
+    }
     else if (state.stage === "interview_intake") {
       addUser(text); setBusy(true); clearError();
       global.LearningActivity?.start("正在收录面试题", "正在去重、分类并保存到你的个人题库。 ");
@@ -421,6 +483,7 @@
       sessionMinutes: 25, deadlineDays: null, teachingPreference: "balanced",
       conceptScope: "not_applicable", slots: { ...EMPTY_SLOTS }, intentHistory: [],
       clarificationCount: 0, diagnostic: null, pendingAction: null, confirmationResult: null,
+      pendingQuestionSlot: null, lastDiagnosticQuestionId: null, diagnosisPrefaced: false,
       generationId: null, existingProject: null, existingDecision: null,
     });
     if (initialTopic.trim()) analyzeIntent(initialTopic);

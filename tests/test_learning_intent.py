@@ -92,6 +92,36 @@ def test_parse_clarification_accepts_two_or_three_specific_options() -> None:
     assert decision.slots.topic == "LangGraph"
 
 
+def test_interview_material_request_is_open_text_without_choice_options() -> None:
+    payload = clarification_payload(options=[])
+    payload["question"] = {
+        "prompt": "如果你有收集的真实面试题，直接粘贴；暂时没有就回复‘没有’。",
+        "slot": "interview_question_source",
+        "options": [],
+    }
+
+    decision = parse_intent_response(json.dumps(payload, ensure_ascii=False))
+
+    assert decision.question is not None
+    assert decision.question.slot == "interview_question_source"
+    assert decision.question.options == []
+
+
+def test_interview_material_request_rejects_an_extra_choice_step() -> None:
+    payload = clarification_payload(options=[])
+    payload["question"] = {
+        "prompt": "你有没有面试题？",
+        "slot": "interview_question_source",
+        "options": [
+            {"id": "has", "label": "有", "detail": "下一步再粘贴"},
+            {"id": "none", "label": "没有", "detail": "直接生成计划"},
+        ],
+    }
+
+    with pytest.raises((ValueError, ValidationError), match="open text"):
+        parse_intent_response(json.dumps(payload, ensure_ascii=False))
+
+
 @pytest.mark.parametrize("label", ["其他", "都不符合", "我直接补充", "Other"])
 def test_parse_clarification_rejects_catch_all_options(label: str) -> None:
     payload = clarification_payload(options=[
@@ -381,6 +411,7 @@ def test_interview_recovery_preserves_prior_level_when_user_only_adds_stack() ->
     assert decision.slots.tech_stack == ["React", "TypeScript"]
     assert decision.question is not None
     assert decision.question.slot == "interview_question_source"
+    assert decision.question.options == []
 
 
 def test_stack_only_reply_cannot_replace_confirmed_interview_role() -> None:
@@ -482,6 +513,7 @@ def test_confirmed_interview_question_source_cannot_change_without_user_correcti
 def test_interview_question_source_understands_double_negation() -> None:
     assert learning_intent._interview_source_from_text("不是没有题，我有收集的面试题") == "has_questions"
     assert learning_intent._interview_source_from_text("我并非有现成面试题") == "none"
+    assert learning_intent._interview_source_from_text("没有") == "none"
 
 
 def test_explicit_interview_recovery_does_not_guess_for_unrelated_learning_request() -> None:

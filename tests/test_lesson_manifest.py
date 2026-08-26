@@ -111,6 +111,44 @@ def test_practice_workspace_uses_model_lesson_code_for_java(tmp_path: Path) -> N
     assert "运行 Main.java" in (created / "README.md").read_text(encoding="utf-8")
 
 
+def test_practice_workspace_ignores_terminal_snippets_and_uses_complete_language_example(
+    tmp_path: Path,
+) -> None:
+    manifest = LessonManifest(
+        lesson_id="go-tools-lesson",
+        title="Go 工具链",
+        topic="Go",
+        language="go",
+        route="foundation_engineer",
+        knowledge_point_id="go-tools",
+        practice_path="projects/go/package-main",
+        completion_prompt="运行 main.go。",
+        pages=[
+            LessonPage(
+                id="version", type="example", title="查看版本", language="bash",
+                code="go version\ngo version go1.27.1 darwin/arm64",
+            ),
+            LessonPage(
+                id="skeleton", type="example", title="程序骨架", language="go",
+                code="package main\n\nfunc main() {}\n",
+            ),
+            LessonPage(
+                id="program", type="example", title="完整程序", language="go",
+                code='package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("你好，Go！")\n}\n',
+            ),
+            LessonPage(id="mastery", type="mastery", title="完成", markdown="继续练习。"),
+        ],
+        progress=LessonProgress(total_pages=4, remaining_minutes=25),
+    )
+
+    created = ensure_practice_workspace(tmp_path, "go-learner", manifest)
+    starter = (created / "main.go").read_text(encoding="utf-8")
+
+    assert starter.startswith("package main")
+    assert 'import "fmt"' in starter
+    assert "go version go1.27.1" not in starter
+
+
 def test_practice_folder_resolver_accepts_only_existing_learner_folder(tmp_path: Path) -> None:
     target = tmp_path / "userdir/u_learner/projects/api/lesson-01"
     target.mkdir(parents=True)
