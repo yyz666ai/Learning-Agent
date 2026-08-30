@@ -97,11 +97,58 @@ def _field(section: str, label: str, fallback: str) -> str:
     return match.group(1).strip() if match else fallback
 
 
+def normalize_plan_knowledge(markdown: str) -> str:
+    """Canonicalize explicit knowledge lists without deriving concepts from goals."""
+    def required_list(match: re.Match) -> str:
+        inline, children = match["inline"].strip(), match["body"]
+        if not inline and not children:
+            return match[0]
+        # Only split explicit enumeration separators outside code/parentheses;
+        # conjunctions, punctuation inside a concept, and prose stay untouched.
+        items, current, closers = [], [], []
+        in_code = False
+        for char in inline:
+            if char == "`":
+                in_code = not in_code
+            elif not in_code:
+                if char in "（([【":
+                    closers.append({"（": "）", "(": ")", "[": "]", "【": "】"}[char])
+                elif closers and char == closers[-1]:
+                    closers.pop()
+                elif char in "、；;" and not closers:
+                    if "".join(current).strip():
+                        items.append("".join(current).strip())
+                    current = []
+                    continue
+            current.append(char)
+        if "".join(current).strip():
+            items.append("".join(current).strip())
+        return ("#### 知识点\n" + "".join(f"- {item}\n" for item in items)
+                + re.sub(r"(?m)^  (?=- )", "", children))
+
+    segments = re.split(r"(?ms)(^```[^\n]*\n.*?^```[ \t]*$)", markdown)
+    for index in range(0, len(segments), 2):
+        segments[index] = re.sub(
+            r"(?m)^- 必要知识点[：:][ \t]*(?P<inline>[^\n]*)(?:\n|\Z)"
+            r"(?P<body>(?:  - [^\n]+(?:\n|\Z))*)",
+            required_list,
+            segments[index],
+        )
+        segments[index] = re.sub(
+            r"(?m)^- #### 知识点[ \t]*\n(?P<body>(?:  - [^\n]+(?:\n|\Z))+)",
+            lambda match: "#### 知识点\n" + re.sub(r"(?m)^  (?=- )", "", match["body"]),
+            segments[index],
+        )
+    return "".join(segments)
+
+
 def _knowledge_items(section: str, fallback: str) -> list[str]:
     """Prefer readable nested knowledge bullets; retain legacy semicolon Plans."""
     block = re.search(
-        r"(?ms)^#### 知识点\s*$\n(?P<body>.*?)(?=^- 本阶段要学[：:]|^#### |\Z)",
-        section,
+        r"(?m)^#### 知识点[ \t]*\n(?P<body>(?:"
+        r"-[ \t]+(?!(?:本阶段要学|练习|完成证据|预计课次|单次分钟|课外练习分钟|分次安排|为什么现在学|必要知识点|真实产出|验收方式)[：:])"
+        r"\S[^\n]*(?:\n|\Z)|[ \t]*\n)*)",
+        normalize_plan_knowledge(section),
     )
     if block is not None:
         items = [

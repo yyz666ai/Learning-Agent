@@ -303,7 +303,7 @@ def test_complete_mastery_plan_normalizes_model_h2_stage_headings() -> None:
     assert "\n## 阶段 1：" not in validated
 
 
-def test_complete_mastery_plan_prompt_uses_diagnosis_and_requires_research_even_for_known_topic():
+def test_complete_mastery_plan_preserves_diagnosis_without_forcing_known_topic_research():
     selected = submission(level="some", topic="go", goal_route="foundation_engineer")
     diagnosis = DiagnosisSummary(
         estimated_level="foundation",
@@ -321,9 +321,10 @@ def test_complete_mastery_plan_prompt_uses_diagnosis_and_requires_research_even_
     )
 
     assert "concurrency" in prompt and "debugging" in prompt
-    assert "tools/web_search.py" in prompt
-    assert "先检查已有" in prompt
-    assert "不重复搜索" in prompt
+    assert "tools/web_search.py" not in prompt
+    researched = build_plan_prompt(selected, "", "knowledge_base", diagnosis=diagnosis, research_required=True)
+    assert "tools/web_search.py" in researched
+    assert "先检查已有" in researched and "不重复搜索" in researched
     assert "知识覆盖地图" in prompt
     assert "毕业项目" in prompt
     assert "Plan 不承载教学代码" in prompt

@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 
+from .curriculum import normalize_plan_knowledge
 from .learning_content import SAFE_USER_ID, resolve_plan_path
 from .onboarding import DiagnosisSummary, OnboardingSubmission, ROUTE_STRATEGIES
 from .research_artifact import research_slug
@@ -17,9 +18,22 @@ COMPREHENSIVE_ROUTES = {"foundation_engineer", "senior_engineer"}
 def requires_authoritative_research(
     submission: OnboardingSubmission,
     knowledge_source: str,
+    *,
+    intent_slots: dict | None = None,
 ) -> bool:
-    """Deep mastery needs a fresh coverage audit even when starter atoms exist."""
-    return knowledge_source != "knowledge_base" or submission.goal_route in COMPREHENSIVE_ROUTES
+    """Stable local curricula need no live search solely to arrange chapters."""
+    stable_topic = submission.topic.value.strip().casefold() in {
+        "go", "golang", "go 语言", "python", "python 语言",
+    }
+    constraints = json.dumps(intent_slots or {}, ensure_ascii=False)
+    version_sensitive = re.search(r"最新|当前版本|版本变化|发布变化|版本升级|新特性|新框架|新库|latest|release|\bv?\d+\.\d+|langgraph|langchain", constraints, re.I)
+    # A stack outside our two stable language maps needs its own sources.
+    stack = (intent_slots or {}).get("tech_stack") or []
+    if isinstance(stack, str):
+        stack = [stack]
+    external_stack = any(str(item).strip().casefold() not in {"go", "golang", "python", "go 语言", "python 语言"} for item in stack)
+    return (knowledge_source != "knowledge_base" or not stable_topic
+            or submission.goal_route == "interview_sprint" or bool(version_sensitive) or external_stack)
 
 
 def _stage_requirement(goal_route: str) -> str:
@@ -52,6 +66,7 @@ def build_plan_prompt(
     knowledge_source: str = "skill_guided",
     *,
     diagnosis: DiagnosisSummary | None = None,
+    research_required: bool | None = None,
 ) -> str:
     strategy = ROUTE_STRATEGIES[submission.goal_route]
     concept_quickstart = submission.goal_route == "concept_clarity"
@@ -62,12 +77,15 @@ def build_plan_prompt(
         else f"计划要符合每次 {submission.session_minutes} 分钟的节奏。"
     )
     research_instruction = ""
-    if requires_authoritative_research(submission, knowledge_source):
+    needs_research = research_required if research_required is not None else requires_authoritative_research(submission, knowledge_source)
+    if needs_research:
         research_instruction = f"""
-这个主题需要权威覆盖研究：可能是知识库缺少可靠原子，也可能是完整掌握路线需要核对知识体系是否遗漏。
-即使知识库已有基础内容，也必须先读取 `.codex/skills/new-topic-research/SKILL.md`，
+这个主题需要权威覆盖研究：知识库缺少可靠内容，或涉及岗位要求、新框架、明确的版本敏感需求。
+使用已提供的 `.codex/skills/new-topic-research/SKILL.md` 规则，
 先检查已有 `$USER_DIR/research/{research_slug(submission.topic.value)}/sources.json`。若它是当前日期生成、版本当前且已包含完整深度字段，先验证并复用，不重复搜索。
-仅在文件缺失、过期、版本不清或覆盖不足时，执行 `python tools/web_search.py \"{submission.topic.value} official documentation getting started\"`，
+仅在文件缺失、过期、版本不清或覆盖不足时，按当前 shell 执行搜索：
+- macOS / Linux 的 POSIX shell：`"$LEARNING_AGENT_PYTHON" tools/web_search.py \"{submission.topic.value} official documentation getting started\"`。
+- Windows PowerShell：`& $env:LEARNING_AGENT_PYTHON tools/web_search.py \"{submission.topic.value} official documentation getting started\"`；同样用 `$env:USER_DIR` 解析下面的用户目录，不把 POSIX 环境变量语法直接用于 PowerShell。
 优先核对官方文档或官方仓库，并把可追溯结果写到
 `$USER_DIR/research/{research_slug(submission.topic.value)}/sources.json`。研究文件除来源和事实外，必须包含
 coverage_areas、prerequisites 和 graduation_project。搜索或证据校验失败时，不得输出正式计划。
@@ -78,12 +96,13 @@ coverage_areas、prerequisites 和 graduation_project。搜索或证据校验失
 这是完整掌握路线。必须先写“## 知识覆盖地图”，覆盖核心直觉、基础、运行机制、调试、测试、工程结构、错误与边界、性能、安全、真实项目、迁移与复习；不适用项写明替代能力。
 还必须写“## 最终达成标准”和“## 毕业项目”。最后一个阶段必须是毕业项目交付，覆盖需求、设计、实现、测试、调试、性能/安全检查、使用说明和复盘。
 每个阶段必须增加“#### 知识点”，列出至少 2 个原子知识点，并写“- 预计课次：N”。不要为了凑数量拆同义阶段，也不要把多个庞大主题塞进一个知识点。
+知识点标题使用简短的概念名词（例如“Go 安装”“go version”“package main”“func main”），一条只描述一个概念。安装步骤、网址、版本说明、验收细节放在本阶段要学/练习/完成证据中，不把整段行动说明或多个概念塞进知识点标题。
 """
     return f"""你是 Learning Agent 的课程总设计师。请为这一位学习者重写一份具体、可执行的 plan.md。
 
-先完整读取 `.codex/skills/learning-plan/SKILL.md`，严格按其中“先展示草案、确认后开课”的流程执行。
-还必须读取 `.codex/skills/learning-plan/references/curriculum-quality.md`，检查先修、承诺能力的练习/证据、时间口径。
-读取 `$USER_DIR/profile.json` 的 intent_slots 和 profile.md，保留用户目标、经验原文、约束、每周节奏、课程范围、题型和暂缓提供的资料；材料未提供不能宣称读过。
+使用后台已提供的 `.codex/skills/learning-plan/SKILL.md`，严格按其中“先展示草案、确认后开课”的流程执行。
+依据已提供的 `.codex/skills/learning-plan/references/curriculum-quality.md`，检查先修、承诺能力的练习/证据、时间口径。
+使用已提供的 profile.json 中的 intent_slots 和 profile.md，保留用户目标、经验原文、约束、每周节奏、课程范围、题型和暂缓提供的资料；材料未提供不能宣称读过。
 academic_course 按已给章节跟课、讲解、课堂练习与拓展；exam_review 按考试范围、期限、题型、错题安排复习。两者都不能强制工程师路线或毕业项目；研究文件中的 graduation_project 可明确写“不适用，改为考试/课程成果”。
 {research_instruction}
 
@@ -108,11 +127,12 @@ academic_course 按已给章节跟课、讲解、课堂练习与拓展；exam_re
 8. Plan 不承载教学代码：可以用 Mermaid 表达知识依赖，但不得嵌入 Go、Python 等编程代码。实际代码必须留到用户确认后的 HTML PPT，再按能力逐页讲解并加详细中文注释。
 9. 当前执行器按章节线性学习；Mermaid 如有只展示同一条线性顺序，不声明尚未实现的并行解锁。非概念速学路线每阶段写“- 预计课次：N”“- 单次分钟：{submission.session_minutes}”“- 课外练习分钟：M”；多课章还写“- 分次安排：第1课目标与暂停点；第2课目标与暂停点…”。课次是整章总量，不是每个知识点各一课。N/M 是合理估计，安装故障可另加时间，未交作业不代表掌握；概念速学只安排短小目标，不强加长期课表。
 10. 面试岗位未确认时，只能生成明确标为“通用预备”的草案，不能承诺岗位面试达标；未知题源不等于用户已经回答没有资料。岗位与材料确认后再定专项；可以调整任何未完成阶段。
+11. 所有路线每阶段均显式列出“#### 知识点”：使用简短的概念名词，一条一个概念（例如 goroutine、context 取消、资源泄漏），不要把“能描述…完整路径”这种学习目标当作知识点标题。学习目标放在“本阶段要学”，验收要求放在“完成证据”。
 {mastery_instruction}
 
-下面是系统兜底结构示例，不是已验证的个性化结论。它的默认章节、岗位达标表述、评分与时间都必须服从上述用户画像和质量规则：
-
-{fallback_plan}
+输出前检查：必须原样使用“## 当前任务”“## 学习成果”“## 教学策略”。
+{"本路线还必须原样使用独立的二级标题：## 知识覆盖地图、## 最终达成标准、## 毕业项目。不能用“学习目标”“阶段”或最后一个阶段的毕业项目代替这些章节；分别填写覆盖范围、验收能力、综合项目设计。" if submission.goal_route in COMPREHENSIVE_ROUTES else "本路线只保留与用户目标相关的章节，不强制毕业项目。"}
+不要照抄统一兜底课程：依据已确认画像、诊断与知识地图自行安排具体阶段。
 """
 
 
@@ -160,8 +180,20 @@ def normalize_and_validate_plan(
         lines = candidate.splitlines()
         candidate = "\n".join(lines[1:-1]).strip()
     title = re.search(r"(?m)^# [^#\n].*$", candidate)
+    if title is None and re.match(r"^学习计划[：:]\s*[^\n]+", candidate):
+        first_line = candidate.splitlines()[0]
+        if topic.casefold() in first_line.casefold():
+            candidate = "# " + candidate
+            title = re.search(r"(?m)^# [^#\n].*$", candidate)
     if title is None:
-        return None
+        # A display title is recoverable only for an otherwise structured Plan
+        # whose original content already names the confirmed topic. Validation
+        # below still requires every route-specific field and concrete stage.
+        if not (topic.strip() and "\n" not in topic and "\r" not in topic
+                and candidate.startswith("## ") and topic.casefold() in candidate.casefold()):
+            return None
+        candidate = f"# {topic} 学习计划\n\n{candidate}"
+        title = re.search(r"(?m)^# [^#\n].*$", candidate)
     candidate = candidate[title.start():].strip()
     # Accept equivalent outcome headings; never fabricate missing content.
     if not re.search(r"(?m)^## 学习成果\s*$", candidate):
@@ -179,14 +211,7 @@ def normalize_and_validate_plan(
     for fence in re.finditer(r"(?ms)^```(?P<info>[^\n]*)\n.*?^```[ \t]*$", candidate):
         if fence.group("info").strip().casefold() != "mermaid":
             return None
-    # Some model responses wrap the required knowledge heading in a list.
-    # Unwrap only that exact heading and its two-space child bullets immediately
-    # before the canonical learning field; never invent or broaden knowledge.
-    candidate = re.sub(
-        r"(?m)^- #### 知识点[ \t]*\n(?P<body>(?:  - [^\n]+\n)+)(?=^- 本阶段要学[：:])",
-        lambda match: "#### 知识点\n" + re.sub(r"(?m)^  (?=- )", "", match.group("body")),
-        candidate,
-    )
+    candidate = normalize_plan_knowledge(candidate)
     comprehensive = goal_route in COMPREHENSIVE_ROUTES
     minimum_length = 120 if goal_route == "concept_clarity" else (1_200 if comprehensive else 180)
     if not minimum_length <= len(candidate) <= 30_000:
@@ -212,10 +237,12 @@ def normalize_and_validate_plan(
             return None
         if comprehensive:
             knowledge = re.search(
-                r"(?ms)^#### 知识点\s*$\n(?P<body>.*?)(?=^- 本阶段要学[：:]|^#### |\Z)",
+                r"(?m)^#### 知识点[ \t]*\n(?P<body>(?:"
+                r"-[ \t]+(?!(?:本阶段要学|练习|完成证据|预计课次|单次分钟|课外练习分钟|分次安排|为什么现在学|必要知识点|真实产出|验收方式)[：:])"
+                r"\S[^\n]*(?:\n|\Z)|[ \t]*\n)*)",
                 section,
             )
-            if knowledge is None or len(re.findall(r"(?m)^-\s+(?!本阶段)", knowledge.group("body"))) < 2:
+            if knowledge is None or len(re.findall(r"(?m)^-[ \t]+\S", knowledge.group("body"))) < 2:
                 return None
             if re.search(r"(?m)^- 预计课次[：:]\s*[1-9]\d*$", section) is None:
                 return None

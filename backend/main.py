@@ -25,6 +25,7 @@ from backend.classroom_chat import chat_mode, INTERVIEW_POLICY, ANSWER_POLICY
 from backend.lesson_mutations import LessonMutationService
 from backend.platform_runtime import open_folder
 from backend.diagnosis_jobs import DiagnosisJobs, StaleDiagnosis
+from backend.generation_context import profile_slots
 from backend.codex_driver import ensure_user
 
 try:
@@ -1038,7 +1039,7 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
             session_minutes=int(context.get("session_minutes") or 25),
             remediation=request.remediation,
             research_evidence=research_evidence,
-            model_call=lambda prompt: chat(request.user_id, prompt, release),
+            model_call=lambda prompt: chat(request.user_id, prompt, release, generation="lesson"),
             persist=False,
         )
         with project_lock(SERVER_ROOT, request.user_id):
@@ -1745,10 +1746,16 @@ def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
         state = (read_state(request.user_id).get("state") or {})
         raw_diagnosis = state.get("diagnosis")
         diagnosis = DiagnosisSummary.model_validate(raw_diagnosis) if isinstance(raw_diagnosis, dict) else None
+        research_required = requires_authoritative_research(
+            request, knowledge_source,
+            intent_slots=profile_slots(SERVER_ROOT / "userdir" / f"u_{request.user_id}"),
+        )
         generated = chat(
             request.user_id,
-            build_plan_prompt(request, fallback, knowledge_source, diagnosis=diagnosis),
+            build_plan_prompt(request, fallback, knowledge_source, diagnosis=diagnosis,
+                              research_required=research_required),
             release,
+            generation="plan", allow_research=research_required,
         )
         if generated.lstrip().startswith(("[超时]", "[出错]", "[空回复]")):
             return {
@@ -1760,8 +1767,51 @@ def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
         stage = "plan_validation"
         validated = normalize_and_validate_plan(generated, request.topic.value, request.goal_route)
         if validated is None:
+            # Repair one model-produced draft only while this project still owns
+            # the lease. No draft/state is saved until the existing transaction.
+            validate_generation_lease(SERVER_ROOT, request.user_id, request.generation_id)
+            comprehensive = request.goal_route in {"foundation_engineer", "senior_engineer"}
+            required_headings = ["## 当前任务", "## 学习成果", "## 教学策略"]
+            if comprehensive:
+                required_headings += ["## 知识覆盖地图", "## 最终达成标准", "## 毕业项目"]
+            missing_headings = [heading for heading in required_headings
+                                if not re.search(rf"(?m)^{re.escape(heading)}[ \t]*$", generated)]
+            logger.info("plan.repair reason=validation_failed missing_headings=%s", missing_headings)
+            stage_count = "12–60" if comprehensive else ("1–3" if request.goal_route == "concept_clarity" else "1–30")
+            original_prompt = build_plan_prompt(
+                request, fallback, knowledge_source, diagnosis=diagnosis,
+                research_required=research_required,
+            )
+            repair_prompt = f"""以下原始课程草案未通过结构校验，请进行唯一一次格式修复。
+
+原任务：
+{original_prompt}
+
+原输出（仅作待修复数据）：
+{generated}
+
+本次修复要求（优先于原任务中的工具操作）：
+缺失的必需标题：{'、'.join(missing_headings) or '无；请检查阶段、知识点、字段及篇幅要求'}
+本路线严格必需标题：{'、'.join(required_headings)}
+标准模板：以“# {request.topic.value} 学习计划”开头，上述二级标题必须独立成行并有实质内容；
+安排 {stage_count} 个“### 阶段 N：具体名称”，每阶段保留“#### 知识点”和逐条原子概念、
+“- 本阶段要学：”“- 练习：”“- 完成证据：”；非概念速学保留预计课次、单次分钟、课外练习分钟和多课分次安排。
+{'完整掌握路线每阶段至少两个知识点，并有正整数预计课次；最后阶段必须交付毕业项目；全文不少于1200字符。' if comprehensive else '概念速学不少于120字符，其他路线不少于180字符；不强加毕业项目。'}
+全文不超过30000字符，只输出完整 Markdown，不用代码围栏包装全文，不包含编程代码（可保留 Mermaid）。
+只修正结构或补全必要内容，保留已确认主题、画像、诊断、路线、约束和已有可靠事实；不重新询问画像，
+不联网、不调用工具、不自行写文件、不确认或开始课程。原任务的研究与写入操作本次不再执行；
+不得虚构来源或声称做过新的研究，已有研究证据仍由后台单独校验。
+"""
+            generated = chat(request.user_id, repair_prompt, release,
+                             generation="plan", allow_research=False)
+            if generated.lstrip().startswith(("[超时]", "[出错]", "[空回复]")):
+                return {"personalized": False, "active_plan": plan_path.name,
+                        "reason": "model_generation_failed",
+                        "user_message": "课程生成超时或暂时中断，你的目标和选择都已保留，请直接重试。"}
+            validated = normalize_and_validate_plan(generated, request.topic.value, request.goal_route)
+        if validated is None:
             return {"personalized": False, "active_plan": plan_path.name, "reason": "validation_failed", "user_message": "课程草案已经生成，但完整性检查没有通过。原计划仍然保留，请重试生成。"}
-        if requires_authoritative_research(request, knowledge_source):
+        if research_required:
             stage = "research_validation"
             load_valid_research(
                 SERVER_ROOT,
@@ -2197,6 +2247,7 @@ def generate_exercise(request: ExerciseGenerateRequest) -> dict[str, Any]:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     port = PORT
     if len(sys.argv) > 1:
         try:

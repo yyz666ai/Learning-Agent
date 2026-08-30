@@ -115,10 +115,10 @@ def test_generator_prompt_contains_profile_point_prerequisites_evidence_and_time
     assert "上一题把编译和运行混淆了" in prompt
     assert "25 分钟" in prompt
     assert "adaptive-lesson-flow" in prompt
-    assert "knowledge-curator" in prompt
+    assert "不执行知识库策展或状态写入" in prompt
     assert "concept-teaching" in prompt
-    assert "只读取这些明确指定的 Skill/参考" in prompt
-    assert "不要扫描用户历史、整份知识库或其他文件" in prompt
+    assert "使用后台已提供" in prompt
+    assert "不重复读文件、不联网" in prompt
     assert "answer_structure 和 common_omissions 必须是字符串数组" in prompt
     assert bundle.manifest.knowledge_point_id == curriculum.current_knowledge_point_id
     assert load_lesson_bundle(tmp_path, "learner", curriculum.current_knowledge_point_id) == bundle

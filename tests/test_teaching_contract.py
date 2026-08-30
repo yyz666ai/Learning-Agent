@@ -24,6 +24,13 @@ VALIDATOR = WORKSPACE / "tools/validate_workspace.py"
 EVAL_RUNNER = WORKSPACE / "tools/run_behavior_evals.py"
 
 
+def test_lesson_skill_agrees_with_renderer_about_last_page_and_interview_storage():
+    skill = FAST_LOOP_SKILL.read_text(encoding="utf-8")
+    assert "最后一页类型必须为 `mastery`" in skill
+    assert "顶层 `interview_prompts`" in skill
+    assert "不要额外创建面试 practice 页" in skill
+
+
 def test_confirmed_profile_forbids_more_onboarding():
     agents = AGENTS.read_text(encoding="utf-8")
     skill = ONBOARDING_SKILL.read_text(encoding="utf-8")
@@ -151,8 +158,12 @@ def test_advanced_generation_requires_project_skill_and_its_routed_references():
     from backend.lesson_generator import build_lesson_prompt
     from tests.test_curriculum import GO_PLAN
     prompt = build_lesson_prompt(curriculum_from_plan(GO_PLAN,topic="Go",route="gap_upgrade",level="experienced"),profile="有基础",recent_evidence=[],session_minutes=40)
-    assert "practice-drill` 与 `project-practice" in prompt
-    assert "按该 Skill 路由读取当前主题参考" in prompt
+    assert "practice-drill" in prompt and "project-practice" in prompt
+    assert "与相关主题参考" in prompt
+    from backend.generation_context import prepare_generation_context
+    from pathlib import Path
+    prepared = prepare_generation_context(Path(__file__).resolve().parents[1] / "workspace/dev", Path("/nonexistent"), "lesson", prompt, False)
+    assert "references/go-cancellation.md" in prepared
 
 
 def test_advanced_drill_does_not_dump_a_batch():

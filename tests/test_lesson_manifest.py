@@ -344,7 +344,8 @@ def test_generate_lesson_api_persists_model_manifest_and_grades_saved_answers(
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     captured: dict[str, str] = {}
 
-    def fake_chat(user_id: str, prompt: str, release: Path) -> str:
+    def fake_chat(user_id: str, prompt: str, release: Path, **kwargs) -> str:
+        assert kwargs == {"generation": "lesson"}
         captured["prompt"] = prompt
         return model_lesson_json(curriculum.current_knowledge_point_id)
 
@@ -411,7 +412,7 @@ def test_generate_lesson_api_returns_retryable_error_without_fixed_fallback(
     state_path.write_text(json.dumps(state), encoding="utf-8")
     client.post("/api/plans/confirm", json={"user_id": "java-learner"})
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
-    monkeypatch.setattr(main, "chat", lambda *_: model_lesson_json("jdk-jvm"))
+    monkeypatch.setattr(main, "chat", lambda *_, **kwargs: model_lesson_json("jdk-jvm"))
 
     response = client.post("/api/lesson/generate", json={"user_id": "java-learner"})
 

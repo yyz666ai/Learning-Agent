@@ -1436,7 +1436,8 @@ def test_plan_personalization_uses_codex_and_persists_valid_markdown(
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     captured: dict[str, str] = {}
 
-    def fake_chat(user_id, prompt, release):
+    def fake_chat(user_id, prompt, release, **kwargs):
+        assert kwargs == {"generation": "plan", "allow_research": True}
         research_dir = tmp_path / "userdir/u_plan-codex/research/fastapi-api"
         research_dir.mkdir(parents=True, exist_ok=True)
         (research_dir / "sources.json").write_text(json.dumps({
@@ -1633,7 +1634,8 @@ def test_concept_clarity_personalization_accepts_a_short_plan_without_daily_time
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     captured: dict[str, str] = {}
 
-    def fake_chat(user_id, prompt, release):
+    def fake_chat(user_id, prompt, release, **kwargs):
+        assert kwargs == {"generation": "plan", "allow_research": True}
         captured["prompt"] = prompt
         research_dir = tmp_path / "userdir/u_rag-concept/research/rag"
         research_dir.mkdir(parents=True, exist_ok=True)
@@ -1709,7 +1711,7 @@ def test_plan_revision_reads_plan_revision_skill_and_preserves_confirmation_gate
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     captured: dict[str, str] = {}
 
-    def fake_chat(user_id, prompt, release):
+    def fake_chat(user_id, prompt, release, **kwargs):
         captured["prompt"] = prompt
         return deep_mastery_plan("Go")
 
@@ -1736,7 +1738,7 @@ def test_invalid_codex_plan_keeps_detailed_fallback(
     plan_path = tmp_path / "userdir/u_plan-fallback" / confirmation["active_plan"]
     fallback = plan_path.read_text(encoding="utf-8")
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
-    monkeypatch.setattr(main, "chat", lambda *_: "太宽泛了，随便学学。")
+    monkeypatch.setattr(main, "chat", lambda *_, **kwargs: "太宽泛了，随便学学。")
 
     response = client.post("/api/plans/personalize", json=payload)
 
@@ -1756,7 +1758,7 @@ def test_codex_timeout_is_reported_as_generation_failure_not_plan_validation(
     confirmation = client.post("/api/onboarding/confirm", json=payload).json()
     payload["generation_id"] = confirmation["generation_id"]
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
-    monkeypatch.setattr(main, "chat", lambda *_: "[超时] Codex 在限定时间内没有完成")
+    monkeypatch.setattr(main, "chat", lambda *_, **kwargs: "[超时] Codex 在限定时间内没有完成")
 
     response = client.post("/api/plans/personalize", json=payload)
 
@@ -1776,7 +1778,7 @@ def test_existing_confirmed_user_can_generate_structured_curriculum(
     client.post("/api/onboarding/confirm", json=payload)
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
 
-    def fake_chat(user_id, prompt, release):
+    def fake_chat(user_id, prompt, release, **kwargs):
         research_dir = tmp_path / "userdir/u_legacy-go/research/go"
         research_dir.mkdir(parents=True, exist_ok=True)
         (research_dir / "sources.json").write_text(json.dumps({

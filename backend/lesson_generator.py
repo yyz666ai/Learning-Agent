@@ -202,12 +202,21 @@ def _validate_commented_progressive_code(pages: list[LessonPage]) -> None:
         comment_count = sum(bool(_CHINESE_COMMENT.search(line)) for line in lines)
         required_comments = 2 if len(lines) >= 8 else 1
         if comment_count < required_comments:
-            raise ValueError("every generated code block requires detailed Chinese comments")
+            raise ValueError(
+                "every generated code block requires detailed Chinese comments: "
+                f"页面 {page.id} 的 code 字段需要至少 {required_comments} 处中文代码注释，目前只有 {comment_count} 处。"
+                "注释必须写在代码内，用该语言的注释语法；Markdown 正文里的解释不算代码注释。"
+            )
         instruction_count = len(_instruction_code_lines(page.code))
         if instruction_count > 12 and not any(
             0 < previous < instruction_count for previous in previous_code_lengths
         ):
-            raise ValueError("long generated code requires a progressive build-up page")
+            raise ValueError(
+                "long generated code requires a progressive build-up page: "
+                f"页面 {page.id} 的 code 字段有 {instruction_count} 行非空非注释代码。"
+                "请在它之前增加一页 type=example 的同主题最小代码骨架，code 字段仅 3–12 行非空非注释代码；"
+                "不能用纯文字页或选择题页代替代码骨架。保留之后的完整代码，逐步解释新增部分。"
+            )
         previous_code_lengths.append(instruction_count)
 
 
@@ -384,6 +393,31 @@ def _scope_concepts(title: str) -> list[str]:
     structured = _structured_scope_concepts(title)
     if structured:
         return structured
+    # These explicit instructional forms name their obligations in the body.
+    # Capture the actual source/command, not a language-specific substitute.
+    # Keep stable-version and source-of-version caveats as literal obligations.
+    installation = re.fullmatch(
+        r"(?P<tool>[A-Za-z][A-Za-z0-9 +#.-]*) 官方安装与版本验证[：:]从 "
+        r"(?P<source>\S+) 安装当前稳定版[，,]`(?P<command>[^`]+)` 确认安装成功"
+        r"[（(]版本号以官方页面为准[，,]不写死版本[）)]",
+        title.strip(),
+    )
+    if installation:
+        return [
+            f"{installation['tool']} 官方安装", installation["source"],
+            "当前稳定版", installation["command"], "版本号", "官方页面", "不写死",
+        ]
+    labeled = re.fullmatch(r"(?P<label>最小程序骨架|课程目录与编辑器工作流)[：:]\s*(?P<body>.+)", title)
+    if labeled:
+        concepts = []
+        if labeled["label"] == "课程目录与编辑器工作流":
+            concepts.extend(["课程目录", "编辑器", "工作流"])
+        for concept in _scope_concepts(labeled["body"]):
+            # An explicit command and its execution order are both required;
+            # they need not appear as one uninterrupted sentence on a page.
+            execution = re.fullmatch(r"`([^`]+)`\s*的执行顺序", concept)
+            concepts.extend([execution[1], "执行顺序"] if execution else [concept])
+        return list(dict.fromkeys(concepts))
     title = re.sub(r"[（(]官方来源\s*[:：]?\s*([^（）()]+)[）)]", r"、\1、", title)
     listed = re.search(r"[（(]([^（）()]+)[）)]\s*$", title)
     quoted = re.search(r"把[「“]([^」”]+)[」”]\s*拆成", title)
@@ -497,7 +531,12 @@ def _validate_scope_evidence(payload: dict, bundle: LessonBundle, points: list[K
         # second supporting page, and check every concept on retained pages only.
         normalized = [body for body in normalized if any(anchor in body for anchor in anchors)]
         if len(normalized) < 2:
-            raise ValueError(f"generated lesson drifted: scope evidence needs at least two relevant pages for {point_id}")
+            raise ValueError(
+                f"generated lesson drifted: scope evidence needs at least two relevant pages for {point_id}. "
+                f"知识点“{point.title}”必须在至少两张引用页的正文/问题/代码中讲解；"
+                f"把完整词组“{point.title}”自然写入这些页面的定义、示例说明或问题中，不能只写在页面标题。"
+                "可以补充讲解或修正 page_ids 指向已有真实讲解页，不能虚构引用。"
+            )
         # The full-title form remains compatible; the concept-list form accepts
         # paraphrased wrappers but still requires EVERY named concept.
         if ((_structured_scope_concepts(point.title) is not None or not any(_scope_text(point.title) in body for body in normalized))
@@ -581,13 +620,13 @@ def build_lesson_prompt(
 {lesson_contract}
 {environment_contract}
 
-先读取 workspace 中的 `adaptive-lesson-flow`、`concept-teaching` 与 `knowledge-curator` Skill；如果当前路线是精进或项目实战，必须读取 `practice-drill` 与 `project-practice`，并按该 Skill 路由读取当前主题参考，核对示例与作业验收的一致性。只读取这些明确指定的 Skill/参考，不要扫描用户历史、整份知识库或其他文件。只输出一个 JSON 对象，
+使用后台已提供的 `adaptive-lesson-flow`、`concept-teaching`、`progressive-code-teaching`、`quiz-designer` 与 `visual-explainer` 规则；精进或项目实战同时遵循已提供的 `practice-drill`、`project-practice` 与相关主题参考，核对示例与作业验收的一致性。本次只生成内容，不重复读文件、不联网、不执行知识库策展或状态写入。只输出一个 JSON 对象，
 研究依据中的事实必须用于校验本章内容；不要编造未被来源支持的版本号或 API。不要 Markdown 围栏和过程说明。字段必须为：
 title, language, practice_path, completion_mode(choice/self_practice), completion_prompt, output_patterns, output_requirements,
 practice_starter_mode(provided/blank), pages(3–24 页，最后一页 type 必须为 mastery), answer_keys, interview_prompts, scope_evidence。
-scope_evidence 必须逐项对应本章知识点，格式为 {{"knowledge_point_id":"原 id","page_ids":["至少两个不同的真实页面 id"]}}。
+scope_evidence 必须是数组，逐项对应本章知识点，格式为 [{{"knowledge_point_id":"原 id","page_ids":["page-1","page-2"]}}]，不能写成按 id 索引的对象。每项至少引用两个不同的真实页面 id。
 引用页面的正文、问题或代码合起来必须包含该知识点的全部覆盖词组；只在标题或元数据中点名不算覆盖。
-可以附加 excerpts: [{{"page_id":"被引用页 id","quote":"该页正文、问题或代码中的原文片段"}}]，不得编造原文。
+scope_evidence 只输出 knowledge_point_id 和 page_ids，不输出 excerpts；后台直接检查这些页面的正文，不需要重复抄写引文。
 page 字段使用 id, type(explain/example/check/practice/mastery), title, eyebrow, markdown,
 code, language, question, options, practice_kind(classroom/homework/null)。options 必须是对象数组，例如
 [{{"id":"a","label":"选项文字"}},{{"id":"b","label":"选项文字"}}]，answer_keys 的值使用同样的小写 id。
@@ -597,13 +636,15 @@ practice_path 必须是用户目录内的文件夹路径，例如 projects/go/pa
 每页 markdown 末尾必须用“**本页请做**：...”明确写出这一页的下一步；不得要求学生在聊天框写解释、复述或长文回答。
 可用 `**关键结论**` 加粗必记结论，用 `==核心警告==` 高亮容易导致误解或 bug 的边界。每页最多 2 处加粗和 1 处高亮，不得滥用高亮或高亮整段文字。
 除 meaning_only 外，所有讲解代码必须提供详细中文注释：解释陌生 API、关键行的目的和数据变化，不能只翻译语法。
-首次出现超过 12 个有效行的代码时，必须先在更早的代码页展示一个更短、可运行或可理解的骨架，再逐步增加职责；不能第一张代码页直接倾倒完整长代码。8 行以上代码至少写 2 处中文注释。
+首次出现超过 12 个有效行的代码时，必须先在更早的代码页展示一个更短、可运行或可理解的骨架，再逐步增加职责；不能第一张代码页直接倾倒完整长代码。8 行以上代码至少写 2 处中文注释；短代码、安装命令、终端命令也至少写 1 处中文注释（Python/bash 使用 #，Go/JS 使用 //），写在 code 字段内，正文说明不能替代注释。
 choice 与 self_practice 都必须令 output_patterns=[]、output_requirements=[]；不得生成 output_patterns、终端输出框、正则验收或逐项打印结果检查。
 代码型课程必须且只能有一个 practice_kind=homework 的课后练习。课堂练习只用 check 点击题；课后练习不作为进入下一章的门禁，完成后把代码、运行结果或问题直接发到右侧输入栏。
 practice_starter_mode：第一个非常简单的例子可用 provided；课后需要独立完成时用 blank，给清晰步骤和最多 3 条提示，但不要给答案代码。
 讲解、代码、题量和实践必须针对当前能力与当前知识点；不得输出其他语言的固定首课。选择题答案只放 answer_keys，不写进 markdown。
 当路线为 interview_sprint 时，interview_prompts 必须有 2–4 项；每项字段为 id, question, reference_answer,
 answer_structure, common_omissions, follow_ups。answer_structure 和 common_omissions 必须是字符串数组，不能返回单个字符串。follow_ups 每项字段为 prompt, answer_points，其中 answer_points 也必须是字符串数组。即使用户没有提供面试题也必须生成，答案要适合口述并能应对追问；其他路线可返回空数组。
+
+最终结构检查：pages[-1].type 必须为 "mastery"，它之后不能再有页面。面试题仅填顶层 interview_prompts，前端会自动显示在最后一页，不再另建“面试表达练习”practice 页。只保留一个 homework 页，课堂不另设编程 practice 页。第一次代码示例保持 3–12 行非空非注释代码，之后才扩展；每个 code 字段都检查中文注释数量。scope_evidence 必须是数组。为保证概念与讲解对应，每个知识点至少在两张引用页的正文或问题中自然出现完整词组（例如在定义页讲“goroutine 生命周期”，示例页再说明“这个例子的 goroutine 生命周期如何结束”）；不只放在标题，不堆砌关键词。只返回完整 JSON。
 """
 
 
@@ -745,13 +786,19 @@ def generate_and_save_lesson(
 额外输出顶层 `scope_evidence` 数组，必须逐一覆盖上面所有知识点：
 `{{"knowledge_point_id":"原 id","page_ids":["至少两个真实页面 id"]}}`。
 每个 page_ids 引用的页面必须确实讲该知识点，且这些页面的正文、问题或代码合起来必须包含对应知识点的全部覆盖词组；不必原样重复整句知识点标题。不得只在标题或元数据点名后讲别的内容。
-可附加 excerpts: [{{"page_id":"被引用页 id","quote":"该页正文、问题或代码的原文片段"}}]，不得编造原文。
+不输出 excerpts，后台会直接核对页面正文。
 请保留渐进讲解和中文注释。
 特别检查：每个含 options 的页面必须在 answer_keys 中有且只有一个答案；答案 id 必须属于该页 options；page id 不得重复。
 只输出一个完整 JSON 对象，不要 Markdown 代码围栏，不要解释，也不要省略任何页面。
 
 原课程 JSON：
 {response}
+
+原始教学要求（修复时同样必须保留）：
+{prompt}
+
+这次修复的首要错误：{repaired_error}
+请先修这个错误，再检查所有页面与答案。若错误为 mastery 页结尾，必须把总结放到 pages 数组最后；面试问题只留在顶层 interview_prompts。不要原样返回有上述错误的 JSON。
 """.strip()
             corrected = model_call(repair_prompt)
             try:

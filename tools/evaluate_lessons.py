@@ -10,6 +10,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -23,6 +24,9 @@ from backend.onboarding import OnboardingSubmission, DiagnosisSummary, confirm_o
 
 
 def main():
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s %(message)s")
+    logging.getLogger("backend.codex_driver").setLevel(logging.INFO)
+    logging.getLogger("backend.deepseek_transport").setLevel(logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", choices=["beginner", "advanced", "interview", "all"], default="all")
     parser.add_argument("--timeout", type=int, default=600)
@@ -60,7 +64,7 @@ def main():
         result = json.loads(replay_path.read_text(encoding="utf-8"))["output"] if replay else driver.chat(user_id, prompt, release, **{**kwargs, "server_root":isolated,"timeout":args.timeout})
         target = run / user_id
         target.mkdir(parents=True, exist_ok=True)
-        (target / f"call-{n}.json").write_text(json.dumps({"replayed":replay,"seconds":round(time.monotonic()-started,2),"prompt":prompt,"output":result},ensure_ascii=False,indent=2))
+        (target / f"call-{n}.json").write_text(json.dumps({"replayed":replay,"kind":kwargs.get("generation"),"research":kwargs.get("allow_research",False),"seconds":round(time.monotonic()-started,2),"prompt":prompt,"output":result},ensure_ascii=False,indent=2))
         print(json.dumps({"case":user_id,"call":n,"seconds":round(time.monotonic()-started,2)},ensure_ascii=False),flush=True)
         return result
     api.chat = model

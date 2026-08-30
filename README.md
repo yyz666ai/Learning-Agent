@@ -114,6 +114,8 @@ Windows PowerShell 或命令提示符：
 
 <http://127.0.0.1:8787>
 
+前端网页和后端由同一个服务提供，不需要再启动一个前端开发服务器。启动窗口会打印 Plan / 课件生成的开始、结束、耗时、工具调用数和 token 用量；`reasoning_output_tokens=0` 表示这次调用没有产生思考 token。这些生成设置仅影响本项目的调用，不修改个人 Codex 配置。
+
 如果部署在服务器或局域网，并需要从其他设备访问：
 
 ```bash
@@ -168,6 +170,16 @@ Learning-Agent/
 ```
 
 ## 测试与知识库共创
+
+想用自己配置的 DeepSeek 实测生成速度，可运行：
+
+```bash
+# 会消耗 API 额度；只创建隔离的测试目录，不改自己的学习进度
+python tools/evaluate_lessons.py --case beginner
+# 还可以选 advanced、interview 或 all
+```
+
+它会从已确认的测试画像开始，调用真实模型生成 Plan，模拟明确确认，再生成首章课件；不代表测试了自然语言 onboarding。每一步耗时、原始模型输出和成功/失败原因保存到 `evals/runs/`（已忽略，不上传 GitHub）。修复原理、样本耗时及测试边界见 [生成性能与可靠性报告](docs/generation-performance-2026-08-30.md)。
 
 `tests/` 会保留在开源仓库中，它用于验证教学流程、选择题答案、代码注释、路径安全与知识库 PR，避免贡献内容破坏现有学习体验。
 

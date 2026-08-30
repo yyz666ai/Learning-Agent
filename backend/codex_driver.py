@@ -12,24 +12,34 @@ key 通过 env_key="DEEPSEEK_API_KEY" 从进程环境读取；本层从 .secrets
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import subprocess
 import sys
 import time
 import uuid
+from contextlib import nullcontext
 from collections import deque
 from queue import Empty, Full, Queue
 from threading import Event, Thread
 from pathlib import Path
 from collections.abc import Iterator
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 remains a supported runtime.
+    import tomli as tomllib
+
 if __package__:
     from .platform_runtime import codex_command
+    from .deepseek_transport import deepseek_generation_transport
 else:  # Preserve the documented python backend/codex_driver.py entry point.
     from platform_runtime import codex_command
+    from deepseek_transport import deepseek_generation_transport
 
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 SECRETS_FILE = SERVER_ROOT / ".secrets.env"
+logger = logging.getLogger(__name__)
 
 # 沙箱档位：MVP 沿用老师线上验证过的方案 —— danger-full-access + 目录分离 + AGENTS.md 红线，
 # 只读保护靠「快照副本 + 引导写 USER_DIR」兜底；正式版升级为 workspace-write / Docker :ro。
@@ -306,6 +316,7 @@ def ensure_user(user_id: str, server_root: Path = SERVER_ROOT) -> Path:
 
 def build_env(user_dir: Path, codex_home: Path, secrets: dict[str, str]) -> dict[str, str]:
     env = dict(os.environ)
+    env["LEARNING_AGENT_PYTHON"] = sys.executable
     env["CODEX_HOME"] = str(codex_home)
     env["USER_DIR"] = str(user_dir)
     env["LEARNING_AGENT_USER_ID"] = user_dir.name.removeprefix("u_")
@@ -394,6 +405,8 @@ def chat(
     server_root: Path = SERVER_ROOT,
     sandbox: str | None = None,
     timeout: int = 600,
+    generation: str | None = None,
+    allow_research: bool = False,
 ) -> str:
     """一次对话：spawn `codex exec --json`，只提取最终 agent 回复文本（干净、无 banner/工具噪声）。"""
     user_dir = ensure_user(user_id, server_root)
@@ -407,12 +420,53 @@ def chat(
         "--sandbox", sandbox or SANDBOX_MODE,
         "-",
     ]
+    if generation:
+        if not allow_research and sandbox is None:
+            cmd[cmd.index("--sandbox") + 1] = "read-only"
+        from backend.generation_context import prepare_generation_context
+        message = prepare_generation_context(release_dir, user_dir, generation, message, allow_research)
+        options = ["-c", 'model_reasoning_effort="none"',
+                   "-c", "model_supports_reasoning_summaries=true"]
+        if not allow_research:
+            options += ["--disable", "shell_tool", "-c", 'web_search="disabled"']
+        cmd[-1:-1] = options
+    transport = nullcontext(None)
+    config_path = codex_home / "config.toml"
+    if generation and config_path.is_file():
+        config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        provider = config.get("model_providers", {}).get("deepseek", {})
+        if (config.get("model_provider") == "deepseek"
+                and str(provider.get("base_url", "")).rstrip("/") in {
+                    "https://api.deepseek.com", "https://api.deepseek.com/v1"}
+                and provider.get("env_key") == "DEEPSEEK_API_KEY"
+                and env.get("DEEPSEEK_API_KEY")):
+            transport = deepseek_generation_transport(env["DEEPSEEK_API_KEY"], timeout,
+                allow_tools=allow_research, json_output=generation == "lesson")
+    started = time.monotonic()
+    if generation:
+        logger.info("generation.start kind=%s research=%s requested_reasoning=none", generation, allow_research)
     try:
-        proc = _capture_process(cmd, message, release_dir, env, timeout)
+        with transport as relay:
+            if relay is not None:
+                cmd[-1:-1] = ["-c", f'model_providers.deepseek.base_url="{relay.base_url}"',
+                               "-c", 'model_providers.deepseek.env_key="LEARNING_AGENT_RELAY_TOKEN"']
+                # Research scripts still call the public API with the real key;
+                # the private relay credential must never be sent upstream.
+                env["LEARNING_AGENT_RELAY_TOKEN"] = relay.token
+                for proxy_key in ("NO_PROXY", "no_proxy"):
+                    env[proxy_key] = ",".join(filter(None, (env.get(proxy_key, ""), "127.0.0.1", "localhost")))
+            proc = _capture_process(cmd, message, release_dir, env, timeout)
     except subprocess.TimeoutExpired:
+        if generation:
+            logger.warning("generation.timeout kind=%s elapsed=%.2fs", generation, time.monotonic() - started)
         return "[超时] 学习 Agent 处理超时（>%ds），请稍后再试。" % timeout
 
     parts: list[str] = []
+    tool_count = 0
+    usage = {}
+    completed = False
+    failed = False
+    stream_errors = 0
     for line in proc.stdout.splitlines():
         line = line.strip()
         if not line:
@@ -423,11 +477,28 @@ def chat(
             continue
         if d.get("type") == "item.completed":
             item = d.get("item") or {}
+            if item.get("type") in {"command_execution", "mcp_tool_call", "web_search", "file_change"}:
+                tool_count += 1
             if item.get("type") == "agent_message" and item.get("text"):
                 parts.append(item["text"])
+        elif d.get("type") == "turn.completed":
+            completed = True
+            usage = {key: value for key, value in (d.get("usage") or {}).items()
+                     if key in {"input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"}}
+        elif d.get("type") == "turn.failed":
+            failed = True
+        elif d.get("type") == "error":
+            stream_errors += 1
+    if generation:
+        logger.info("generation.finish kind=%s elapsed=%.2fs tool_calls=%s stream_errors=%s exit_code=%s usage=%s",
+                    generation, time.monotonic() - started, tool_count, stream_errors, proc.returncode, usage)
+        if proc.returncode != 0 or failed or not completed:
+            return "[出错] 学习引擎未完整完成生成，已保留原有内容，请重试。"
     if not parts and proc.stderr.strip():
         return "[出错] " + proc.stderr.strip()[-400:]
-    return "\n".join(parts) if parts else "[空回复]"
+    # Progress commentary is not part of a generated Markdown/JSON artifact.
+    # Interactive chat keeps its existing multi-message behavior.
+    return (parts[-1] if generation else "\n".join(parts)) if parts else "[空回复]"
 
 
 def latest_release(server_root: Path = SERVER_ROOT) -> Path | None:
