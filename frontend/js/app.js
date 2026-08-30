@@ -128,8 +128,9 @@
     activityRun = null;
     const panel = $("#activityStatus");
     panel.hidden = false;
-    panel.classList.toggle("is-active", !["failed", "cancelled", "interrupted"].includes(job.status));
-    setText("#activityStatusLabel", job.status === "unknown" ? "正在重新连接" : "正在校准起点");
+    const terminal = ["failed", "cancelled", "interrupted"].includes(job.status);
+    panel.classList.toggle("is-active", !terminal);
+    setText("#activityStatusLabel", terminal ? "诊断已停止" : job.status === "unknown" ? "正在重新连接" : "正在校准起点");
     setText("#activityStatusDetail", "只用几道小题找到合适的第一课；用时取决于模型与网络。");
     setText("#activityCurrentStep", window.DiagnosisJobs.statusText(job));
     setText("#activityProgressText", "显示服务器最近一次状态；不估算完成百分比。");

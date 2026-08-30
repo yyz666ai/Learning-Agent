@@ -12,6 +12,16 @@ from backend.onboarding import OnboardingSubmission
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_diagnosis_preloads_skill_without_old_course_profile(tmp_path):
+    from backend.generation_context import prepare_generation_context
+    (tmp_path / 'profile.md').write_text('OLD_GO_COURSE')
+    prompt = prepare_generation_context(ROOT / 'workspace/dev', tmp_path, 'diagnosis', '前端 Vue 学过一些', False)
+    assert '自适应建档与诊断' in prompt
+    assert '前端 Vue 学过一些' in prompt
+    assert 'OLD_GO_COURSE' not in prompt
+    assert '不调用工具' in prompt
+
+
 def submission(topic="Go", route="foundation_engineer"):
     return OnboardingSubmission.model_validate(dict(
         user_id="prepared_test", learning_mode="systematic", goal_route=route,

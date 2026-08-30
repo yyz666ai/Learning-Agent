@@ -9,6 +9,7 @@ import json
 import re
 import shutil
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -55,19 +56,32 @@ def publish() -> Path:
     if not files:
         sys.exit("manifest.json 的 publishable 白名单为空，拒绝发布")
     dst = CURRENT
-    if dst.exists():
-        shutil.rmtree(dst)
-    dst.mkdir(parents=True)
-    for rel in files:
-        src = DEV / rel
-        target = dst / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, target)
-    (dst / "manifest.json").write_text(
-        json.dumps({"published_from": DEV.name, "published_at": datetime.now(timezone.utc).isoformat(), "files": files},
-                   ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    dst.mkdir(parents=True, exist_ok=True)
+    # Keep directory identity: Codex may still be using it as its cwd. Removing
+    # and recreating the same path leaves those processes in a deleted inode.
+    # Stage all source reads first; a copy failure leaves the old release usable.
+    with tempfile.TemporaryDirectory(prefix=".publish-", dir=dst.parent) as staging:
+        staged = Path(staging)
+        for rel in files:
+            target = staged / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(DEV / rel, target)
+        (staged / "manifest.json").write_text(
+            json.dumps({"published_from": DEV.name, "published_at": datetime.now(timezone.utc).isoformat(), "files": files},
+                       ensure_ascii=False, indent=2), encoding="utf-8")
+        previous = json.loads((dst / "manifest.json").read_text(encoding="utf-8")).get("files", []) if (dst / "manifest.json").is_file() else []
+        for rel in files:
+            if rel == "manifest.json":
+                continue  # Publication metadata is installed once, last.
+            target = dst / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            (staged / rel).replace(target)
+        # Remove only obsolete published files, never the root or runtime data.
+        for rel in set(previous) - set(files):
+            target = dst / rel
+            if target.resolve().is_relative_to(dst.resolve()) and target.is_file():
+                target.unlink()
+        (staged / "manifest.json").replace(dst / "manifest.json")
     print(f"published {len(files)} files -> {dst}")
     return dst
 

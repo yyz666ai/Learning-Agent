@@ -12,6 +12,16 @@ from backend.diagnostics import (
 import json
 
 
+def test_diagnosis_prompt_includes_confirmed_stack_as_data():
+    prompt = build_diagnosis_prompt('前端', 'some', 'interview_sprint',
+        intent_slots={'topic': '前端', 'tech_stack': ['Vue'], 'target_role': '前端岗',
+                      'interview_question_source': 'none'})
+    assert 'Vue' in prompt and '前端岗' in prompt
+    assert '确认资料' in prompt
+    assert '版本差异' in prompt
+    assert '题干明确版本' in prompt
+
+
 def choose_correct(session):
     return session["question"]["correct_option_id"]
 

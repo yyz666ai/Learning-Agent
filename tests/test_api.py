@@ -452,7 +452,7 @@ def test_nonzero_onboarding_uses_codex_generated_click_diagnosis(
 ) -> None:
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
-    monkeypatch.setattr(main, "chat", lambda *_: json.dumps({"topic": "Java API", "questions": [
+    monkeypatch.setattr(main, "chat", lambda *_, **kwargs: json.dumps({"topic": "Java API", "questions": [
         {"id": "java-list", "prompt": "Java API 中 List 的作用？", "dimension": "Java syntax", "options": [{"id": "a", "label": "保存多个值"}, {"id": "b", "label": "启动服务"}], "correct_option_id": "a"},
         {"id": "java-http", "prompt": "Java API 返回 200 的意思？", "dimension": "Java API", "options": [{"id": "a", "label": "成功"}, {"id": "b", "label": "未找到"}], "correct_option_id": "a"},
         {"id": "java-error", "prompt": "Java API 异常出现时？", "dimension": "Java debugging", "options": [{"id": "a", "label": "处理它"}, {"id": "b", "label": "忽略项目"}], "correct_option_id": "a"},
@@ -474,7 +474,7 @@ def test_custom_role_diagnosis_generation_failure_is_recoverable_not_generic(
 ) -> None:
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
-    monkeypatch.setattr(main, "chat", lambda *_: '{"topic":"前端","questions":[]}')
+    monkeypatch.setattr(main, "chat", lambda *_, **kwargs: '{"topic":"前端","questions":[]}')
 
     response = client.post("/api/onboarding/start", json={
         "user_id": "learner", "topic": {"type": "custom", "value": "AI产品经理"},
@@ -505,7 +505,7 @@ def test_custom_role_diagnosis_repairs_one_invalid_model_response(
     responses = iter(['{"topic":"AI 前端","questions":[]}', valid])
     prompts: list[str] = []
 
-    def diagnosis_chat(_user_id: str, prompt: str, _release: Path) -> str:
+    def diagnosis_chat(_user_id: str, prompt: str, _release: Path, **kwargs) -> str:
         prompts.append(prompt)
         return next(responses)
 
@@ -530,7 +530,7 @@ def test_custom_role_diagnosis_does_not_retry_transport_failure(
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
     calls = 0
 
-    def diagnosis_timeout(*_args) -> str:
+    def diagnosis_timeout(*_args, **kwargs) -> str:
         nonlocal calls
         calls += 1
         raise TimeoutError("provider timed out")

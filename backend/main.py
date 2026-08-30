@@ -1547,17 +1547,21 @@ def _generate_diagnostic_session(request: OnboardingSubmission, phase=None, *, s
     source = "fallback"
     release = latest_release()
     if release is not None:
+        slots = read_intent_state(server_root or SERVER_ROOT, request.user_id).get("slots") or {}
+        if slots.get("topic") != request.topic.value:
+            slots = {}  # Never inject a previous course into a legacy request.
         diagnosis_prompt = build_diagnosis_prompt(
             request.topic.value, request.level_claim, request.goal_route,
+            intent_slots=slots,
         )
         previous_response = ""
         for attempt in range(2):
             if phase:
                 phase("generating" if attempt == 0 else "repairing")
             try:
-                previous_response = chat(request.user_id, diagnosis_prompt, release, **({
-                    "sandbox": "read-only", "timeout": 120, "server_root": server_root or SERVER_ROOT,
-                } if phase else {}))
+                previous_response = chat(request.user_id, diagnosis_prompt, release,
+                    sandbox="read-only", timeout=120, server_root=server_root or SERVER_ROOT,
+                    generation="diagnosis")
                 if previous_response.startswith(("[超时]", "[出错]", "[空回复]")):
                     raise RuntimeError("diagnosis model transport failed")
                 if phase:
