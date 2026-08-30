@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Learning Agent · 质量与兼容性报告</title>
+<style>
+:root{color-scheme:light;--ink:#192435;--muted:#58687c;--blue:#2457d6;--line:#dce3ed;--soft:#f4f7fb}
+*{box-sizing:border-box}body{margin:0;background:var(--soft);color:var(--ink);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+header{background:#fff;border-bottom:1px solid var(--line)}.shell{max-width:1240px;margin:auto;padding:28px 32px}.brand{font-weight:700;color:var(--blue);font-size:15px}h1{font-size:30px;letter-spacing:-.6px;line-height:1.3;margin:16px 0 10px}h2{font-size:20px;margin:0 0 16px}h3{font-size:16px;margin:22px 0 8px}p{margin:8px 0 16px}.muted,small{color:var(--muted)}.meta{display:flex;gap:8px 24px;flex-wrap:wrap;font-size:13px;overflow-wrap:anywhere}
+.notice{border:1px solid #d2ddf4;background:#eef3ff;border-radius:10px;padding:16px 20px;margin:22px 0;color:#253e74}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.stat{background:white;border:1px solid var(--line);border-radius:12px;padding:20px}.stat b{font-size:30px;display:block;line-height:1.3;margin:4px 0}.stat span{font-size:13px;color:var(--muted)}.panel{background:white;border:1px solid var(--line);border-radius:12px;margin-top:24px;padding:24px}
+.filters,.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.filters label{display:grid;gap:5px;font-size:13px;color:var(--muted)}.filters label:first-child{flex:1;min-width:180px}button,input,select,textarea{font:inherit;border:1px solid #bbc8d9;border-radius:7px;background:white;color:var(--ink);padding:9px 12px;min-height:44px}button{cursor:pointer;font-weight:600}button:hover{background:#edf3ff;border-color:#9bb5ea}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #94b9ff;outline-offset:2px}.primary{background:var(--blue);color:white;border-color:var(--blue)}.primary:hover{background:#1946b3;color:white}textarea{width:100%;min-height:100px;resize:vertical}label{display:block}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;margin-top:18px;text-align:left;font-size:14px}th{background:var(--soft);color:var(--muted);font-size:12px;font-weight:600}th,td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}td:first-child{min-width:220px}td small{display:block}tbody button{border:0;padding:0;min-height:44px;color:var(--blue);text-align:left;background:none;font-size:14px}tbody button:hover{background:none;text-decoration:underline}.badge{display:inline-block;border-radius:5px;font-size:12px;font-weight:600;padding:3px 8px;white-space:nowrap}.PASS{background:#e9f5ef;color:#226144}.FAIL{background:#fff0ed;color:#a43524}.UNVERIFIABLE{background:#fff5df;color:#855900}.BLOCKED{background:#edf0f5;color:#536178}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:currentColor;margin-right:6px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:22px}.block{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--soft);border:1px solid var(--line);padding:16px;border-radius:8px;font-size:14px}.evidence{font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;color:var(--muted)}.timeline{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}.timeline h3{margin:0 0 8px}.review{background:#f5f8ff;border:1px solid #d7e2f6;padding:20px;border-radius:9px;margin-top:24px}.review .actions{margin-top:12px}.empty{padding:35px;text-align:center;color:var(--muted)}details{border-top:1px solid var(--line);padding:14px 0}summary{cursor:pointer;font-weight:600;min-height:32px}footer{font-size:12px;color:var(--muted);padding-top:24px}.toolbar{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}#review-status{margin:8px 0 0;min-height:24px;font-size:13px}#detail{scroll-margin-top:20px}ul{padding-left:22px}#limits li{margin:8px 0}code{background:#eef2f9;padding:2px 5px;border-radius:4px;font-size:12px}
+@media(max-width:700px){.shell{padding:20px 16px}h1{font-size:25px}.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{padding:16px}.panel{padding:16px}.split{grid-template-columns:1fr}.filters label{flex:1}th,td{padding:12px 8px}.meta{display:block}.meta span{display:block}.actions button{flex:1}}
+@media(prefers-reduced-motion:no-preference){button{transition:background .15s ease,border-color .15s ease}}
+</style></head>
+<body>
+<header><div class="shell"><div class="brand">Learning Agent / Detect</div><h1>每个结论，都有证据可查。</h1><p class="muted">跨平台部署 · 诊断生成 · 学习链路 · 交互验证</p><div class="meta" id="meta"></div></div></header>
+<main class="shell">
+<div class="notice"><strong>这是测试证据与机器初判，不是上线批准。</strong><br>Windows 模拟 ≠ Windows 实机。未知不计为通过；初次失败不会被复测覆盖。人工复核意见只保存为本机草稿。</div>
+<section class="stats" id="stats" aria-label="最新运行状态统计"></section>
+<section class="panel" aria-labelledby="cases-title"><div class="toolbar"><div><h2 id="cases-title">用例与实际结果</h2><p class="muted" id="count" aria-live="polite"></p></div><button id="download-batch">下载完整数据 JSON</button></div>
+<div class="filters"><label>搜索用例 / 输入 / 预期<input id="search" type="search" placeholder="例如：Windows、刷新、诊断…"></label><label>状态<select id="status"><option value="">全部状态</option><option>PASS</option><option>FAIL</option><option>UNVERIFIABLE</option><option>BLOCKED</option></select></label><label>平台<select id="platform"><option value="">全部平台</option></select></label><label>模块<select id="module"><option value="">全部模块</option></select></label><label>风险<select id="risk"><option value="">全部风险</option></select></label></div>
+<div class="table-scroll"><table><thead><tr><th>场景 / 用例</th><th>平台</th><th>最新状态</th><th>耗时</th><th>复核</th></tr></thead><tbody id="rows"></tbody></table></div><p id="empty" class="empty" hidden>没有匹配的用例。请清空搜索或调整筛选。</p></section>
+<section class="panel" id="detail" aria-labelledby="detail-title" hidden><div class="toolbar"><h2 id="detail-title" tabindex="-1"></h2><button id="close-detail">收起详情</button></div><p id="detail-meta" class="muted"></p><div class="split"><div><h3>输入 / 前置条件</h3><div class="block" id="detail-input"></div></div><div><h3>预期行为 / Ground Truth</h3><div class="block" id="detail-gt"></div></div></div><h3>修复说明 / 后续动作</h3><div class="block" id="detail-fix"></div><div id="runs"></div><div class="review"><h3>人工复核草稿</h3><p class="muted">不会修改机器原判，也不会自动批准发布。导出后交给维护者复核。</p><label for="review-text">你的评价、异议或补充证据</label><textarea id="review-text" placeholder="例如：请在我的 Windows 电脑复测这个用例…"></textarea><div class="actions"><button class="primary" id="save-review">保存本机草稿</button><button id="export-review">导出全部复核草稿</button></div><p id="review-status" role="status"></p></div></section>
+<section class="panel"><h2>Bad Case 与修复追踪</h2><p class="muted">保留失败现象和修复后的实际结果，不把“已改代码”等同于“已验证”。</p><div id="bad-cases"></div></section>
+<section class="panel"><h2>附件与判定边界</h2><div class="actions"><button data-export="cases">用例 JSONL</button><button data-export="ground_truth">标准 GT JSONL</button><button data-export="runs">运行记录 JSONL</button><button data-export="scores">机器判定 JSONL</button></div><h3>当前不能据此承诺的事情</h3><ul id="limits"></ul><p class="muted">有效人审分母：0（尚未导入 Owner 签署复核）。上方数量是最新运行的机器初判，不是人工通过率。</p></section>
+<footer>参考 detect 的 Case → GT → Run → Score → Review 结构。页面无需联网；不包含 API Key。请保留 JSON 附件，便于复现与追溯。</footer>
+</main>
+<script id="batch" type="application/json">{
+  "batch_id": "20260830-cross-platform-diagnosis-r1",
+  "baseline": "32ffe836fe7e043e1c325b2baa935ef737288474",
+  "candidate": "sha256:db7930601d7b79a584241eeada37ecafe04b125db9bf482679ae0cbfb422e6df",
+  "generated_at": "2026-08-30 20:30 Asia/Shanghai",
+  "limitations": [
+    "原生Windows未执行；Windows相关PASS指离线模拟/合同测试，不是Windows实机端到端通过。",
+    "本地报告URL被内置浏览器安全策略拒绝，未绕过；报告真实视觉、浏览器下载与移动布局验收BLOCKED。Node假DOM检查另列。",
+    "真实模型诊断仅一次最终AI前端抽样，输入是已确认合成画像；没有覆盖自然语言意图识别或全部技术栈。",
+    "小白Plan为先前真实失败响应及研究材料的回放；第一章课件才是新模型生成，含一次自动修复，总391.13秒，不承诺生成提速。",
+    "计时来自Mac本地ASGI TestClient；不代表WorkBuddy代理、公网或Windows性能。用户提供的29–33秒仍是外部陈述。",
+    "当前只支持单服务进程，不支持多worker/多实例任务调度。取消不保证收费模型立即停止。",
+    "确认状态写入后、收据落盘前的磁盘故障恢复未验证；不承诺跨文件故障事务保证。",
+    "本批次16个聚合Case不等于685个Python测试；机器初判不代表用户掌握、模型总体成功率或人审批准。Owner复核pending，有效人审分母0。"
+  ],
+  "cases": [
+    {
+      "id": "REG-ALL",
+      "gt_id": "GT-REG-ALL",
+      "title": "候选版本全量回归",
+      "module": "regression",
+      "platform": "Mac本机",
+      "risk": "high",
+      "input": "执行全部Python/Node测试、工作区校验、部署检查及shell/diff检查",
+      "expected": "确定性测试无失败；明确真实模型和跨平台证据边界",
+      "fix": "新增边界回归并更新旧API测试夹具",
+      "runs": [
+        {
+          "id": "RUN-REG-first",
+          "status": "FAIL",
+          "actual": "673通过、1失败：旧e2e夹具缺少intent session_id并仍期待同步endpoint",
+          "evidence": "bad-case-analysis.md BC-05；tests/test_e2e_learning_smoke.py",
+          "rationale": "评测调用器未迁移新接口，不是模型失败",
+          "seconds": 8.43
+        },
+        {
+          "id": "RUN-REG-final",
+          "status": "PASS",
+          "actual": "Python685通过（9.24秒），Node39通过；23 Skills/35 concepts/0 workspace errors；部署自检、Bash语法与diff检查通过",
+          "evidence": "run-evidence.md；final-verification.json",
+          "rationale": "测试全绿不是所有场景、所有模型或Windows实机保证",
+          "seconds": 9.24
+        }
+      ]
+    },
+    {
+      "id": "PLAT-01",
+      "gt_id": "GT-PLAT-01",
+      "title": "Windows Codex入口与长中文输入",
+      "module": "platform",
+      "platform": "Windows离线模拟 + Mac实进程",
+      "risk": "high",
+      "input": "npm codex.cmd/.ps1，中文和空格路径，长prompt，四条driver调用",
+      "expected": "入口使用argv与UTF-8 stdin；不使用shell；保留read-only参数",
+      "fix": "统一platform_runtime与driver入口；stdin代替命令行prompt",
+      "runs": [
+        {
+          "id": "RUN-PLAT-01-final",
+          "status": "PASS",
+          "actual": "参数化测试覆盖npm全局/本地shim、缺Node、原生路径及四条调用路径；Mac子进程输入往返通过",
+          "evidence": "tests/test_platform_runtime.py：codex_command / long_unicode相关用例",
+          "rationale": "行为合同通过；不等于原生Windows执行证据",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "PLAT-02",
+      "gt_id": "GT-PLAT-02",
+      "title": "静默子进程、stderr洪流与进程树清理",
+      "module": "platform",
+      "platform": "Mac实进程 + Windows离线模拟",
+      "risk": "high",
+      "input": "模型无stdout、stderr持续写入、子进程不读stdin、Node包装器退出而孙进程仍持有管道",
+      "expected": "deadline仍有效；停止本次调用的子进程树，不误杀宿主",
+      "fix": "并行排空管道、独立进程组与精确PID树清理",
+      "runs": [
+        {
+          "id": "RUN-PLAT-02-final",
+          "status": "PASS",
+          "actual": "真实POSIX父/孙进程超时测试通过；Windows taskkill /T /F 参数和新进程组配置模拟通过",
+          "evidence": "tests/test_platform_runtime.py：timeout_kills_wrapper / deadline / windows_cleanup",
+          "rationale": "清理边界有测试；Windows实机进程行为仍待验证",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "PLAT-03",
+      "gt_id": "GT-PLAT-03",
+      "title": "Mac和Windows共用启动流程",
+      "module": "platform",
+      "platform": "Mac执行 + Windows静态/模拟",
+      "risk": "high",
+      "input": "缺venv、中文空格目录、非法端口、check或publish退出非0",
+      "expected": "不错误启动；各阶段错误码原样传递；共享同一Python环境",
+      "fix": "run.sh/run.cmd薄封装，backend.startup统一check→publish→serve",
+      "runs": [
+        {
+          "id": "RUN-PLAT-03-final",
+          "status": "PASS",
+          "actual": "Bash包装器实际执行与错误码测试通过，Windows入口引用和调用合同通过；部署自检通过",
+          "evidence": "tests/test_platform_runtime.py；run-evidence.md",
+          "rationale": "启动合同通过；未声称原生Windows安装验收完成",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "PLAT-04",
+      "gt_id": "GT-PLAT-04",
+      "title": "目录按钮与系统提醒不再误报成功",
+      "module": "platform",
+      "platform": "平台模拟 + Node假DOM",
+      "risk": "medium",
+      "input": "无桌面Linux、Windows目录打开失败、Windows提醒偏好保存",
+      "expected": "返回路径/真实能力；opened:false时界面不得说已打开",
+      "fix": "返回opened/notification_supported/message并更新界面",
+      "runs": [
+        {
+          "id": "RUN-PLAT-04-final",
+          "status": "PASS",
+          "actual": "目录fallback、提醒能力测试及HTTP200 opened:false前端测试通过",
+          "evidence": "tests/platform_feedback.test.cjs；tests/test_reminders.py；tests/test_platform_runtime.py",
+          "rationale": "保存设置不等于系统操作成功",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "DIAG-01",
+      "gt_id": "GT-DIAG-01",
+      "title": "任务持久化、幂等、刷新和服务重启",
+      "module": "diagnosis",
+      "platform": "Mac本地Python",
+      "risk": "high",
+      "input": "启动响应丢失后用相同request_id重试；答题后刷新；任务运行时服务重启",
+      "expected": "同请求只生成一次；恢复最新答题状态；重启中断明确可重试",
+      "fix": "持久任务记录、活动指针、answered-state读取与owner校验",
+      "runs": [
+        {
+          "id": "RUN-DIAG-01-final",
+          "status": "PASS",
+          "actual": "去重、回答后恢复与重启中断测试通过",
+          "evidence": "tests/test_diagnosis_jobs.py",
+          "rationale": "合成目录确定性测试，不包含磁盘故障恢复",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "DIAG-02",
+      "gt_id": "GT-DIAG-02",
+      "title": "取消、目标修订和项目切换的旧结果保护",
+      "module": "diagnosis",
+      "platform": "Mac本地Python + Node假DOM",
+      "risk": "high",
+      "input": "取消早于start、改变intent revision、切换项目、旧页面答题或确认",
+      "expected": "旧任务不能写入；旧提交409；取消后恢复权威目标并新建请求",
+      "fix": "tombstone、完整submission校验、project锁和epoch守卫",
+      "runs": [
+        {
+          "id": "RUN-DIAG-02-final",
+          "status": "PASS",
+          "actual": "取消/意图变更/项目变更/旧答案/旧确认及取消恢复测试通过",
+          "evidence": "tests/test_diagnosis_jobs.py；tests/onboarding_interaction.test.cjs",
+          "rationale": "不依据相同主题名放宽项目隔离",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "DIAG-03",
+      "gt_id": "GT-DIAG-03",
+      "title": "确认响应丢失与失败后重试",
+      "module": "diagnosis",
+      "platform": "Mac本地HTTP + Node假DOM",
+      "risk": "high",
+      "input": "第一次confirm已成功但响应丢失；Plan失败取消lease后重试",
+      "expected": "不覆盖原计划、不重复询问题目；不同目标仍拒绝",
+      "fix": "持久确认收据；仅精确取消状态可续建；迟到确认/Plan响应epoch保护",
+      "runs": [
+        {
+          "id": "RUN-DIAG-03-first",
+          "status": "FAIL",
+          "actual": "最小HTTP复现：首confirm=200，同请求retry=409；取消后的页面重复使用cancelled请求ID。",
+          "evidence": "bad-case-analysis.md BC-04；新增confirmation与cancelled恢复回归在修复前失败",
+          "rationale": "重试恢复路径有缺陷，不能以首次正常返回掩盖",
+          "seconds": null
+        },
+        {
+          "id": "RUN-DIAG-03-final",
+          "status": "PASS",
+          "actual": "相同确认恢复原收据；精确取消后可重试；不同state/session/payload继续409；迟到响应不改新UI",
+          "evidence": "tests/test_diagnosis_jobs.py：confirmation相关；tests/onboarding_interaction.test.cjs",
+          "rationale": "质量复查最初复现200→409，修复后独立复核通过",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "DIAG-04",
+      "gt_id": "GT-DIAG-04",
+      "title": "短请求与诚实状态文案",
+      "module": "diagnosis",
+      "platform": "Node网络/DOM替身",
+      "risk": "high",
+      "input": "启动响应丢失、网络断开、8秒请求超时、服务返回terminal失败",
+      "expected": "未知不说仍在生成；同ID查询；旧UI停止轮询；不虚构完成百分比",
+      "fix": "diagnosis-job.js统一短请求、退避轮询与真实phase展示",
+      "runs": [
+        {
+          "id": "RUN-DIAG-04-final",
+          "status": "PASS",
+          "actual": "7项诊断轮询契约测试通过；onboarding保留提问/前言及epoch测试通过",
+          "evidence": "tests/diagnosis-job.test.cjs；tests/onboarding_interaction.test.cjs",
+          "rationale": "不证明实际公网代理阈值；只是客户端协议和状态测试",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "LAT-01",
+      "gt_id": "GT-LAT-01",
+      "title": "35秒模型等待不占用启动连接",
+      "module": "latency",
+      "platform": "Mac ASGI TestClient",
+      "risk": "high",
+      "input": "受控模型等待35秒，重复发送同request_id，并查询任务",
+      "expected": "start先返回202，模型只调用一次，状态查询不等待模型",
+      "fix": "后台任务与短轮询",
+      "runs": [
+        {
+          "id": "RUN-LAT-01-final",
+          "status": "PASS",
+          "actual": "start 0.0107秒；max poll 0.1195秒；总35.227秒；模型1次35.002秒；有效题目完成",
+          "evidence": "evidence/controlled-35s-final.json",
+          "rationale": "受控慢模型证明连接分离；不是模型提速或Windows基准",
+          "seconds": 35.227
+        }
+      ]
+    },
+    {
+      "id": "LAT-02",
+      "gt_id": "GT-LAT-02",
+      "title": "真实AI前端诊断生成",
+      "module": "latency",
+      "platform": "Mac ASGI + 真实Codex/DeepSeek",
+      "risk": "high",
+      "input": "已确认合成画像：AI前端、有一定基础、面试；不向模型传GT",
+      "expected": "返回该主题的有效诊断题；相同ID重复start不重复调用",
+      "fix": "复用项目Codex，read-only诊断调用",
+      "runs": [
+        {
+          "id": "RUN-LAT-02-final",
+          "status": "PASS",
+          "actual": "总22.549秒；模型1次22.346秒；start0.0103秒。首题：AI前端对话应用流式显示应优先掌握什么？选项包含SSE增量/取消重试、完整JSON、WebSocket取舍",
+          "evidence": "evidence/live-diagnosis-final.json",
+          "rationale": "一次真实抽样成功；不是自然语言意图识别全链路或全部题目质量统计",
+          "seconds": 22.549
+        }
+      ]
+    },
+    {
+      "id": "REPORT-01",
+      "gt_id": "GT-REPORT-01",
+      "title": "报告证据合同与离线交互逻辑",
+      "module": "report",
+      "platform": "Python + Node假DOM",
+      "risk": "medium",
+      "input": "空白证据、NaN、重复GT、HTML注入文本、__proto__ID、存储失败；搜索筛选/详情/导出",
+      "expected": "未知不能记PASS；保留首败；输入安全；草稿不能变更评分；失败可导出",
+      "fix": "静态HTML内嵌安全JSON，草稿字典安全，不可覆盖批次",
+      "runs": [
+        {
+          "id": "RUN-REPORT-01-final",
+          "status": "PASS",
+          "actual": "Python12项与Node3项报告测试通过；筛选、详情、保存、失败提示、下载动作和焦点逻辑通过",
+          "evidence": "tests/test_detect_report.py；tests/detect_report_interaction.test.cjs",
+          "rationale": "是假DOM动作验证，不是浏览器文件下载和布局验收",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "PLAN-01",
+      "gt_id": "GT-PLAN-01",
+      "title": "真实Go小白Plan的知识点列表标题",
+      "module": "learning-chain",
+      "platform": "真实输出回放",
+      "risk": "high",
+      "input": "模型262.03秒返回的21阶段Go草案，把知识点写成 '- #### 知识点' 与两空格列表",
+      "expected": "保留已有知识点，仅规范化等价排版，结构和深研究校验仍有效",
+      "fix": "精确去除知识点标题的列表包装；不放宽阶段或知识点要求",
+      "runs": [
+        {
+          "id": "RUN-PLAN-01-first",
+          "status": "FAIL",
+          "actual": "personalized:false, reason:validation_failed；模型有完整草案但知识点标题嵌在列表。课件阶段未执行。",
+          "evidence": "本地evals/runs/20260830-200459-lesson-retest/lesson_retest_beginner/journey.json；bad-case-analysis.md BC-07",
+          "rationale": "严格顶格格式校验误拒绝有内容的等价排版",
+          "seconds": 262.03
+        },
+        {
+          "id": "RUN-PLAN-01-final",
+          "status": "PASS",
+          "actual": "同份响应回放通过normalize；21章66知识点；深研究6来源9覆盖域通过；5项防放宽回归通过",
+          "evidence": "tests/test_plan_list_wrapper.py；bad-case-analysis.md BC-07；本地evals/runs/20260830-200459-lesson-retest",
+          "rationale": "只证明这次排版兼容修复，不宣称所有未来Plan都生成成功",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "WINDOWS-REAL",
+      "gt_id": "GT-WINDOWS-REAL",
+      "title": "原生Windows部署与代理全链路",
+      "module": "acceptance-gaps",
+      "platform": "Windows实机",
+      "risk": "high",
+      "input": "在原生Windows安装启动，再通过WorkBuddy和系统浏览器完成诊断",
+      "expected": "真实运行日志与请求证据",
+      "fix": "提供原生入口和离线测试，等待实际环境验收",
+      "runs": [
+        {
+          "id": "RUN-WINDOWS-REAL-final",
+          "status": "UNVERIFIABLE",
+          "actual": "本机没有Windows runner；用户外部29–33秒描述非本轮复测",
+          "evidence": "evaluation-run-plan.md",
+          "rationale": "不能把Mac或模拟测试作为Windows实机通过",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "REPORT-BROWSER",
+      "gt_id": "GT-REPORT-BROWSER",
+      "title": "报告真实浏览器视觉与交互验收",
+      "module": "acceptance-gaps",
+      "platform": "内置浏览器",
+      "risk": "medium",
+      "input": "打开本地HTML，桌面/移动视口筛选、查看、保存与下载",
+      "expected": "真实可见页面和交互证据",
+      "fix": "报告已生成；不绕过浏览器工具的安全限制",
+      "runs": [
+        {
+          "id": "RUN-REPORT-BROWSER-final",
+          "status": "BLOCKED",
+          "actual": "本地报告file URL被浏览器工具安全策略拒绝；未换URL/工具绕过。假DOM测试另列",
+          "evidence": "evaluation-run-plan.md；human-review.md",
+          "rationale": "真实视觉与下载验收仍未完成",
+          "seconds": null
+        }
+      ]
+    },
+    {
+      "id": "LESSON-01",
+      "gt_id": "GT-LESSON-01",
+      "title": "从修复后Plan生成新的第一章课件",
+      "module": "learning-chain",
+      "platform": "Mac真实Codex/DeepSeek",
+      "risk": "high",
+      "input": "回放已确认Go小白Plan及原研究材料，显式确认，然后新生成第一章；每次课40分钟，hands_on",
+      "expected": "生成课件、代码练习与点击检查，知识点逐一覆盖；后端结构检查通过才提交",
+      "fix": "本轮不放宽教学范围校验；首轮失败后使用现有一次模型修复机制",
+      "runs": [
+        {
+          "id": "RUN-LESSON-01-first",
+          "status": "FAIL",
+          "actual": "首轮生成313.20秒，返回10689字符JSON；scope evidence needs at least two relevant pages for go，确定性wire-format规范化后仍失败。",
+          "evidence": "本地evals/runs/20260830-202114-lesson-retest/lesson_retest_beginner/call-2.json；通过parse_lesson_response+_validate_scope_evidence本地复现",
+          "rationale": "返回JSON不等于合格课件；至少一个知识点未列出两个相关页面，进入一次自动修复",
+          "seconds": 313.2
+        },
+        {
+          "id": "RUN-LESSON-01-repair",
+          "status": "PASS",
+          "actual": "一次模型修复77.90秒后通过，课件总391.13秒。12页：5讲解、2示例、3点击题、1编程练习、1总结；覆盖3个知识点，建立README.md和main.go。",
+          "evidence": "evidence/beginner-plan-lesson-retest.json；本地evals/runs/20260830-202114-lesson-retest/lesson_retest_beginner/call-3.json",
+          "rationale": "后端生成、范围校验与练习目录落盘通过；不是HTML视觉验收，也不代表学习者实际掌握",
+          "seconds": 77.9,
+          "kind": "真实模型一次自动修复（不是重新生成Plan）"
+        }
+      ]
+    }
+  ]
+}</script>
+<script>
+'use strict';
+const data=JSON.parse(document.getElementById('batch').textContent);
+const $=id=>document.getElementById(id), latest=c=>c.runs[c.runs.length-1];
+const names={PASS:'通过',FAIL:'失败',UNVERIFIABLE:'无法验证',BLOCKED:'阻断'};
+const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
+const badge=status=>node('span',names[status]+' · '+status,'badge '+status);
+let selected=null,lastTrigger=null;
+let drafts=Object.create(null);let storageAvailable=true;
+const storageKey='learning-detect-review:'+data.batch_id+':'+data.candidate;
+try{const saved=JSON.parse(localStorage.getItem(storageKey)||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))Object.assign(drafts,saved);}catch{storageAvailable=false;}
+function download(name,value,type='application/json'){const blob=new Blob([value],{type:type+';charset=utf-8'});const url=URL.createObjectURL(blob);const a=node('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function files(){return {cases:data.cases.map(({runs,expected,...c})=>c),ground_truth:data.cases.map(c=>({id:c.gt_id,case_id:c.id,expected:c.expected})),runs:data.cases.flatMap(c=>c.runs.map(r=>({...r,case_id:c.id,batch_id:data.batch_id}))),scores:data.cases.flatMap(c=>c.runs.map(r=>({case_id:c.id,gt_id:c.gt_id,run_id:r.id,judgment:r.status,rationale:r.rationale,evidence:r.evidence||'',grader:'evidence-review-v1',review_status:'pending',valid_score:null}))) };}
+for(const [label,value] of [['批次',data.batch_id],['基线',data.baseline],['候选',data.candidate],['生成时间',data.generated_at]])$('meta').append(node('span',label+' · '+value));
+for(const status of Object.keys(names)){const box=node('div',undefined,'stat');box.append(badge(status),node('b',String(data.cases.filter(c=>latest(c).status===status).length)),node('span','最新运行 · 非人工批准'));$('stats').append(box);}
+for(const key of ['platform','module','risk'])for(const value of [...new Set(data.cases.map(c=>c[key]))].sort()){const opt=node('option',value);opt.value=value;$(key).append(opt);}
+function render(){const q=$('search').value.trim().toLowerCase();const items=data.cases.filter(c=>(!q||[c.id,c.title,c.input,c.expected,c.platform,c.module,c.risk,latest(c).status].join(' ').toLowerCase().includes(q))&&['platform','module','risk'].every(k=>!$(k).value||c[k]===$(k).value)&&(!$('status').value||latest(c).status===$('status').value));$('rows').replaceChildren();$('count').textContent=`显示 ${items.length} / ${data.cases.length} 个用例 · 点击标题查看输入、回复与证据`;$('empty').hidden=items.length>0;for(const c of items){const row=node('tr'),title=node('td'),button=node('button',c.title);button.addEventListener('click',()=>show(c,button));title.append(button,node('small',`${c.id} · ${c.module} · ${c.risk}`));const state=node('td');state.append(badge(latest(c).status));row.append(title,node('td',c.platform),state,node('td',latest(c).seconds==null?'未计时':`${latest(c).seconds.toFixed(2)} 秒`),node('td',drafts[c.id]?'已有草稿':'待人工复核'));$('rows').append(row);}}
+function show(c,trigger){selected=c;lastTrigger=trigger||lastTrigger;$('detail').hidden=false;$('detail-title').textContent=c.title;$('detail-meta').textContent=`${c.id} / ${c.gt_id} · ${c.platform} · ${c.runs.length} 次记录`;$('detail-input').textContent=c.input;$('detail-gt').textContent=c.expected;$('detail-fix').textContent=c.fix||'尚无修复动作。';$('runs').replaceChildren();c.runs.forEach((r,i)=>{const section=node('section',undefined,'timeline');const title=node('h3',`${i===0?'首次记录':'后续复测'} · ${r.id} `);title.append(badge(r.status));section.append(title,node('p',`耗时：${r.seconds==null?'未计时':r.seconds.toFixed(2)+' 秒'}${r.kind?' · '+r.kind:''}`,'muted'),node('h3','实际回复 / 可观察结果'),node('div',r.actual,'block'),node('h3','评价 / 原因'),node('p',r.rationale),node('div','证据：'+(r.evidence||'未获得所需执行证据'),'evidence'));$('runs').append(section);});$('review-text').value=typeof drafts[c.id]?.note==='string'?drafts[c.id].note:'';$('review-status').textContent=storageAvailable?'尚未签署人工批准。':'本机存储不可用，请用导出保存意见。';$('detail-title').focus();$('detail').scrollIntoView({block:'start'});}
+for(const id of ['search','status','platform','module','risk'])$(id).addEventListener('input',render);
+$('close-detail').addEventListener('click',()=>{$('detail').hidden=true;const index=Array.from($('rows').children).findIndex(row=>row.querySelector('small')?.textContent.startsWith(selected?.id+' · '));const target=index>=0?$('rows').children[index].querySelector('button'):lastTrigger;if(target?.isConnected)target.focus();else $('search').focus();});
+$('save-review').addEventListener('click',()=>{if(!selected)return;drafts[selected.id]={case_id:selected.id,note:$('review-text').value,updated_at:new Date().toISOString(),review_status:'draft'};try{localStorage.setItem(storageKey,JSON.stringify(drafts));storageAvailable=true;$('review-status').textContent='已保存本机草稿。原始证据与机器判定未变。';}catch{storageAvailable=false;$('review-status').textContent='本机保存失败；草稿暂存于页面，请立即导出。';}render();});
+$('export-review').addEventListener('click',()=>{if(selected)drafts[selected.id]={case_id:selected.id,note:$('review-text').value,updated_at:new Date().toISOString(),review_status:'draft'};download(data.batch_id+'-review-drafts.json',JSON.stringify({batch_id:data.batch_id,candidate:data.candidate,approval:false,drafts},null,2));});
+$('download-batch').addEventListener('click',()=>download(data.batch_id+'.json',JSON.stringify(data,null,2)));
+document.querySelectorAll('[data-export]').forEach(button=>button.addEventListener('click',()=>{const key=button.dataset.export;download(key+'.jsonl',files()[key].map(r=>JSON.stringify(r)).join('\n')+'\n','application/x-ndjson');}));
+const bad=data.cases.filter(c=>c.runs.some(r=>r.status==='FAIL'));if(!bad.length)$('bad-cases').append(node('p','本批次尚无已留证的失败记录；不代表覆盖全部风险。','muted'));for(const c of bad){const d=node('details'),s=node('summary',c.title);const button=node('button','查看证据与复测');button.addEventListener('click',()=>show(c,button));d.append(s,node('p',c.runs.find(r=>r.status==='FAIL').actual),node('p',c.fix||'待处理'),button);$('bad-cases').append(d);}
+for(const limitation of data.limitations||[])$('limits').append(node('li',limitation));render();
+</script></body></html>

@@ -1,0 +1,104 @@
+{
+  "case": "beginner",
+  "scope": "saved synthetic Plan + its research replay -> explicit confirm -> freshly generated first lesson",
+  "ok": true,
+  "plan": {
+    "replayed": true,
+    "seconds": 0.01,
+    "personalized": true
+  },
+  "lesson": {
+    "replayed": false,
+    "seconds": 391.13,
+    "calls": [
+      {
+        "call": 2,
+        "seconds": 313.2,
+        "replayed": false
+      },
+      {
+        "call": 3,
+        "seconds": 77.9,
+        "replayed": false
+      }
+    ],
+    "page_count": 12,
+    "pages": [
+      {
+        "id": "opening",
+        "type": "explain",
+        "title": "开场：两节课，装好 Go 并跑出第一行输出"
+      },
+      {
+        "id": "what-is-go",
+        "type": "explain",
+        "title": "Go 是什么：一门写起来快、跑起来也快的语言"
+      },
+      {
+        "id": "check-go",
+        "type": "check",
+        "title": "判断题：Go 的特点"
+      },
+      {
+        "id": "env-setup",
+        "type": "explain",
+        "title": "环境准备：装好 Go 1.27 并验证"
+      },
+      {
+        "id": "lesson1-pause",
+        "type": "explain",
+        "title": "第1课暂停点：先装好，再继续"
+      },
+      {
+        "id": "module",
+        "type": "explain",
+        "title": "模块：Go 工程的家，go mod init 创建它"
+      },
+      {
+        "id": "first-program",
+        "type": "example",
+        "title": "第一个程序：main.go，程序从这里开始"
+      },
+      {
+        "id": "go-run",
+        "type": "example",
+        "title": "go run .：编译并运行，看到第一行输出"
+      },
+      {
+        "id": "check-main",
+        "type": "check",
+        "title": "判断题：程序从哪里开始"
+      },
+      {
+        "id": "check-run",
+        "type": "check",
+        "title": "判断题：运行命令"
+      },
+      {
+        "id": "homework",
+        "type": "practice",
+        "title": "课后练习：让程序输出你的问候"
+      },
+      {
+        "id": "mastery",
+        "type": "mastery",
+        "title": "本章收口：对照完成标准，提交课后练习"
+      }
+    ],
+    "covered_points": [
+      "go",
+      "go-dev-dl-go-version-1-27",
+      "go-mod-init-main-go-run"
+    ],
+    "practice_path": "projects/go/first-go",
+    "practice_files": [
+      "projects/go/first-go/README.md",
+      "projects/go/first-go/main.go"
+    ]
+  },
+  "limitations": [
+    "Confirmed synthetic profile, not natural-language onboarding",
+    "Backend generation and structure validation; no learner mastery or browser visual acceptance",
+    "First lesson model output failed scope validation; one automatic model repair succeeded"
+  ]
+}

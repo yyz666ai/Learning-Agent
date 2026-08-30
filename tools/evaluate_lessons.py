@@ -31,6 +31,8 @@ def main():
     parser.add_argument("--plan-response", type=Path, help="Replay a saved synthetic Plan response to verify parser fixes without paying for the same Plan again")
     parser.add_argument("--lesson-response", type=Path, help="Replay an actual saved lesson response against current validators (requires --from-confirmed)")
     args = parser.parse_args()
+    if args.plan_response and args.from_confirmed:
+        parser.error("--plan-response and --from-confirmed cannot be combined")
     if args.plan_response and (args.case == "all" or ROOT / "evals/runs" not in args.plan_response.resolve().parents):
         parser.error("--plan-response requires one case and a saved evals/runs response")
     if args.lesson_response and (not args.from_confirmed or args.case == "all" or ROOT / "evals/runs" not in args.lesson_response.resolve().parents):
@@ -75,6 +77,14 @@ def main():
             report["stages"].append({"stage":stage,"seconds":round(time.monotonic()-started,2),"result":result})
             return result
         try:
+            if args.plan_response:
+                # Replaying text must also replay its original synthetic research
+                # artifacts; otherwise a valid Plan falsely fails missing-research
+                # validation. Never import a real learner directory or Codex state.
+                research = args.plan_response.parent.parent / "isolated" / "userdir" / f"u_{user_id}" / "research"
+                if research.is_dir():
+                    shutil.copytree(research, isolated / "userdir" / f"u_{user_id}" / "research")
+                report["scope"] = "saved synthetic Plan + its research replay -> explicit confirm -> freshly generated first lesson"
             if args.from_confirmed:
                 shutil.copytree(args.from_confirmed / "userdir" / f"u_{user_id}", isolated / "userdir" / f"u_{user_id}", ignore=shutil.ignore_patterns(".codex-runtime"))
                 report["scope"] = "copied confirmed fixture Plan -> freshly generated first lesson (no Plan regeneration)"

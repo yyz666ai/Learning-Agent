@@ -8,6 +8,8 @@ import json
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -40,6 +42,23 @@ class JourneyError(RuntimeError):
         super().__init__(f"{stage} failed: {payload}")
         self.stage = stage
         self.payload = payload
+
+
+def wait_diagnosis(base_url: str, payload: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    request_id = uuid.uuid4().hex
+    body = {**payload, "request_id": request_id, "intent_session_id": decision["session_id"], "intent_revision": decision["revision"]}
+    job = post(base_url, "/api/onboarding/diagnosis/start", body, timeout=8)
+    deadline = time.monotonic() + 390
+    query = urllib.parse.urlencode({"user_id": payload["user_id"], "request_id": request_id})
+    while job["status"] in {"queued", "running"}:
+        if time.monotonic() > deadline:
+            raise JourneyError("diagnosis", {"status": "unknown", "request_id": request_id})
+        time.sleep(1)
+        with DIRECT_OPENER.open(base_url.rstrip("/") + "/api/onboarding/diagnosis/status?" + query, timeout=8) as response:
+            job = json.loads(response.read().decode("utf-8"))
+    if job["status"] != "completed":
+        raise JourneyError("diagnosis", job)
+    return job["result"]
 
 
 def post(base_url: str, path: str, payload: dict[str, Any], timeout: int = 1320) -> dict[str, Any]:
@@ -105,7 +124,7 @@ def run_case(base_url: str, case: Case, through: str = "lesson") -> dict[str, An
 
     diagnostic_session_id = None
     if data["level_claim"] != "zero" and data["goal_route"] != "concept_clarity":
-        diagnostic = post(base_url, "/api/onboarding/start", data)
+        diagnostic = wait_diagnosis(base_url, data, decision)
         diagnostic_session_id = diagnostic["session_id"]
         while not diagnostic.get("complete"):
             question = diagnostic["question"]

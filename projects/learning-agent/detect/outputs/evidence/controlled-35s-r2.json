@@ -1,0 +1,92 @@
+{
+  "mode": "controlled",
+  "transport": "local ASGI TestClient (not proxy or Windows benchmark)",
+  "start_http_status": 202,
+  "start_seconds": 0.0102,
+  "max_poll_seconds": 0.1006,
+  "total_seconds": 35.14,
+  "model_calls": [
+    {
+      "seconds": 35.0,
+      "sandbox": "read-only"
+    }
+  ],
+  "phases": [
+    "generating",
+    "completed"
+  ],
+  "job": {
+    "request_id": "probe-request",
+    "status": "completed",
+    "phase": "completed",
+    "intent_session_id": "probe-intent",
+    "intent_revision": 1,
+    "submission": {
+      "user_id": "probe",
+      "learning_mode": "practice",
+      "goal_route": "interview_sprint",
+      "level_claim": "some",
+      "topic": {
+        "type": "custom",
+        "value": "AI 前端"
+      },
+      "session_minutes": 25,
+      "deadline_days": null,
+      "teaching_preference": "balanced",
+      "concept_scope": "not_applicable"
+    },
+    "elapsed_seconds": 35.04,
+    "retryable": false,
+    "result": {
+      "session_id": "4656b08f189f4ccf91084a06a8958af1",
+      "topic": "AI 前端",
+      "level_claim": "some",
+      "question_index": 0,
+      "question": {
+        "id": "q0",
+        "prompt": "AI前端页面中，DOM事件的传播顺序是什么？",
+        "options": [
+          {
+            "id": "a",
+            "label": "先捕获，再目标，再冒泡"
+          },
+          {
+            "id": "b",
+            "label": "只冒泡"
+          }
+        ]
+      },
+      "answered_count": 0,
+      "complete": false,
+      "diagnostic_source": "skill_generated",
+      "submission": {
+        "user_id": "probe",
+        "learning_mode": "practice",
+        "goal_route": "interview_sprint",
+        "level_claim": "some",
+        "topic": {
+          "type": "custom",
+          "value": "AI 前端"
+        },
+        "session_minutes": 25,
+        "deadline_days": null,
+        "teaching_preference": "balanced",
+        "concept_scope": "not_applicable"
+      },
+      "next": "diagnosis"
+    }
+  },
+  "input": {
+    "request_id": "probe-request",
+    "intent_session_id": "probe-intent",
+    "intent_revision": 1,
+    "topic": {
+      "type": "custom",
+      "value": "AI 前端"
+    },
+    "level_claim": "some",
+    "learning_mode": "practice",
+    "goal_route": "interview_sprint",
+    "session_minutes": 25
+  }
+}

@@ -934,12 +934,14 @@ def test_unanswered_choice_pages_cannot_be_skipped_with_dots_or_next() -> None:
 
 def test_run_script_prepares_workspace_on_first_start() -> None:
     source = (Path(__file__).parents[1] / "run.sh").read_text(encoding="utf-8")
+    startup = (Path(__file__).parents[1] / "backend/startup.py").read_text(encoding="utf-8")
+    check = (Path(__file__).parents[1] / "backend/deployment_check.py").read_text(encoding="utf-8")
 
     assert 'if [[ ! -d "workspace/releases/current" ]]' not in source
-    assert '"$PYTHON" -m backend.deployment_check' in source
-    assert '"$PYTHON" -m backend.publish' in source
-    assert 'if [[ ! -s ".secrets.env" ]]' in source
-    assert "replace_with_your_deepseek_api_key" in source
+    assert '-m backend.startup "$@"' in source
+    assert startup.index('"backend.deployment_check"') < startup.index('"backend.publish"') < startup.index('"backend.main"')
+    assert '".secrets.env"' in check
+    assert "replace_with_your_deepseek_api_key" in check
 
 
 def test_question_bank_has_real_anki_review_session_controls() -> None:

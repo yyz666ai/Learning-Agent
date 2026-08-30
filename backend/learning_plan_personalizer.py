@@ -179,6 +179,14 @@ def normalize_and_validate_plan(
     for fence in re.finditer(r"(?ms)^```(?P<info>[^\n]*)\n.*?^```[ \t]*$", candidate):
         if fence.group("info").strip().casefold() != "mermaid":
             return None
+    # Some model responses wrap the required knowledge heading in a list.
+    # Unwrap only that exact heading and its two-space child bullets immediately
+    # before the canonical learning field; never invent or broaden knowledge.
+    candidate = re.sub(
+        r"(?m)^- #### 知识点[ \t]*\n(?P<body>(?:  - [^\n]+\n)+)(?=^- 本阶段要学[：:])",
+        lambda match: "#### 知识点\n" + re.sub(r"(?m)^  (?=- )", "", match.group("body")),
+        candidate,
+    )
     comprehensive = goal_route in COMPREHENSIVE_ROUTES
     minimum_length = 120 if goal_route == "concept_clarity" else (1_200 if comprehensive else 180)
     if not minimum_length <= len(candidate) <= 30_000:

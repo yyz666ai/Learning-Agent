@@ -1,0 +1,100 @@
+{
+  "mode": "controlled",
+  "transport": "local ASGI TestClient (not proxy or Windows benchmark)",
+  "source_sha256": {
+    "backend/diagnosis_jobs.py": "fcb2290649da300e6358b67ce18e1e847d29bafef26b62076f4b854ec2ffcefa",
+    "backend/codex_driver.py": "8cedaf4ed099c882683e385e5a85f8d3cf44d214fb426dfd5e53958d902b1ea7",
+    "backend/main.py": "3ac6e6343af5f8563a695a3f4314901f06919408d8e56e28984bca8f87852a3e",
+    "backend/platform_runtime.py": "16de76043414ac39a665efc473854165216c90ff52dd6d3a049dbe8ad2af0e5e",
+    "frontend/js/diagnosis-job.js": "061975029c18d7590299f70893c25c9458a5551f3b73569a0e44591dbc51453a",
+    "frontend/js/onboarding.js": "5083e000b5c06d4427315cc38680244f701ff649dc61e190d3fa53a17704044c"
+  },
+  "start_http_status": 202,
+  "start_seconds": 0.0107,
+  "max_poll_seconds": 0.1195,
+  "total_seconds": 35.227,
+  "model_calls": [
+    {
+      "seconds": 35.002,
+      "sandbox": "read-only"
+    }
+  ],
+  "phases": [
+    "generating",
+    "completed"
+  ],
+  "job": {
+    "request_id": "probe-request",
+    "status": "completed",
+    "phase": "completed",
+    "intent_session_id": "probe-intent",
+    "intent_revision": 1,
+    "submission": {
+      "user_id": "probe",
+      "learning_mode": "practice",
+      "goal_route": "interview_sprint",
+      "level_claim": "some",
+      "topic": {
+        "type": "custom",
+        "value": "AI 前端"
+      },
+      "session_minutes": 25,
+      "deadline_days": null,
+      "teaching_preference": "balanced",
+      "concept_scope": "not_applicable"
+    },
+    "elapsed_seconds": 35.01,
+    "retryable": false,
+    "result": {
+      "session_id": "240b0b8fe7b34466ac810b44bb3e223a",
+      "topic": "AI 前端",
+      "level_claim": "some",
+      "question_index": 0,
+      "question": {
+        "id": "q0",
+        "prompt": "AI前端页面中，DOM事件的传播顺序是什么？",
+        "options": [
+          {
+            "id": "a",
+            "label": "先捕获，再目标，再冒泡"
+          },
+          {
+            "id": "b",
+            "label": "只冒泡"
+          }
+        ]
+      },
+      "answered_count": 0,
+      "complete": false,
+      "diagnostic_source": "skill_generated",
+      "submission": {
+        "user_id": "probe",
+        "learning_mode": "practice",
+        "goal_route": "interview_sprint",
+        "level_claim": "some",
+        "topic": {
+          "type": "custom",
+          "value": "AI 前端"
+        },
+        "session_minutes": 25,
+        "deadline_days": null,
+        "teaching_preference": "balanced",
+        "concept_scope": "not_applicable"
+      },
+      "next": "diagnosis"
+    }
+  },
+  "input": {
+    "request_id": "probe-request",
+    "intent_session_id": "probe-intent",
+    "intent_revision": 1,
+    "topic": {
+      "type": "custom",
+      "value": "AI 前端"
+    },
+    "level_claim": "some",
+    "learning_mode": "practice",
+    "goal_route": "interview_sprint",
+    "session_minutes": 25
+  }
+}

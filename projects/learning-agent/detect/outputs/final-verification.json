@@ -1,0 +1,68 @@
+{
+  "date": "2026-08-30",
+  "baseline": "32ffe836fe7e043e1c325b2baa935ef737288474",
+  "source_sha256": {
+    "backend/platform_runtime.py": "16de76043414ac39a665efc473854165216c90ff52dd6d3a049dbe8ad2af0e5e",
+    "backend/startup.py": "64cfd830207234742bd3e2813482a81e98d1651e5b628eabc322c4dab1301892",
+    "backend/codex_driver.py": "8cedaf4ed099c882683e385e5a85f8d3cf44d214fb426dfd5e53958d902b1ea7",
+    "backend/diagnosis_jobs.py": "fcb2290649da300e6358b67ce18e1e847d29bafef26b62076f4b854ec2ffcefa",
+    "backend/main.py": "3ac6e6343af5f8563a695a3f4314901f06919408d8e56e28984bca8f87852a3e",
+    "backend/learning_plan_personalizer.py": "5778f6483c09acbebfe8182e483c85c482bcc3da975dd4dea07ebb2e89aff3d8",
+    "frontend/js/diagnosis-job.js": "061975029c18d7590299f70893c25c9458a5551f3b73569a0e44591dbc51453a",
+    "frontend/js/onboarding.js": "5083e000b5c06d4427315cc38680244f701ff649dc61e190d3fa53a17704044c",
+    "tools/build_detect_report.py": "907673761153db8ccf6bae3d7cd86b4b72c7a2738f7345a1e918234cfc86722e",
+    "tools/detect_report.html": "7ad4fec1c84a0ee170c651246759f3f0728ede38954e65552c73a75da44a8aa6"
+  },
+  "candidate": "sha256:db7930601d7b79a584241eeada37ecafe04b125db9bf482679ae0cbfb422e6df",
+  "environment": {
+    "os": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "python": "3.13.2",
+    "node": "v22.18.0",
+    "workers": 1
+  },
+  "checks": [
+    {
+      "command": ".venv/bin/python -m pytest -q",
+      "exit_code": 0,
+      "passed": 685,
+      "seconds": 9.24,
+      "warnings": [
+        "StarletteDeprecationWarning: testclient httpx is deprecated"
+      ]
+    },
+    {
+      "command": "node --test tests/*.test.cjs",
+      "exit_code": 0,
+      "passed": 39,
+      "seconds": 0.189058709
+    },
+    {
+      "command": ".venv/bin/python workspace/dev/tools/validate_workspace.py",
+      "exit_code": 0,
+      "errors": [],
+      "skill_count": 23,
+      "concept_count": 35,
+      "journey_count": 0
+    },
+    {
+      "command": ".venv/bin/python -m backend.deployment_check",
+      "exit_code": 0,
+      "result": "Codex, DeepSeek configuration, Skills and teaching tools check passed (not a model test)"
+    },
+    {
+      "command": "bash -n run.sh",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "limitations": [
+    "Windows native runner unavailable",
+    "Report real browser acceptance blocked by tool URL policy; no workaround used",
+    "Python and Node regression tests are not a guarantee of educational quality",
+    "Model probes use synthetic confirmed intent and local ASGI, not a real proxy",
+    "Human approval remains pending"
+  ]
+}

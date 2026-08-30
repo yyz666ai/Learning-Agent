@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+if __package__:
+    from .platform_runtime import codex_command
+else:
+    from platform_runtime import codex_command
 
 
 MIN_CODEX_VERSION = (0, 146, 0)
@@ -49,19 +52,19 @@ def check_local_deployment(
     return issues
 
 
-def main() -> int:
-    server_root = Path(__file__).resolve().parent.parent
-    executable = shutil.which("codex")
-    if executable is None:
-        print("部署自检失败：没有找到 Codex 命令行。", file=sys.stderr)
+def main(*, server_root: Path | None = None) -> int:
+    server_root = server_root or Path(__file__).resolve().parent.parent
+    try:
+        version = subprocess.run(
+            [*codex_command(), "--version"], capture_output=True,
+            text=True, encoding="utf-8", errors="replace", timeout=10, check=False,
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        print("部署自检失败：无法运行 Codex，请检查 Codex 和 Node.js 安装及 PATH。", file=sys.stderr)
         return 1
-    version = subprocess.run(
-        [executable, "--version"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
+    if version.returncode:
+        print("部署自检失败：Codex 版本检查未成功，请修复安装后重试。", file=sys.stderr)
+        return 1
     issues = check_local_deployment(
         server_root,
         codex_version_text=f"{version.stdout}\n{version.stderr}",

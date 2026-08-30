@@ -51,7 +51,7 @@ Learning Agent 会先理解你想学什么、目前会多少、最后想达到�
 
 ### 1. 安装 Codex
 
-任选一种：
+先安装 Python 3.10+；使用 npm 安装 Codex 时还需要 Node.js（LTS）。macOS / Linux 任选一种，原生 Windows 使用 npm：
 
 ```bash
 npm install -g @openai/codex
@@ -73,13 +73,20 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-建议使用 macOS、Linux，或 Windows 的 WSL 2；Python 需要 3.10 或更高版本。
+上面是 macOS / Linux 命令。原生 Windows 在 PowerShell 中下载项目后执行（无需激活虚拟环境，也无需更改 PowerShell 执行策略）：
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
 ### 3. 配置 DeepSeek API
 
 ```bash
 cp .secrets.env.example .secrets.env
 ```
+
+Windows PowerShell 使用 `Copy-Item .secrets.env.example .secrets.env`。
 
 打开项目根目录下的 `.secrets.env`，只需填写一行：
 
@@ -95,6 +102,14 @@ DEEPSEEK_API_KEY=你的_DeepSeek_API_Key
 ./run.sh
 ```
 
+Windows PowerShell 或命令提示符：
+
+```powershell
+.\run.cmd
+```
+
+自定义端口可用 `./run.sh 8899` 或 `.\run.cmd 8899`。两种入口均使用项目 `.venv`，校验失败会停止并保留错误码，不会继续发布或启动。
+
 每次启动都会先检查 Codex、DeepSeek 配置和教学文件，再同步当前版本的 Skills 与知识库，避免拉取更新后继续使用旧快照。随后打开：
 
 <http://127.0.0.1:8787>
@@ -105,7 +120,11 @@ DEEPSEEK_API_KEY=你的_DeepSeek_API_Key
 LEARNING_AGENT_HOST=0.0.0.0 ./run.sh
 ```
 
-再通过服务器域名或局域网 IP 的 `8787` 端口访问。Plan 与 HTML PPT 初次生成使用后台任务和短轮询；课件修订候选目前使用同步请求，反向代理仍需为该请求保留足够超时。当前编辑事务按单服务进程设计，不宣称多 worker 或多实例并发安全。
+再通过服务器域名或局域网 IP 的 `8787` 端口访问。网页中的基础诊断、Plan 与 HTML PPT 初次生成使用后台任务和短轮询：启动请求立即返回任务标识，刷新后读取原任务，不必保持几十秒的 HTTP 连接。诊断显示服务器实际阶段与等待时间，不用虚构百分比代表模型进度。网络短暂中断时先查询原任务，避免重复生成；服务重启后被中断的诊断可以重试。
+
+课件修订候选和旧版 `/api/onboarding/start` 兼容接口仍是同步请求，反向代理需为这些请求保留足够超时。请只运行一个服务进程：诊断调度及编辑事务目前不支持多 worker／多实例。取消诊断会阻止旧结果写入；已发出的模型调用可能继续运行到返回或超时，并不保证取消后立即停止计费。
+
+平台边界：文件夹按钮使用本机文件管理器；无桌面环境或打开失败时只返回路径，不声称已经打开。原生 Windows 的系统提醒尚未实现。Windows 命令解析与启动契约有离线模拟测试，尚未完成真实 Windows 端到端验收；macOS / Linux 仍使用 `run.sh`，WSL 也可使用该入口。
 
 ## 怎么用
 
@@ -143,7 +162,8 @@ Learning-Agent/
 ├── templates/     # 项目内 Codex / DeepSeek 配置模板
 ├── tests/         # 自动化测试，保障知识库 PR 与教学流程
 ├── projects/      # 示例与课程项目资源
-├── run.sh         # 一键启动
+├── run.sh         # macOS / Linux 启动
+├── run.cmd        # 原生 Windows 启动
 └── requirements.txt
 ```
 
@@ -158,6 +178,12 @@ node --test tests/*.test.cjs
 ```
 
 欢迎贡献新的知识原子、课程路线、面试题、练习、常见误区、教学 Skills 与产品改进。提交前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+### 交互式兼容性报告
+
+下载仓库后，用浏览器打开 [Detect 报告](projects/learning-agent/detect/outputs/report/index.html)：支持平台／状态筛选、查看每次失败与复测、保存本机复核草稿和导出附件。GitHub 代码页不会执行 HTML，需要下载后打开。报告明确区分真实模型、受控测试、Windows 模拟和未验证项；机器通过不代表人工批准。
+
+重建报告：`python tools/build_detect_report.py projects/learning-agent/detect/outputs/report/report_data.json /tmp/new-detect-report`（Windows 把输出路径改为一个新的空目录）。不会覆盖已有证据批次。完整口径见 [运行计划](projects/learning-agent/detect/outputs/evaluation-run-plan.md)。
 
 ## License
 

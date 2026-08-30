@@ -1,0 +1,16 @@
+{"id": "GT-REG-ALL", "case_id": "REG-ALL", "expected": "确定性测试无失败；明确真实模型和跨平台证据边界"}
+{"id": "GT-PLAT-01", "case_id": "PLAT-01", "expected": "入口使用argv与UTF-8 stdin；不使用shell；保留read-only参数"}
+{"id": "GT-PLAT-02", "case_id": "PLAT-02", "expected": "deadline仍有效；停止本次调用的子进程树，不误杀宿主"}
+{"id": "GT-PLAT-03", "case_id": "PLAT-03", "expected": "不错误启动；各阶段错误码原样传递；共享同一Python环境"}
+{"id": "GT-PLAT-04", "case_id": "PLAT-04", "expected": "返回路径/真实能力；opened:false时界面不得说已打开"}
+{"id": "GT-DIAG-01", "case_id": "DIAG-01", "expected": "同请求只生成一次；恢复最新答题状态；重启中断明确可重试"}
+{"id": "GT-DIAG-02", "case_id": "DIAG-02", "expected": "旧任务不能写入；旧提交409；取消后恢复权威目标并新建请求"}
+{"id": "GT-DIAG-03", "case_id": "DIAG-03", "expected": "不覆盖原计划、不重复询问题目；不同目标仍拒绝"}
+{"id": "GT-DIAG-04", "case_id": "DIAG-04", "expected": "未知不说仍在生成；同ID查询；旧UI停止轮询；不虚构完成百分比"}
+{"id": "GT-LAT-01", "case_id": "LAT-01", "expected": "start先返回202，模型只调用一次，状态查询不等待模型"}
+{"id": "GT-LAT-02", "case_id": "LAT-02", "expected": "返回该主题的有效诊断题；相同ID重复start不重复调用"}
+{"id": "GT-REPORT-01", "case_id": "REPORT-01", "expected": "未知不能记PASS；保留首败；输入安全；草稿不能变更评分；失败可导出"}
+{"id": "GT-PLAN-01", "case_id": "PLAN-01", "expected": "保留已有知识点，仅规范化等价排版，结构和深研究校验仍有效"}
+{"id": "GT-WINDOWS-REAL", "case_id": "WINDOWS-REAL", "expected": "真实运行日志与请求证据"}
+{"id": "GT-REPORT-BROWSER", "case_id": "REPORT-BROWSER", "expected": "真实可见页面和交互证据"}
+{"id": "GT-LESSON-01", "case_id": "LESSON-01", "expected": "生成课件、代码练习与点击检查，知识点逐一覆盖；后端结构检查通过才提交"}

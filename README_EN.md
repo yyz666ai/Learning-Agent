@@ -25,6 +25,8 @@ Learning Agent first understands what you want to learn, your current level, and
 
 ### 1. Install Codex
 
+Install Python 3.10+ and, for npm, Node.js LTS. Native Windows uses npm; Homebrew is an alternative on macOS / Linux.
+
 ```bash
 npm install -g @openai/codex
 # or
@@ -45,13 +47,20 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-Python 3.10+ is required. Use macOS, Linux, or WSL 2 on Windows.
+The commands above are for macOS / Linux. After cloning, native Windows users can run these in PowerShell (no virtual-environment activation or execution-policy change needed):
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
 ### 3. Configure DeepSeek
 
 ```bash
 cp .secrets.env.example .secrets.env
 ```
+
+In Windows PowerShell, use `Copy-Item .secrets.env.example .secrets.env`.
 
 Edit the project-local `.secrets.env`:
 
@@ -67,9 +76,21 @@ This configuration affects this project only. Secrets and local learning records
 ./run.sh
 ```
 
-The first run prepares the teaching workspace automatically. Open:
+On native Windows, use PowerShell or Command Prompt:
+
+```powershell
+.\run.cmd
+```
+
+Use `./run.sh 8899` or `.\run.cmd 8899` for a custom port. Both launchers use the project's `.venv`, check Codex / DeepSeek and teaching files, refresh the teaching snapshot on every start, then start the server. Failed checks stop the sequence and preserve the exit code. Open:
 
 <http://127.0.0.1:8787>
+
+The browser's skill diagnosis, initial Plan and HTML lesson generation use background jobs and short polling. Diagnosis start returns a task ID immediately; refresh resumes the same task. Progress shows the server's actual phase and elapsed time, not a fabricated model-completion percentage. A temporary network failure queries the existing task before starting another one; diagnosis interrupted by a server restart can be retried.
+
+Lesson revision candidates and the legacy `/api/onboarding/start` endpoint remain synchronous and require adequate proxy timeouts. Run a single server process: diagnosis scheduling and editing transactions do not support multiple workers or instances. Cancelling diagnosis prevents stale results from being committed, but an in-flight model call can continue until completion or timeout and may still incur charges.
+
+Folder opening uses the native file manager; headless or unavailable desktops return a path without claiming it was opened. Native Windows system reminders are not implemented. Windows command resolution and startup contracts have offline simulation tests, not a real Windows end-to-end acceptance run. macOS / Linux and WSL continue to use `run.sh`.
 
 ## How to use it
 
@@ -100,7 +121,8 @@ Learning-Agent/
 ├── templates/     # Project-local Codex / DeepSeek templates
 ├── tests/         # Regression and curriculum contribution checks
 ├── projects/      # Example and lesson project resources
-├── run.sh         # One-command startup
+├── run.sh         # macOS / Linux startup
+├── run.cmd        # Native Windows startup
 └── requirements.txt
 ```
 
@@ -115,6 +137,12 @@ node --test tests/*.test.cjs
 ```
 
 Contributions to curriculum atoms, learning paths, interview questions, exercises, misconceptions, teaching Skills, and product code are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+### Interactive compatibility report
+
+After downloading the repository, open the [Detect report](projects/learning-agent/detect/outputs/report/index.html) in a browser. It supports filters, failure/retest details, local review drafts, and JSON/JSONL downloads. GitHub's code view does not execute HTML. The report distinguishes actual model calls, controlled tests, simulated Windows behavior, and missing evidence; machine passes are not human approval.
+
+Rebuild with `python tools/build_detect_report.py projects/learning-agent/detect/outputs/report/report_data.json /tmp/new-detect-report` (on Windows choose a new empty output directory). Existing evidence batches are never overwritten.
 
 ## License
 

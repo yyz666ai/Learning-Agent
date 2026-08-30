@@ -1,0 +1,72 @@
+schema_version: aipm.project-stage-progress/v1
+project_id: learning-agent
+stage: detect
+stage_status: in_progress
+current_step_id: DET-06
+allowed_step_status: [not_started, in_progress, draft, blocked, confirmed, skipped]
+ordered_steps:
+  - id: DET-01
+    name: 评测对象、版本与标准冻结
+    required: true
+    depends_on: []
+    status: confirmed
+    confirmed_by: Owner（用户）
+    confirmed_at: 2026-08-30
+    artifact: outputs/evaluation-brief.md
+    evidence: 用户“开始吧”批准v1.0推荐方案及标准；外部Windows数据未独立核验
+  - id: DET-02
+    name: Dataset、Case、GT 与评测集映射
+    required: true
+    depends_on: [DET-01]
+    status: draft
+    artifact: outputs/evaluation-dataset.md
+  - id: DET-03
+    name: 执行计划、引擎与证据合同
+    required: true
+    depends_on: [DET-02]
+    status: draft
+    artifact: outputs/evaluation-run-plan.md
+  - id: DET-04
+    name: 运行、重放与证据留存
+    required: true
+    depends_on: [DET-03]
+    status: draft
+    artifact: outputs/run-evidence.md
+  - id: DET-05
+    name: 逐维度评分与硬门判定
+    required: true
+    depends_on: [DET-04]
+    status: draft
+    artifact: outputs/scoring-results.md
+  - id: DET-06
+    name: 人工复核与争议处理
+    required: true
+    depends_on: [DET-05]
+    status: blocked
+    artifact: outputs/human-review.md
+  - id: DET-07
+    name: Bad Case 聚类与根因假设
+    required: true
+    depends_on: [DET-06]
+    status: draft
+    artifact: outputs/bad-case-analysis.md
+  - id: DET-08
+    name: Detect 完成 Gate、评测结论与 Drive 交接
+    required: true
+    depends_on: [DET-07]
+    status: blocked
+    artifact: outputs/evaluation-conclusion.md
+gate:
+  status: blocked
+  decision: INSUFFICIENT_EVIDENCE
+  conditions:
+    - 原生Windows实机验收未执行
+    - 报告真实浏览器验收受工具安全策略阻断
+    - Owner尚未签署人工复核；运行与评分均为草稿
+  owner: null
+  confirmed_at: null
+next_action:
+  step_id: DET-06
+  skill: detect
+  action: 查看交互报告与证据；补充Windows实机及浏览器验收后由Owner复核，不把机器结果当人工批准
+updated_at: 2026-08-30

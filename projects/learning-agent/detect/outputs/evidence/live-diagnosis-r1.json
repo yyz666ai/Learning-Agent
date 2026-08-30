@@ -1,0 +1,100 @@
+{
+  "mode": "live",
+  "transport": "local ASGI TestClient (not proxy or Windows benchmark)",
+  "start_http_status": 202,
+  "start_seconds": 0.0098,
+  "max_poll_seconds": 0.0083,
+  "total_seconds": 18.789,
+  "model_calls": [
+    {
+      "seconds": 18.382,
+      "sandbox": "read-only"
+    }
+  ],
+  "phases": [
+    "generating",
+    "completed"
+  ],
+  "job": {
+    "request_id": "probe-request",
+    "status": "completed",
+    "phase": "completed",
+    "intent_session_id": "probe-intent",
+    "intent_revision": 1,
+    "submission": {
+      "user_id": "probe",
+      "learning_mode": "practice",
+      "goal_route": "interview_sprint",
+      "level_claim": "some",
+      "topic": {
+        "type": "custom",
+        "value": "AI 前端"
+      },
+      "session_minutes": 25,
+      "deadline_days": null,
+      "teaching_preference": "balanced",
+      "concept_scope": "not_applicable"
+    },
+    "elapsed_seconds": 18.39,
+    "retryable": false,
+    "result": {
+      "session_id": "5c5347382d4f45b0b5ca1313427e4d79",
+      "topic": "AI 前端",
+      "level_claim": "some",
+      "question_index": 0,
+      "question": {
+        "id": "q1",
+        "prompt": "AI 前端 面试中，要让大模型回答边生成边显示在页面上，最核心的技术判断是什么？",
+        "options": [
+          {
+            "id": "a",
+            "label": "通过 SSE 或 fetch 流式读取响应，逐块增量更新界面"
+          },
+          {
+            "id": "b",
+            "label": "等待接口全部返回后再一次性渲染整段文本"
+          },
+          {
+            "id": "c",
+            "label": "用 setInterval 轮询后端直到拿到完整结果"
+          },
+          {
+            "id": "d",
+            "label": "先把完整结果缓存到 localStorage 再渲染"
+          }
+        ]
+      },
+      "answered_count": 0,
+      "complete": false,
+      "diagnostic_source": "skill_generated",
+      "submission": {
+        "user_id": "probe",
+        "learning_mode": "practice",
+        "goal_route": "interview_sprint",
+        "level_claim": "some",
+        "topic": {
+          "type": "custom",
+          "value": "AI 前端"
+        },
+        "session_minutes": 25,
+        "deadline_days": null,
+        "teaching_preference": "balanced",
+        "concept_scope": "not_applicable"
+      },
+      "next": "diagnosis"
+    }
+  },
+  "input": {
+    "request_id": "probe-request",
+    "intent_session_id": "probe-intent",
+    "intent_revision": 1,
+    "topic": {
+      "type": "custom",
+      "value": "AI 前端"
+    },
+    "level_claim": "some",
+    "learning_mode": "practice",
+    "goal_route": "interview_sprint",
+    "session_minutes": 25
+  }
+}

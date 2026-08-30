@@ -169,8 +169,11 @@ def test_practice_open_api_uses_safe_resolved_folder(
     client = TestClient(main.app)
     practice_path = "projects/go-course/package-main"
     (tmp_path / "userdir/u_folder-user" / practice_path).mkdir(parents=True)
-    opened: list[list[str]] = []
-    monkeypatch.setattr(main.subprocess, "run", lambda args, check: opened.append(args))
+    opened: list[Path] = []
+    def open_folder(path):
+        opened.append(path)
+        return {"opened": True, "path": str(path)}
+    monkeypatch.setattr(main, "open_folder", open_folder)
 
     response = client.post(
         "/api/practice/open",
@@ -179,8 +182,8 @@ def test_practice_open_api_uses_safe_resolved_folder(
 
     expected = (tmp_path / "userdir/u_folder-user" / practice_path).resolve()
     assert response.status_code == 200
-    assert response.json() == {"opened": True, "path": practice_path}
-    assert opened == [["open", str(expected)]]
+    assert response.json() == {"opened": True, "path": practice_path, "resolved_path": str(expected)}
+    assert opened == [expected]
 
 
 def test_practice_open_api_rejects_traversal_without_opening(
@@ -188,8 +191,8 @@ def test_practice_open_api_rejects_traversal_without_opening(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
-    opened: list[list[str]] = []
-    monkeypatch.setattr(main.subprocess, "run", lambda args, check: opened.append(args))
+    opened: list[Path] = []
+    monkeypatch.setattr(main, "open_folder", lambda path: opened.append(path))
 
     response = TestClient(main.app).post(
         "/api/practice/open",

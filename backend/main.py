@@ -23,6 +23,9 @@ from backend.lesson_context import LessonReference, lesson_revision, restored_ch
 from backend.user_memory import read_conversation_events
 from backend.classroom_chat import chat_mode, INTERVIEW_POLICY, ANSWER_POLICY
 from backend.lesson_mutations import LessonMutationService
+from backend.platform_runtime import open_folder
+from backend.diagnosis_jobs import DiagnosisJobs, StaleDiagnosis
+from backend.codex_driver import ensure_user
 
 try:
     from .codex_driver import chat, latest_release, stream_chat
@@ -92,6 +95,15 @@ PORT = 8787
 logger = logging.getLogger(__name__)
 PLAN_GENERATION_JOBS = GenerationJobRegistry(max_workers=2)
 LESSON_GENERATION_JOBS = GenerationJobRegistry(max_workers=2)
+_diagnosis_registries: dict[str, DiagnosisJobs] = {}
+
+
+def diagnosis_registry() -> DiagnosisJobs:
+    key = str(SERVER_ROOT.resolve())
+    with project_lock(SERVER_ROOT, "_diagnosis_registry"):
+        if key not in _diagnosis_registries:
+            _diagnosis_registries[key] = DiagnosisJobs(SERVER_ROOT)
+        return _diagnosis_registries[key]
 
 
 def _intent_skill_text(release: Path) -> str:
@@ -198,6 +210,17 @@ class SupplementalPracticeRequest(ExerciseGenerateRequest):
 
 class OnboardingConfirmRequest(OnboardingSubmission):
     diagnostic_session_id: str | None = Field(default=None, max_length=64)
+
+
+class DiagnosisStartRequest(OnboardingSubmission):
+    request_id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+    intent_session_id: str = Field(min_length=1, max_length=100)
+    intent_revision: int = Field(ge=0)
+
+
+class DiagnosisCancelRequest(BaseModel):
+    user_id: str = Field(default="yang", pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    request_id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class PlanPersonalizeRequest(OnboardingSubmission):
@@ -1289,7 +1312,6 @@ def complete_lesson(request: LessonCompleteRequest) -> dict[str, Any]:
 def open_practice_folder(request: PracticeOpenRequest) -> dict[str, Any]:
     try:
         target = resolve_practice_folder(SERVER_ROOT, request.user_id, request.path)
-        subprocess.run(["open", str(target)], check=True)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=404,
@@ -1300,12 +1322,7 @@ def open_practice_folder(request: PracticeOpenRequest) -> dict[str, Any]:
             status_code=422,
             detail={"message": "这个练习路径不安全，已经停止打开。"},
         ) from exc
-    except subprocess.CalledProcessError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail={"message": "系统暂时无法打开文件夹，请稍后重试。"},
-        ) from exc
-    return {"opened": True, "path": request.path}
+    return {**open_folder(target), "path": request.path, "resolved_path": str(target)}
 
 
 @app.post("/api/projects/snapshot")
@@ -1515,6 +1532,16 @@ def onboarding_intent_state(
 def onboarding_start(request: OnboardingSubmission) -> dict[str, Any]:
     if not needs_diagnosis(request):
         return {"next": "confirm", "diagnosis_required": False}
+    session = _generate_diagnostic_session(request)
+    _write_diagnostic(request.user_id, session)
+    payload = public_session(session)
+    payload["next"] = "diagnosis"
+    payload["diagnostic_source"] = session["diagnostic_source"]
+    return payload
+
+
+def _generate_diagnostic_session(request: OnboardingSubmission, phase=None, *, server_root=None) -> dict[str, Any]:
+    """Generate only; guarded job owns committing the validated session."""
     questions = None
     source = "fallback"
     release = latest_release()
@@ -1524,14 +1551,24 @@ def onboarding_start(request: OnboardingSubmission) -> dict[str, Any]:
         )
         previous_response = ""
         for attempt in range(2):
+            if phase:
+                phase("generating" if attempt == 0 else "repairing")
             try:
-                previous_response = chat(request.user_id, diagnosis_prompt, release)
+                previous_response = chat(request.user_id, diagnosis_prompt, release, **({
+                    "sandbox": "read-only", "timeout": 120, "server_root": server_root or SERVER_ROOT,
+                } if phase else {}))
+                if previous_response.startswith(("[超时]", "[出错]", "[空回复]")):
+                    raise RuntimeError("diagnosis model transport failed")
+                if phase:
+                    phase("validating")
                 questions = parse_generated_diagnosis(
                     previous_response,
                     expected_topic=request.topic.value,
                 )
                 source = "skill_generated" if attempt == 0 else "skill_generated_repaired"
                 break
+            except StaleDiagnosis:
+                raise
             except (ValueError, json.JSONDecodeError) as exc:
                 questions = None
                 if attempt == 0:
@@ -1563,15 +1600,55 @@ def onboarding_start(request: OnboardingSubmission) -> dict[str, Any]:
     session = start_diagnosis(request.topic.value, request.level_claim, questions=questions)
     session["diagnostic_source"] = source
     session["submission"] = request.model_dump()
-    _write_diagnostic(request.user_id, session)
-    payload = public_session(session)
-    payload["next"] = "diagnosis"
-    payload["diagnostic_source"] = source
-    return payload
+    return session
+
+
+@app.post("/api/onboarding/diagnosis/start", status_code=202)
+def start_diagnosis_job(request: DiagnosisStartRequest) -> dict[str, Any]:
+    submission = OnboardingSubmission.model_validate(request.model_dump())
+    if not needs_diagnosis(submission):
+        return {"request_id": request.request_id, "status": "completed", "result": {"next": "confirm", "complete": True, "diagnosis_required": False, "session_id": None}}
+    root = SERVER_ROOT
+    try:
+        with project_lock(root, request.user_id):
+            ensure_user(request.user_id, root)
+            return diagnosis_registry().start(request.user_id, request.request_id, request.intent_session_id,
+                request.intent_revision, submission.model_dump(), lambda phase: _generate_diagnostic_session(submission, phase, server_root=root))
+    except StaleDiagnosis as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "recovery": "refresh_intent"}) from exc
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail={"message": "暂时无法启动诊断任务，请稍后重试。"}) from exc
+
+
+@app.get("/api/onboarding/diagnosis/status")
+def diagnosis_job_status(user_id: str = Query(default="yang", pattern=r"^[A-Za-z0-9_-]{1,64}$"), request_id: str = Query(pattern=r"^[A-Za-z0-9_-]{1,100}$")) -> dict[str, Any]:
+    try:
+        return diagnosis_registry().get(user_id, request_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"message": "没有找到这轮诊断，请刷新后继续。"}) from exc
+
+
+@app.get("/api/onboarding/diagnosis/current")
+def current_diagnosis_job(user_id: str = Query(default="yang", pattern=r"^[A-Za-z0-9_-]{1,64}$")) -> dict[str, Any]:
+    return diagnosis_registry().current(user_id)
+
+
+@app.post("/api/onboarding/diagnosis/cancel")
+def cancel_diagnosis_job(request: DiagnosisCancelRequest) -> dict[str, Any]:
+    return diagnosis_registry().cancel(request.user_id, request.request_id)
 
 
 @app.post("/api/diagnostics/answer")
 def diagnostic_answer(request: DiagnosticAnswerRequest) -> dict[str, Any]:
+    with project_lock(SERVER_ROOT, request.user_id):
+        try:
+            diagnosis_registry().validate_answer(request.user_id, request.session_id)
+        except (StaleDiagnosis, KeyError) as exc:
+            raise HTTPException(status_code=409, detail={"message": "诊断状态已变化，请刷新后继续。", "recovery": "refresh_intent"}) from exc
+        return _diagnostic_answer_locked(request)
+
+
+def _diagnostic_answer_locked(request: DiagnosticAnswerRequest) -> dict[str, Any]:
     session = _read_diagnostic(request.user_id, request.session_id)
     try:
         updated = answer_diagnosis(
@@ -1594,6 +1671,20 @@ def diagnostic_answer(request: DiagnosticAnswerRequest) -> dict[str, Any]:
 
 @app.post("/api/onboarding/confirm")
 def onboarding_confirm(request: OnboardingConfirmRequest) -> dict[str, Any]:
+    with project_lock(SERVER_ROOT, request.user_id):
+        if request.diagnostic_session_id:
+            try:
+                return diagnosis_registry().confirm(
+                    request.user_id, request.diagnostic_session_id,
+                    request.model_dump(exclude={"diagnostic_session_id"}),
+                    lambda: _onboarding_confirm_locked(request),
+                )
+            except (StaleDiagnosis, KeyError) as exc:
+                raise HTTPException(status_code=409, detail={"message": "诊断结果已过期，请刷新后继续。", "recovery": "refresh_intent"}) from exc
+        return _onboarding_confirm_locked(request)
+
+
+def _onboarding_confirm_locked(request: OnboardingConfirmRequest) -> dict[str, Any]:
     submission = OnboardingSubmission.model_validate(
         request.model_dump(exclude={"diagnostic_session_id"})
     )

@@ -13,12 +13,20 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
 import uuid
+from collections import deque
+from queue import Empty, Full, Queue
+from threading import Event, Thread
 from pathlib import Path
 from collections.abc import Iterator
+if __package__:
+    from .platform_runtime import codex_command
+else:  # Preserve the documented python backend/codex_driver.py entry point.
+    from platform_runtime import codex_command
 
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 SECRETS_FILE = SERVER_ROOT / ".secrets.env"
@@ -52,6 +60,140 @@ def parse_codex_event(line: str) -> dict | None:
     return None
 
 
+def _process_group_options(platform_name: str | None = None) -> dict:
+    if (platform_name or sys.platform) == "win32":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _stop_process_tree(proc: subprocess.Popen, platform_name: str | None = None) -> None:
+    """Stop only the new process group created for this invocation, then reap its parent."""
+    if proc.pid <= 0:
+        raise ValueError("invalid child pid")
+    if (platform_name or sys.platform) == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=2, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        # start_new_session makes the child PID the process-group ID, even when
+        # its npm/Node parent has exited but a native descendant still owns pipes.
+        if proc.pid == os.getpgrp():
+            raise ValueError("refusing to terminate the host process group")
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if proc.poll() is None:
+        proc.kill()
+    proc.wait(timeout=2)
+
+
+def _stream_process(cmd: list[str], message: str, release_dir: Path, env: dict,
+                    timeout: float, *, full_stderr: bool = False) -> Iterator[tuple[str, str | int]]:
+    """Drain both pipes while feeding stdin; deadline also applies to silent children."""
+    proc = subprocess.Popen(
+        cmd, cwd=str(release_dir), env=env, stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", bufsize=1,
+        **_process_group_options(),
+    )
+    assert proc.stdout is not None and proc.stderr is not None and proc.stdin is not None
+    lines: Queue[str | None] = Queue(maxsize=256)
+    stopped = Event()
+    stderr_tail: deque[str] = deque(maxlen=None if full_stderr else 32)
+    deadline = time.monotonic() + timeout
+    completed = False
+
+    def enqueue(line: str | None) -> None:
+        while not stopped.is_set():
+            try:
+                lines.put(line, timeout=0.05)
+                return
+            except Full:
+                pass
+
+    def read_stdout() -> None:
+        try:
+            for line in proc.stdout:
+                if stopped.is_set():
+                    break
+                enqueue(line)
+        finally:
+            enqueue(None)
+
+    def read_stderr() -> None:
+        while chunk := proc.stderr.read(4096):
+            stderr_tail.append(chunk)
+
+    def write_input() -> None:
+        try:
+            proc.stdin.write(message)
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+    workers = [Thread(target=target, daemon=True) for target in (read_stdout, read_stderr, write_input)]
+    for worker in workers:
+        worker.start()
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            try:
+                line = lines.get(timeout=remaining)
+            except Empty:
+                raise subprocess.TimeoutExpired(cmd, timeout) from None
+            if line is None:
+                break
+            yield "stdout", line
+        code = proc.wait(timeout=max(0, deadline - time.monotonic()))
+        workers[1].join(timeout=max(0, deadline - time.monotonic()))
+        if workers[1].is_alive():
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        completed = True
+        yield "stderr", "".join(stderr_tail)
+        yield "exit", code
+    finally:
+        stopped.set()
+        if not completed:
+            _stop_process_tree(proc)
+        for worker in workers:
+            worker.join(timeout=0.2)
+        for pipe, worker in zip((proc.stdout, proc.stderr, proc.stdin), workers):
+            if not worker.is_alive():
+                pipe.close()
+
+
+def _capture_process(cmd: list[str], message: str, release_dir: Path, env: dict,
+                     timeout: float) -> subprocess.CompletedProcess:
+    """Capture through the same deadline/tree cleanup boundary as streaming.
+
+    Unlike communicate(input=...) on Windows, stdin writing cannot block the
+    deadline thread when a wrapper/native child stops reading its input.
+    """
+    output: list[str] = []
+    stderr = ""
+    code = 1
+    try:
+        for kind, value in _stream_process(cmd, message, release_dir, env, timeout, full_stderr=True):
+            if kind == "stdout":
+                output.append(value)
+            elif kind == "stderr":
+                stderr = value
+            elif kind == "exit":
+                code = value
+    except subprocess.TimeoutExpired as exc:
+        exc.output = "".join(output)
+        raise
+    return subprocess.CompletedProcess(cmd, code, "".join(output), stderr)
+
+
 def stream_chat(
     user_id: str,
     message: str,
@@ -67,49 +209,21 @@ def stream_chat(
     secrets = load_secrets(server_root / ".secrets.env")
     env = build_env(user_dir, codex_home, secrets)
     request_id = uuid.uuid4().hex
-    cmd = [
-        "codex",
-        "exec",
-        "--json",
-        "--skip-git-repo-check",
-        "--sandbox",
-        sandbox or SANDBOX_MODE,
-        message,
-    ]
-    proc: subprocess.Popen[str] | None = None
-    started = time.monotonic()
     yield {
         "event": "session.started",
         "data": {"request_id": request_id},
     }
     try:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(release_dir),
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            if time.monotonic() - started > timeout:
-                proc.terminate()
-                yield {
-                    "event": "error",
-                    "data": {
-                        "request_id": request_id,
-                        "message": "学习引擎响应超时，请稍后继续。",
-                        "retryable": True,
-                    },
-                }
-                return
-            event = parse_codex_event(line)
-            if event:
-                yield event
-        exit_code = proc.wait()
+        cmd = [*codex_command(), "exec", "--json", "--skip-git-repo-check",
+               "--sandbox", sandbox or SANDBOX_MODE, "-"]
+        exit_code = 1
+        for kind, value in _stream_process(cmd, message, release_dir, env, timeout):
+            if kind == "stdout":
+                event = parse_codex_event(value)
+                if event:
+                    yield event
+            elif kind == "exit":
+                exit_code = value
         if exit_code != 0:
             yield {
                 "event": "error",
@@ -124,22 +238,18 @@ def stream_chat(
             "event": "message.completed",
             "data": {"request_id": request_id},
         }
-    except FileNotFoundError:
+    except subprocess.TimeoutExpired:
+        yield {"event": "error", "data": {"request_id": request_id,
+               "message": "学习引擎响应超时，请稍后继续。", "retryable": True}}
+    except (OSError, RuntimeError):
         yield {
             "event": "error",
             "data": {
                 "request_id": request_id,
-                "message": "没有找到 Codex 命令行，请检查运行环境。",
+                "message": "无法运行 Codex 命令行，请检查 Codex 和 Node.js 运行环境。",
                 "retryable": False,
             },
         }
-    finally:
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                proc.kill()
 
 
 def load_secrets(path: Path = SECRETS_FILE) -> dict[str, str]:
@@ -218,6 +328,7 @@ def run_once(
     server_root: Path = SERVER_ROOT,
     sandbox: str | None = None,
     stream: bool = True,
+    timeout: int = 600,
 ) -> int:
     """spawn 一次 codex exec，流式输出到 stdout，返回退出码。"""
     user_dir = ensure_user(user_id, server_root)
@@ -226,33 +337,24 @@ def run_once(
     env = build_env(user_dir, codex_home, secrets)
 
     cmd = [
-        "codex", "exec",
+        *codex_command(), "exec",
         "--skip-git-repo-check",
         "--sandbox", sandbox or SANDBOX_MODE,
-        message,
+        "-",
     ]
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(release_dir),
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-
-    assert proc.stdout is not None and proc.stderr is not None
-    for line in proc.stdout:
-        if stream:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-    proc.wait()
-
-    stderr = proc.stderr.read()
-    if stderr.strip():
-        sys.stderr.write(stderr)
-    return proc.returncode
+    try:
+        for kind, value in _stream_process(cmd, message, release_dir, env, timeout):
+            if kind == "stdout" and stream:
+                sys.stdout.write(value)
+                sys.stdout.flush()
+            elif kind == "stderr" and value.strip():
+                sys.stderr.write(value)
+            elif kind == "exit":
+                return value
+    except subprocess.TimeoutExpired:
+        print("学习引擎响应超时，请稍后继续。", file=sys.stderr)
+        return 124
+    return 1
 
 
 def run_once_capture(
@@ -271,16 +373,13 @@ def run_once_capture(
     env = build_env(user_dir, codex_home, secrets)
 
     cmd = [
-        "codex", "exec",
+        *codex_command(), "exec",
         "--skip-git-repo-check",
         "--sandbox", sandbox or SANDBOX_MODE,
-        message,
+        "-",
     ]
     try:
-        proc = subprocess.run(
-            cmd, cwd=str(release_dir), env=env,
-            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
-        )
+        proc = _capture_process(cmd, message, release_dir, env, timeout)
     except subprocess.TimeoutExpired as e:
         return {"output": (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or ""),
                 "exit_code": None, "timed_out": True}
@@ -303,16 +402,13 @@ def chat(
     env = build_env(user_dir, codex_home, secrets)
 
     cmd = [
-        "codex", "exec", "--json",
+        *codex_command(), "exec", "--json",
         "--skip-git-repo-check",
         "--sandbox", sandbox or SANDBOX_MODE,
-        message,
+        "-",
     ]
     try:
-        proc = subprocess.run(
-            cmd, cwd=str(release_dir), env=env,
-            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
-        )
+        proc = _capture_process(cmd, message, release_dir, env, timeout)
     except subprocess.TimeoutExpired:
         return "[超时] 学习 Agent 处理超时（>%ds），请稍后再试。" % timeout
 

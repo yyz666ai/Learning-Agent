@@ -464,7 +464,11 @@
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail?.message || "文件夹暂时无法打开。");
-      button.textContent = "✓ 已打开";
+      if (result.opened) button.textContent = "已请求系统打开";
+      else {
+        button.textContent = "请手动打开";
+        state.onResult?.({ correct: false, verified: false, feedback: `${result.message || "当前环境不能打开文件夹。"}\n${result.resolved_path || result.path || path}` });
+      }
     } catch (error) {
       button.textContent = "重试打开";
       state.onResult?.({ correct: false, verified: false, feedback: error.message });

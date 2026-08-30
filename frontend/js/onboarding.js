@@ -18,7 +18,7 @@
     pendingQuestionSlot: null, lastDiagnosticQuestionId: null, diagnosisPrefaced: false,
     busy: false, confirmationResult: null, generationId: null,
     existingProject: null, existingDecision: null,
-    sessionId: null, revision: null, epoch: 0, choiceVersion: 0,
+    sessionId: null, revision: null, epoch: 0, choiceVersion: 0, diagnosisRequestId: null,
   };
   const byId = (id) => document.getElementById(id);
   let requestSequence = 0;
@@ -210,6 +210,38 @@
       }
       state.slots = { ...EMPTY_SLOTS, ...(persisted.slots || {}) };
       state.topic = state.slots.topic || "";
+      if (persisted.action === "ready_for_plan" && persisted.onboarding) {
+        applyIntentDecision(persisted);
+        if (state.levelClaim !== "zero" && state.goalRoute !== "concept_clarity") {
+          let current;
+          try {
+            current = await global.DiagnosisJobs.readJob(`/api/onboarding/diagnosis/current?user_id=${encodeURIComponent(userId)}`);
+          } catch (error) {
+            if (epoch !== state.epoch || !state.active) return true;
+            state.pendingAction = restoreIntentState;
+            global.LearningActivity?.diagnosis?.({status: "unknown"});
+            showError(error);
+            return true;
+          }
+          if (epoch !== state.epoch || !state.active) return true;
+          if (current.request_id && current.intent_session_id === state.sessionId && current.intent_revision === state.revision) {
+            state.callbacks.restoreHistory?.(state.intentHistory);
+            // The persisted intent has just been revalidated. A cancelled id is
+            // a tombstone, not a resumable job; a fresh request remains server-bound.
+            state.diagnosisRequestId = current.status === "cancelled" ? null : current.request_id;
+            if (current.status === "completed") {
+              state.diagnosisPrefaced = true;
+              if (current.result.complete) await confirm({diagnostic_session_id: current.result.session_id});
+              else renderDiagnostic(current.result);
+            } else await beginDiagnosis();
+            return true;
+          }
+          // A pointer from an older project/session must not reset the accepted goal.
+          state.diagnosisRequestId = null;
+          await beginDiagnosis();
+          return true;
+        }
+      }
       if (persisted.action === "interview_bank_intake") {
         if (Number(state.slots.interview_question_count || 0) > 0) {
           addAgent(`已恢复 ${state.slots.interview_question_count} 道已入库面试题，继续生成针对性计划。`);
@@ -381,20 +413,36 @@
   }
 
   async function beginDiagnosis() {
+    const epoch = state.epoch;
     setBusy(true); clearError(); state.pendingAction = beginDiagnosis;
+    state.diagnosisRequestId = state.diagnosisRequestId || newRequestId();
     if (!state.diagnosisPrefaced) {
       addAgent("你已经有一定基础，我会先问你 3–4 道小题，快速确认从哪里开始，然后就进入学习。");
       state.diagnosisPrefaced = true;
     }
-    global.LearningActivity?.start("正在校准起点", "只用几道点击题找到合适的第一课。");
+    global.LearningActivity?.diagnosis?.({status: "queued", elapsed_seconds: 0});
     try {
-      renderDiagnostic(await request("/api/onboarding/start", submission()));
+      const result = await global.DiagnosisJobs.waitForDiagnosis({
+        payload: {...submission(), request_id: state.diagnosisRequestId, intent_session_id: state.sessionId, intent_revision: state.revision},
+        isCurrent: () => state.active && epoch === state.epoch,
+        onStatus: job => global.LearningActivity?.diagnosis?.(job),
+      });
+      if (epoch !== state.epoch || !state.active) return;
+      if (result.complete) { await confirm({diagnostic_session_id: result.session_id}); return; }
+      renderDiagnostic(result);
       global.LearningActivity?.finish("第一题准备好了", "直接点击输入框上方的选项即可。");
-    } catch (error) { showError(error); }
-    finally { setBusy(false); }
+    } catch (error) {
+      if (epoch !== state.epoch || !state.active) return;
+      // Only an explicit retry after a confirmed terminal failure gets a fresh id.
+      if (error.terminal && error.retryable) state.diagnosisRequestId = null;
+      else if (error.terminal) state.pendingAction = restoreIntentState;
+      global.LearningActivity?.diagnosis?.({status: error.terminal ? "failed" : "unknown"});
+      showError(error);
+    } finally { if (epoch === state.epoch && state.active) setBusy(false); }
   }
 
   async function answerDiagnostic(option) {
+    const epoch = state.epoch;
     setBusy(true); clearError(); state.pendingAction = beginDiagnosis; addUser(option.label);
     global.LearningActivity?.start("正在判断你的起点", "这会决定哪些内容快进、哪些内容慢讲。");
     try {
@@ -402,10 +450,11 @@
         user_id: userId, session_id: state.diagnostic.session_id,
         question_id: state.diagnostic.question.id, selected_option_id: option.value,
       });
+      if (epoch !== state.epoch || !state.active) return;
       if (next.complete) await confirm({ diagnostic_session_id: next.session_id });
       else { renderDiagnostic(next); global.LearningActivity?.finish("下一道诊断题已准备好", "再点一题，就能更准确地开始。"); }
-    } catch (error) { showError(error); }
-    finally { setBusy(false); }
+    } catch (error) { if (epoch === state.epoch && state.active) showError(error); }
+    finally { if (epoch === state.epoch && state.active) setBusy(false); }
   }
 
   function planReviewChoices() {
@@ -414,18 +463,23 @@
   }
 
   async function confirm(extra = {}) {
+    const epoch = state.epoch;
+    const isCurrent = () => state.active && epoch === state.epoch;
     setBusy(true); clearError(); hideChoices(); state.pendingAction = () => confirm(extra);
     addAgent("路线已经清楚了。我会先生成完整 `plan.md` 给你确认，确认后才开始第一章。");
     global.LearningActivity?.startPlanGeneration?.();
     try {
       const result = await request("/api/onboarding/confirm", { ...submission(), ...extra });
+      if (!isCurrent()) return;
       state.generationId = result.generation_id;
       try {
         const personalized = await waitForPersonalizedPlan(submission(), result.generation_id);
+        if (!isCurrent()) return;
         if (!personalized.personalized) throw new Error(personalized.user_message || "模型还没有生成合格的详细课程大纲，请点击重试。");
         state.generationId = null;
         state.confirmationResult = result; state.stage = "plan_review";
         await state.callbacks.onPlanReady?.(personalized);
+        if (!isCurrent()) return;
         addAgent(state.goalRoute === "concept_clarity"
           ? "这份短方案已经显示。确认后我就开始概念讲解；不会再问时长或做起点诊断。"
           : "完整计划已经显示。先看看是否符合你的目标；需要修改就直接在下面说。");
@@ -433,14 +487,16 @@
         global.LearningActivity?.finish("专属大纲已生成", "请先阅读并确认，课程不会自动开始。");
       } finally { /* Background generation is polled through short requests. */ }
     } catch (error) {
+      if (!isCurrent()) return;
       await cancelActiveGeneration();
+      if (!isCurrent()) return;
       const message = error?.name === "GenerationTimeoutError"
         ? "详细课程研究与生成超过 11 分钟，请重试；你刚才的主题和目标都已保留。"
         : error?.message || "详细课程暂时没有生成成功，请重试。";
       showError(new Error(message));
       global.LearningActivity?.finish("生成暂时中断", "你的选择已保留，可以直接重试。");
       await state.callbacks.onFailed?.(error);
-    } finally { setBusy(false); }
+    } finally { if (isCurrent()) setBusy(false); }
   }
 
   async function confirmPlan() {
@@ -505,6 +561,7 @@
   }
 
   function begin(callbacks, initialTopic = "") {
+    if (state.active) stop();
     Object.assign(state, {
       callbacks, active: true, stage: "topic", topic: "", topicType: "custom",
       goalRoute: "foundation_engineer", learningMode: "systematic", levelClaim: "zero",
@@ -513,7 +570,7 @@
       clarificationCount: 0, diagnostic: null, pendingAction: null, confirmationResult: null,
       pendingQuestionSlot: null, lastDiagnosticQuestionId: null, diagnosisPrefaced: false,
       generationId: null, existingProject: null, existingDecision: null,
-      sessionId: newRequestId(), revision: null, epoch: state.epoch + 1, busy: false,
+      sessionId: newRequestId(), revision: null, epoch: state.epoch + 1, busy: false, diagnosisRequestId: null,
     });
     if (initialTopic.trim()) analyzeIntent(initialTopic);
     else if (callbacks.restorePersistedIntent) {
@@ -522,7 +579,12 @@
     } else askTopic();
   }
 
-  function stop() { state.active = false; state.epoch += 1; hideChoices(); }
+  function stop() {
+    const requestId = state.diagnosisRequestId;
+    state.active = false; state.epoch += 1; hideChoices();
+    if (requestId) request("/api/onboarding/diagnosis/cancel", {user_id: userId, request_id: requestId}).catch(() => {});
+    state.diagnosisRequestId = null;
+  }
 
   document.addEventListener("DOMContentLoaded", () => {
     byId("retryOnboardingBtn").addEventListener("click", () => state.pendingAction?.());

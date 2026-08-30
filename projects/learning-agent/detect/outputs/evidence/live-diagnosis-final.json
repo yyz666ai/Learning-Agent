@@ -1,0 +1,104 @@
+{
+  "mode": "live",
+  "transport": "local ASGI TestClient (not proxy or Windows benchmark)",
+  "source_sha256": {
+    "backend/diagnosis_jobs.py": "fcb2290649da300e6358b67ce18e1e847d29bafef26b62076f4b854ec2ffcefa",
+    "backend/codex_driver.py": "8cedaf4ed099c882683e385e5a85f8d3cf44d214fb426dfd5e53958d902b1ea7",
+    "backend/main.py": "3ac6e6343af5f8563a695a3f4314901f06919408d8e56e28984bca8f87852a3e",
+    "backend/platform_runtime.py": "16de76043414ac39a665efc473854165216c90ff52dd6d3a049dbe8ad2af0e5e",
+    "frontend/js/diagnosis-job.js": "061975029c18d7590299f70893c25c9458a5551f3b73569a0e44591dbc51453a",
+    "frontend/js/onboarding.js": "5083e000b5c06d4427315cc38680244f701ff649dc61e190d3fa53a17704044c"
+  },
+  "start_http_status": 202,
+  "start_seconds": 0.0103,
+  "max_poll_seconds": 0.166,
+  "total_seconds": 22.549,
+  "model_calls": [
+    {
+      "seconds": 22.346,
+      "sandbox": "read-only"
+    }
+  ],
+  "phases": [
+    "generating",
+    "completed"
+  ],
+  "job": {
+    "request_id": "probe-request",
+    "status": "completed",
+    "phase": "completed",
+    "intent_session_id": "probe-intent",
+    "intent_revision": 1,
+    "submission": {
+      "user_id": "probe",
+      "learning_mode": "practice",
+      "goal_route": "interview_sprint",
+      "level_claim": "some",
+      "topic": {
+        "type": "custom",
+        "value": "AI 前端"
+      },
+      "session_minutes": 25,
+      "deadline_days": null,
+      "teaching_preference": "balanced",
+      "concept_scope": "not_applicable"
+    },
+    "elapsed_seconds": 22.35,
+    "retryable": false,
+    "result": {
+      "session_id": "2db366a8bed341d08259dc3f5fb1292c",
+      "topic": "AI 前端",
+      "level_claim": "some",
+      "question_index": 0,
+      "question": {
+        "id": "q1",
+        "prompt": "AI 前端 的对话应用需要让模型回复流式显示，最值得优先掌握的技术判断是什么？",
+        "options": [
+          {
+            "id": "a",
+            "label": "用 SSE/流式解析增量渲染，并用 AbortController 支持取消与重试"
+          },
+          {
+            "id": "b",
+            "label": "等接口一次性返回完整 JSON 再渲染，实现最简单稳妥"
+          },
+          {
+            "id": "c",
+            "label": "一律改用 WebSocket 传输，HTTP 不适合流式场景"
+          }
+        ]
+      },
+      "answered_count": 0,
+      "complete": false,
+      "diagnostic_source": "skill_generated",
+      "submission": {
+        "user_id": "probe",
+        "learning_mode": "practice",
+        "goal_route": "interview_sprint",
+        "level_claim": "some",
+        "topic": {
+          "type": "custom",
+          "value": "AI 前端"
+        },
+        "session_minutes": 25,
+        "deadline_days": null,
+        "teaching_preference": "balanced",
+        "concept_scope": "not_applicable"
+      },
+      "next": "diagnosis"
+    }
+  },
+  "input": {
+    "request_id": "probe-request",
+    "intent_session_id": "probe-intent",
+    "intent_revision": 1,
+    "topic": {
+      "type": "custom",
+      "value": "AI 前端"
+    },
+    "level_claim": "some",
+    "learning_mode": "practice",
+    "goal_route": "interview_sprint",
+    "session_minutes": 25
+  }
+}

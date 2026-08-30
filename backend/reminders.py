@@ -24,13 +24,29 @@ def _path(server_root: Path, user_id: str) -> Path:
     return server_root / "userdir" / f"u_{user_id}" / "preferences" / "reminder.json"
 
 
+def _with_capability(preference: dict[str, Any]) -> dict[str, Any]:
+    """enabled is the saved preference, never a guarantee of notification delivery."""
+    supported = platform.system() == "Darwin"
+    return {
+        **preference,
+        "notification_supported": supported,
+        "message": (
+            "系统通知需要保持本机服务运行，并在系统设置中允许通知。"
+            if supported else
+            "当前平台尚不支持系统通知；提醒偏好仍可保存，但不会发送通知。"
+        ),
+    }
+
+
 def read_reminder(server_root: Path, user_id: str) -> dict[str, Any]:
     path = _path(server_root, user_id)
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {"enabled": False, "time": "20:00", "kind": "both", "last_sent_date": None}
-    return value if isinstance(value, dict) else {"enabled": False, "time": "20:00", "kind": "both", "last_sent_date": None}
+        value = None
+    return _with_capability(value if isinstance(value, dict) else {
+        "enabled": False, "time": "20:00", "kind": "both", "last_sent_date": None,
+    })
 
 
 def save_reminder(
@@ -52,7 +68,7 @@ def save_reminder(
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temporary.replace(path)
-    return payload
+    return _with_capability(payload)
 
 
 def due_reminders(server_root: Path, now: datetime | None = None) -> list[tuple[str, dict[str, Any]]]:

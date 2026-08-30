@@ -5,6 +5,7 @@ from tools import e2e_learning_smoke as smoke
 
 def ready(level: str = "zero") -> dict:
     return {
+        "session_id": "intent-1", "revision": 1,
         "action": "ready_for_plan",
         "slots": {"topic": "前端", "level_evidence": "初学"},
         "onboarding": {
@@ -49,8 +50,11 @@ def test_non_beginner_journey_completes_diagnosis_plan_and_lesson(monkeypatch) -
             value["slots"]["topic"] = "Java 后端"
             value["slots"]["level_evidence"] = "有一点基础"
             return value
-        if path == "/api/onboarding/start":
-            return diagnostic
+        if path == "/api/onboarding/diagnosis/start":
+            assert payload["intent_session_id"] == "intent-1"
+            assert payload["intent_revision"] == 1
+            assert timeout == 8
+            return {"status": "completed", "result": diagnostic}
         if path == "/api/diagnostics/answer":
             return {**diagnostic, "complete": True, "answered_count": 1, "question": None}
         if path == "/api/onboarding/confirm":
@@ -73,7 +77,7 @@ def test_non_beginner_journey_completes_diagnosis_plan_and_lesson(monkeypatch) -
 
     assert result["ok"] is True
     assert paths == [
-        "/api/onboarding/intent", "/api/onboarding/start", "/api/diagnostics/answer",
+        "/api/onboarding/intent", "/api/onboarding/diagnosis/start", "/api/diagnostics/answer",
         "/api/onboarding/confirm", "/api/plans/personalize", "/api/plans/confirm",
         "/api/lesson/generate",
     ]

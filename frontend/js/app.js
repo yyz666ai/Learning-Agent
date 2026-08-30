@@ -60,6 +60,7 @@
   }
   function showActivity(label, detail = "这一步完成后会告诉你接下来做什么。", phases = [], options = {}) {
     const panel = $("#activityStatus");
+    $("#activityProgressFill").parentElement.hidden = false;
     setText("#activityStatusLabel", label); setText("#activityStatusDetail", detail);
     setText("#activityCurrentStep", `当前：${detail.replace(/…+$/, "")}`);
     panel.hidden = false; panel.classList.add("is-active");
@@ -120,7 +121,21 @@
       "正在整理课后练习和项目目录…",
     ], { operation: "lesson", estimateSeconds: 180 });
   }
-  window.LearningActivity = { start: showActivity, startPlanGeneration, startLessonGeneration, finish: finishActivity };
+  function showDiagnosisActivity(job) {
+    window.clearInterval(activityPhaseTimer);
+    window.clearInterval(activityProgressTimer);
+    clearTimeout(showActivity.timer);
+    activityRun = null;
+    const panel = $("#activityStatus");
+    panel.hidden = false;
+    panel.classList.toggle("is-active", !["failed", "cancelled", "interrupted"].includes(job.status));
+    setText("#activityStatusLabel", job.status === "unknown" ? "正在重新连接" : "正在校准起点");
+    setText("#activityStatusDetail", "只用几道小题找到合适的第一课；用时取决于模型与网络。");
+    setText("#activityCurrentStep", window.DiagnosisJobs.statusText(job));
+    setText("#activityProgressText", "显示服务器最近一次状态；不估算完成百分比。");
+    $("#activityProgressFill").parentElement.hidden = true;
+  }
+  window.LearningActivity = { start: showActivity, startPlanGeneration, startLessonGeneration, finish: finishActivity, diagnosis: showDiagnosisActivity };
 
   function updateOutlinePageLabel() {
     const panel = $("#outlinePanel"); const label = $("#outlinePageLabel");
@@ -815,6 +830,12 @@
       $("#reminderEnabled").checked = Boolean(reminder.enabled);
       $("#reminderTime").value = reminder.time || "20:00";
       $("#reminderKind").value = reminder.kind || "both";
+      $("#reminderEnabled").disabled = reminder.notification_supported === false;
+      setText("#reminderCapability", reminder.message || "后台服务运行时，可在服务所在的 macOS 电脑接收系统通知；请允许系统通知权限。");
+      if (reminder.notification_supported === false) {
+        $("#reminderEnabled").checked = false;
+        showToast(reminder.message || "当前系统暂不支持桌面提醒；学习和复习不受影响。");
+      }
     } catch { /* The form keeps safe defaults when the service is unavailable. */ }
     $("#reminderDialog").showModal();
   }
@@ -832,7 +853,8 @@
         }),
       });
       if (!response.ok) throw new Error("提醒没有保存成功");
-      showToast($("#reminderEnabled").checked ? "每日提醒已保存" : "每日提醒已关闭");
+      const result = await response.json();
+      showToast(result.notification_supported === false ? (result.message || "当前系统暂不支持桌面提醒。") : ($("#reminderEnabled").checked ? "每日提醒已保存" : "每日提醒已关闭"));
       $("#reminderDialog").close();
     } catch (error) { showToast(error.message); }
   }
