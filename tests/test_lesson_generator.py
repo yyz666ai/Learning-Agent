@@ -16,6 +16,22 @@ from backend.lesson_generator import (
 from tests.test_curriculum import GO_PLAN
 
 
+def test_chapter_session_budget_is_not_mistaken_for_one_sitting():
+    from backend.lesson_generator import build_lesson_prompt
+    curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
+    chapter = curriculum.current_chapter()
+    chapter.estimated_sessions = 3
+    chapter.session_minutes = 40
+    chapter.homework_minutes = 30
+    prompt = build_lesson_prompt(curriculum, profile="零基础", recent_evidence=[], session_minutes=40)
+    assert "整章预计课次：3" in prompt
+    assert "课外练习预算：30" in prompt
+    assert "暂停点" in prompt
+    bundle = parse_lesson_response(model_lesson_json("package-main"), topic="Go", route="foundation_engineer", knowledge_point_id="package-main", session_minutes=40, chapter=chapter)
+    assert bundle.manifest.planned_sessions == 3
+    assert bundle.manifest.session_minutes == 40
+
+
 def model_lesson_json(knowledge_point_id: str, title: str = "package main 的作用") -> str:
     return json.dumps(
         {
@@ -27,11 +43,16 @@ def model_lesson_json(knowledge_point_id: str, title: str = "package main 的作
             "pages": [
                 {"id": "intuition", "type": "explain", "title": "先理解程序入口", "markdown": "把 package main 想成程序的门牌。"},
                 {"id": "example", "type": "example", "title": "看最小代码", "markdown": "读代码。", "code": "package main // 声明可运行程序包\nfunc main() {} // 程序从这里开始", "language": "go"},
-                {"id": "check", "type": "check", "title": "确认理解", "question": "哪个包可以直接运行？", "options": [{"id": "a", "label": "package util"}, {"id": "b", "label": "package main"}]},
-                {"id": "practice", "type": "practice", "title": "亲手运行", "markdown": "运行并保存输出。"},
+                {"id": "check", "type": "check", "title": "确认理解", "markdown": "func main 是程序入口。go run 构建并运行，go build 保留构建产物。", "question": "哪个包可以直接运行？", "options": [{"id": "a", "label": "package util"}, {"id": "b", "label": "package main"}]},
+                {"id": "practice", "type": "practice", "title": "亲手运行", "markdown": "用 go run 运行；用 go build 构建可执行文件并保存输出。"},
                 {"id": "mastery", "type": "mastery", "title": "提交本课成果", "markdown": "现在提交证据。"},
             ],
             "answer_keys": {"check": "b"},
+            "scope_evidence": [
+                {"knowledge_point_id": "package-main", "page_ids": ["intuition", "example"]},
+                {"knowledge_point_id": "func-main", "page_ids": ["example", "check"]},
+                {"knowledge_point_id": "go-run-go-build", "page_ids": ["check", "practice"]},
+            ],
         },
         ensure_ascii=False,
     )
@@ -96,8 +117,8 @@ def test_generator_prompt_contains_profile_point_prerequisites_evidence_and_time
     assert "adaptive-lesson-flow" in prompt
     assert "knowledge-curator" in prompt
     assert "concept-teaching" in prompt
-    assert "先读取上述 Skill" in prompt
-    assert "不要扫描用户历史、知识库或其他文件" in prompt
+    assert "只读取这些明确指定的 Skill/参考" in prompt
+    assert "不要扫描用户历史、整份知识库或其他文件" in prompt
     assert "answer_structure 和 common_omissions 必须是字符串数组" in prompt
     assert bundle.manifest.knowledge_point_id == curriculum.current_knowledge_point_id
     assert load_lesson_bundle(tmp_path, "learner", curriculum.current_knowledge_point_id) == bundle

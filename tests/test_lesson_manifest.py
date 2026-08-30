@@ -299,10 +299,16 @@ def test_output_completion_does_not_require_a_model_release(monkeypatch: pytest.
     )
     save_lesson_bundle(tmp_path, "offline-output", bundle)
     monkeypatch.setattr(main, "latest_release", lambda: None)
+    for page_id, answer in bundle.answer_keys.items():
+        checked = client.post('/api/lesson/check', json={
+            'user_id': 'offline-output', 'lesson_id': bundle.manifest.lesson_id,
+            'page_id': page_id, 'selected_option_id': answer, 'revision': bundle.public_manifest()['revision'],
+        })
+        assert checked.status_code == 200 and checked.json()['correct'] is True
 
     response = client.post(
         "/api/lesson/complete",
-        json={"user_id": "offline-output", "lesson_id": bundle.manifest.lesson_id, "action": "submit", "output_values": {"legacy-output": "ok"}, "quiz_attempts": [{"page_id": "check", "correct": True}]},
+        json={"user_id": "offline-output", "lesson_id": bundle.manifest.lesson_id, "action": "submit", "output_values": {"legacy-output": "ok"}, "revision": bundle.public_manifest()['revision']},
     )
 
     assert response.status_code == 200

@@ -35,9 +35,12 @@ def chat(
     thinking: bool = False,
     json_object: bool = False,
     timeout: int = 120,
+    raise_errors: bool = False,
 ) -> str:
     key = load_api_key()
     if not key:
+        if raise_errors:
+            raise RuntimeError("Missing DEEPSEEK_API_KEY")
         return "[错误] 缺少 DEEPSEEK_API_KEY"
 
     messages: list[dict] = []
@@ -70,4 +73,6 @@ def chat(
             data = json.loads(resp.read().decode("utf-8"))
         return data["choices"][0]["message"]["content"]
     except Exception as e:  # noqa: BLE001
+        if raise_errors:
+            raise RuntimeError("Model service unavailable") from e
         return f"[判题服务调用失败] {e}"

@@ -72,6 +72,9 @@
   }
 
   async function checkOption(page, option, button) {
+    const requestedManifest = state.manifest;
+    const requestedIndex = state.pageIndex;
+    const stillCurrent = () => state.manifest === requestedManifest && state.pageIndex === requestedIndex;
     [...byId("pageOptions").querySelectorAll("button")].forEach((item) => { item.disabled = true; });
     showQuestionFeedback("正在检查这道题…马上告诉你哪里对、下一步怎么做。 ");
     startActivity("正在检查这道题", "答案会显示在题目下方；不需要再去别处提交。 ");
@@ -79,9 +82,10 @@
       const response = await fetch("/api/lesson/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId, lesson_id: state.manifest.lesson_id, page_id: page.id, selected_option_id: option.id }),
+        body: JSON.stringify({ user_id: userId, lesson_id: state.manifest.lesson_id, revision: state.manifest.revision, page_id: page.id, selected_option_id: option.id }),
       });
       const result = await response.json();
+      if (!stillCurrent()) return;
       if (!response.ok) throw new Error(result.detail?.message || "暂时无法批改，请再试一次。");
       button.dataset.result = result.correct ? "correct" : "incorrect";
       state.quizAttempts = state.quizAttempts.filter((attempt) => attempt.page_id !== page.id);
@@ -91,13 +95,14 @@
       if (result.correct) {
         showQuestionFeedback(`${result.feedback || "答对了。"} 下一步：900ms 后自动进入下一页。`, "correct");
         finishActivity("答对了", "这一页已通过，马上进入下一小步。 ");
-        window.setTimeout(() => showPage(Math.min(state.pageIndex + 1, state.manifest.pages.length - 1)), 900);
+        window.setTimeout(() => { if (stillCurrent()) showPage(Math.min(requestedIndex + 1, requestedManifest.pages.length - 1)); }, 900);
       } else {
         showQuestionFeedback(`${result.feedback || "还差一点。"} 下一步：再选一次；需要提示可以点右侧“给我提示”。`, "incorrect");
         finishActivity("还差一点", "答案提示已经显示在题目下方，可以马上再试。 ");
         [...byId("pageOptions").querySelectorAll("button")].forEach((item) => { item.disabled = false; });
       }
     } catch (error) {
+      if (!stillCurrent()) return;
       state.onResult?.({ correct: false, verified: false, feedback: error.message });
       showQuestionFeedback(`暂时无法检查：${error.message}。下一步：点击选项重试。`, "incorrect");
       finishActivity("检查没有完成", "你的选择没有丢失，重新点击即可。 ");
@@ -107,8 +112,8 @@
 
   function renderQuestion(page) {
     const section = byId("pageQuestion");
-    section.hidden = !page.question;
-    if (!page.question) { byId("pageOptions").replaceChildren(); return; }
+    section.hidden = !page.question || !page.options?.length;
+    if (section.hidden) { byId("pageOptions").replaceChildren(); return; }
     byId("questionFeedback").hidden = true;
     setText("pageQuestionText", page.question);
     const buttons = (page.options || []).slice(0, 10).map((option, index) => {
@@ -124,7 +129,7 @@
   }
 
   function pageInstruction(page) {
-    if (page.type === "check" || page.question) return "直接点击一个选项。答对后会自动进入下一页；答错可以马上重选。";
+    if (page.type === "check" || (page.question && page.options?.length)) return "直接点击一个选项。答对后会自动进入下一页；答错可以马上重选。";
     if (page.type === "practice") return "这是课后练习，不是课堂门禁。打开练习文件夹自己完成；代码、结果或问题直接发到右侧输入栏。";
     if (page.type === "mastery" && state.manifest?.completion_mode === "choice") return "这个概念的必答题通过后，点击“完成这个概念”即可。";
     if (page.type === "mastery") return "课堂到这里结束。课后自己练；愿意讨论时，把代码、运行结果或问题直接发到右侧输入栏。";
@@ -134,7 +139,7 @@
 
   function renderPageInstruction(page) {
     byId("pageInstructionText").textContent = pageInstruction(page);
-    byId("pageInstruction").hidden = false;
+    byId("pageInstruction").hidden = /本页(?:请做|行动|任务)[：:]/.test((page.markdown || "").replace(/[*_`]/g, ""));
   }
 
   function homeworkPage() {
@@ -204,6 +209,7 @@
 
   function showPage(index) {
     if (!state.manifest) return;
+    if (index !== state.pageIndex && window.LessonEditor?.isOpen() && !window.LessonEditor.canLeave()) return;
     byId("reviewCardPanel").hidden = true;
     document.querySelector(".page-navigation").hidden = false;
     const requestedIndex = Math.max(0, Math.min(index, state.manifest.pages.length - 1));
@@ -269,16 +275,20 @@
   function applyManifest(payload) {
     byId("lessonLoadError").hidden = true;
     state.manifest = payload;
+    document.dispatchEvent(new CustomEvent("learning-agent:manifest-change", { detail: payload }));
     state.pageIndex = 0;
-    state.quizAttempts = [];
+    state.quizAttempts = Array.isArray(payload.quiz_attempts) ? payload.quiz_attempts.filter(attempt => attempt.correct === true) : [];
     state.completionDecision = null;
     byId("completionResult").hidden = true;
     byId("lessonPrimaryAction").hidden = true;
     byId("chatPrimaryAction").hidden = true;
     byId("nextPageBtn").hidden = false;
     setText("lessonCounter", `本章 1 / ${payload.pages.length}`);
-    setText("lessonRemaining", `预计还需 ${payload.progress.remaining_minutes} 分钟`);
-    setText("remainingTime", `预计还需 ${payload.progress.remaining_minutes} 分钟`);
+    const timeLabel = payload.planned_sessions
+      ? `本章约 ${payload.planned_sessions} 次 · 每次 ${payload.session_minutes || payload.progress.remaining_minutes} 分钟`
+      : `建议每次 ${payload.session_minutes || payload.progress.remaining_minutes} 分钟 · 本章课次待估`;
+    setText("lessonRemaining", timeLabel);
+    setText("remainingTime", timeLabel);
     showPage(0);
     loadLessonNotes();
     return payload;
@@ -368,7 +378,7 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: userId, lesson_id: state.manifest.lesson_id, action,
-          quiz_attempts: state.quizAttempts,
+          quiz_attempts: state.quizAttempts, revision: state.manifest.revision,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -384,6 +394,11 @@
   async function runPrimaryAction() {
     const decision = state.completionDecision;
     if (!decision) return;
+    if (decision.verdict !== "advance") {
+      await global.LessonEditor.propose(decision.feedback || "请用更循序渐进的方式重新讲解当前课件", "revision");
+      return;
+    }
+    if (global.LessonEditor && !global.LessonEditor.canLeave()) return;
     if (decision.verdict === "advance" && !decision.next_knowledge_point_id) {
       byId("planDialog").showModal();
       document.dispatchEvent(new CustomEvent("learning-agent:course-complete", { detail: decision }));
@@ -430,6 +445,8 @@
       setWidth(window.innerWidth - event.clientX);
     });
     splitter.addEventListener("pointerup", (event) => { splitter.releasePointerCapture(event.pointerId); document.body.style.userSelect = ""; });
+    splitter.addEventListener("pointercancel", () => { document.body.style.userSelect = ""; });
+    splitter.addEventListener("lostpointercapture", () => { document.body.style.userSelect = ""; });
     splitter.addEventListener("keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
       event.preventDefault();

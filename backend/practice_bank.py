@@ -8,17 +8,30 @@ import os
 import re
 import shutil
 import tempfile
+from functools import wraps
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 try:
+    from .lesson_context import question_revision
     from .lesson_manifest import LessonManifest
 except ImportError:  # Support `python backend/main.py`.
+    from backend.lesson_context import question_revision
     from backend.lesson_manifest import LessonManifest
 
 USER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 REVIEW_INTERVAL_DAYS = {"forgot": 1, "hard": 3, "easy": 7}
+
+
+def _project_serialized(method):
+    """Serialize complete bank read/modify/write operations with lesson commits."""
+    @wraps(method)
+    def locked(self, user_id, *args, **kwargs):
+        from .generation_transaction import project_lock
+        with project_lock(self.server_root, user_id):
+            return method(self, user_id, *args, **kwargs)
+    return locked
 
 
 def _now() -> str:
@@ -63,6 +76,7 @@ class PracticeBankStore:
         _atomic_json(self._path(user_id, str(record["id"])), record)
         return record
 
+    @_project_serialized
     def register_lesson(
         self,
         user_id: str,
@@ -72,7 +86,13 @@ class PracticeBankStore:
         explanations: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         """Register a whole lesson atomically, including every generated item."""
-
+        if explanations is None and manifest.content_version:
+            from .lesson_versions import LessonVersionStore
+            versions = LessonVersionStore(self.server_root, user_id, manifest.knowledge_point_id)
+            if versions.pointer.exists():
+                current = versions.load()
+                if current.manifest.content_version == manifest.content_version:
+                    explanations = current.explanations
         root = self._root(user_id)
         transaction = Path(tempfile.mkdtemp(prefix="learning-agent-practice-bank-"))
         backup = transaction / "items"
@@ -122,14 +142,24 @@ class PracticeBankStore:
             if page.question and page.options:
                 item_id = f"lesson:{manifest.lesson_id}:{page.id}"
                 previous = self._read(self._path(user_id, item_id))
+                revision = question_revision(page.question, [option.model_dump() for option in page.options], keys.get(page.id) or previous.get("correct_option_id") or "", code=page.code, markdown=page.markdown)
+                old_revision = previous.get("question_revision") or question_revision(str(previous.get("prompt") or ""), previous.get("options") or [], str(previous.get("correct_option_id") or ""), code=str(previous.get("code") or ""), markdown=str(previous.get("markdown") or ""))
+                # Preserve old evidence, but bind it to the question actually
+                # answered. Reusing a page ID never unlocks a rewritten quiz.
+                attempts = [{**attempt, "question_revision": attempt.get("question_revision") or old_revision} for attempt in previous.get("attempts", [])]
+                matching_attempts = [attempt for attempt in attempts if attempt.get("question_revision") == revision]
+                restored_status = ('mastered' if matching_attempts[-1].get('correct') else 'incorrect') if matching_attempts else 'unattempted'
                 record = {
                     **previous,
                     "id": item_id,
                     "source": "classroom",
+                    "question_revision": revision,
                     "kind": "choice",
                     "title": page.title,
                     "normalized_text": page.question,
                     "prompt": page.question,
+                    "code": page.code,
+                    "markdown": page.markdown,
                     "lesson_id": manifest.lesson_id,
                     "page_id": page.id,
                     "options": [option.model_dump() for option in page.options],
@@ -138,13 +168,13 @@ class PracticeBankStore:
                         (option.label for option in page.options if option.id.casefold() == str(keys.get(page.id) or "").casefold()),
                         previous.get("answer", ""),
                     ),
-                    "explanation": private_explanations.get(page.id) or page.completion_criteria or previous.get("explanation", ""),
+                    "explanation": private_explanations.get(page.id) or page.completion_criteria or (previous.get("explanation", "") if old_revision == revision else ""),
                     "practice_path": page.practice_path or manifest.practice_path,
-                    "status": previous.get("status", "unattempted"),
+                    "status": previous.get("status", "unattempted") if old_revision == revision else restored_status,
                     "attempt_count": int(previous.get("attempt_count") or 0),
                     "wrong_count": int(previous.get("wrong_count") or 0),
                     "needs_review": bool(previous.get("needs_review", False)),
-                    "attempts": list(previous.get("attempts") or []),
+                    "attempts": attempts,
                     "review_history": list(previous.get("review_history") or []),
                     "review_count": int(previous.get("review_count") or 0),
                     "last_reviewed": previous.get("last_reviewed"),
@@ -212,6 +242,7 @@ class PracticeBankStore:
             records.append(self._save(user_id, record))
         return records
 
+    @_project_serialized
     def review_session(
         self,
         user_id: str,
@@ -242,6 +273,7 @@ class PracticeBankStore:
             })
         return {"cards": cards, "total": len(cards), "due_count": len(candidates)}
 
+    @_project_serialized
     def reveal_review_item(self, user_id: str, item_id: str) -> dict[str, Any]:
         item = self._read(self._path(user_id, item_id))
         if not item or not item.get("answer"):
@@ -256,6 +288,7 @@ class PracticeBankStore:
             "last_wrong": last_wrong,
         }
 
+    @_project_serialized
     def rate_review_item(
         self,
         user_id: str,
@@ -289,6 +322,7 @@ class PracticeBankStore:
         })
         return self._save(user_id, item)
 
+    @_project_serialized
     def record_choice_attempt(
         self,
         user_id: str,
@@ -304,7 +338,7 @@ class PracticeBankStore:
         if not record:
             raise KeyError(item_id)
         attempts = list(record.get("attempts") or [])
-        attempts.append({"selected_option_id": selected_option_id, "correct": bool(correct), "at": _now()})
+        attempts.append({"selected_option_id": selected_option_id, "correct": bool(correct), "at": _now(), "question_revision": record.get("question_revision")})
         record.update({
             "attempts": attempts,
             "attempt_count": len(attempts),
@@ -315,6 +349,7 @@ class PracticeBankStore:
         })
         return self._save(user_id, record)
 
+    @_project_serialized
     def add_supplemental_questions(
         self,
         user_id: str,
@@ -367,11 +402,24 @@ class PracticeBankStore:
             "item_ids": added_ids,
         }
 
+    @_project_serialized
     def list_items(self, user_id: str) -> list[dict[str, Any]]:
         root = self._root(user_id)
         if not root.exists():
             return []
         records = [self._read(path) for path in sorted(root.glob("*.json"))]
+        # Retired questions remain available with their evidence. Their active
+        # association comes from the single committed lesson pointer, never
+        # from whichever bank record happened to be written last.
+        from .lesson_versions import LessonVersionStore
+        active = {}
+        version_root = root.parent.parent / 'lessons' / '.versions'
+        for pointer in version_root.glob('*/current.json'):
+            bundle = LessonVersionStore(self.server_root, user_id, pointer.parent.name).load()
+            active[bundle.manifest.lesson_id] = {page.id for page in bundle.manifest.pages}
+        for record in records:
+            if record.get('lesson_id') in active:
+                record['current_lesson'] = record.get('page_id') in active[record['lesson_id']]
         return sorted((item for item in records if item), key=lambda item: str(item.get("created_at") or ""))
 
     def read_bank(self, user_id: str) -> dict[str, Any]:

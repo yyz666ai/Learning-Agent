@@ -352,6 +352,13 @@ def test_lesson_complete_api_returns_named_next_step(monkeypatch, tmp_path: Path
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/codex-release"))
     monkeypatch.setattr(main, "chat", lambda *_: decision_json("advance"))
 
+    for page_id, answer in bundle.answer_keys.items():
+        checked = client.post('/api/lesson/check', json={
+            'user_id': 'progress-user', 'lesson_id': bundle.manifest.lesson_id,
+            'page_id': page_id, 'selected_option_id': answer, 'revision': bundle.public_manifest()['revision'],
+        })
+        assert checked.status_code == 200 and checked.json()['correct'] is True
+
     response = client.post(
         "/api/lesson/complete",
         json={
@@ -359,7 +366,7 @@ def test_lesson_complete_api_returns_named_next_step(monkeypatch, tmp_path: Path
             "lesson_id": bundle.manifest.lesson_id,
             "action": "submit",
             "evidence": "go run main.go 成功；package main 是程序入口。",
-            "quiz_attempts": [{"page_id": "check", "correct": True}],
+            "revision": bundle.public_manifest()['revision'],
         },
     )
 

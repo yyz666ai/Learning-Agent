@@ -28,17 +28,20 @@ Learning Agent 会先理解你想学什么、目前会多少、最后想达到�
 | 能力 | 当前行为 |
 | --- | --- |
 | Agentic Onboarding | 从自由输入做意图识别与 slot filling，只补齐真正影响计划的信息 |
-| 个性化 Plan | 根据目标、基础、节奏和最终成果生成 `plan.md`，确认后才进入课程 |
+| 个性化 Plan | 根据目标、基础、节奏和最终成果生成 `plan.md`；章节课次与单次分钟分开记录，多次课章节不按知识点数量累加预算 |
 | 自适应 HTML PPT | 按知识密度决定页数，支持 Markdown、代码高亮、Mermaid 与页面内行动提示 |
 | 课堂与课后分离 | 课堂点击选择题检验理解；课后练习保存在真实项目目录，不阻塞下一章 |
 | 统一题库 | 自动收录课堂题、错题、课后作业、追加练习、重点问题和面试题 |
 | Anki 式复习 | 题库内点击“开始复习”，按“没想起来 / 稍微有点困难 / 顺利”安排下次复习 |
-| 对话追加练习 | 在课程中直接说“针对这个点再出几道题”，生成 3 道经校验的题并加入题库 |
+| 课件编辑 | 默认只读；进入编辑后修改当前页标题、Markdown 和教学代码，预览后保存，支持 H1/H2/H3、加粗、斜体、高亮和下划线 |
+| 确认式 AI 修订 | 修改讲义、修订题目和追加练习先生成提议；确认生成候选稿，再检查差异并确认应用，普通答疑不替换课件 |
+| 历史与 Markdown 导出 | 手动保存和 AI 应用保留版本；可撤销或恢复历史，导出同版本可读 Markdown，不包含私有判题答案键 |
+| 对话追加练习 | 在课程中说明题型和数量，通过提议、候选、应用流程追加选择题或编程／项目练习，并同步题库 |
 | 面试训练 | 可导入自有题；没有题时，每章仍生成带参考答案、回答结构与追问的简答题 |
 | 流式交互 | FastAPI + SSE 持续返回消息，并显示长任务的阶段、进度与预计等待时间 |
 | 知识库共创 | Skills、知识原子、路线与题目可通过 PR 扩充；复核后的内容可进入公共知识库 |
 
-完整产品范围见 [产品需求文档](product/PRD.md)，不同用户的完整路径见 [工作流说明](product/WORKFLOWS.md)；如果只想看一份总览，可直接打开 [产品与系统总说明 HTML](product/LEARNING_AGENT_SYSTEM_GUIDE.html)。模型、阿里云年度成本以及 Codex / Skills / Python / 知识库的真实执行边界见 [成本与执行工作流](product/COST_AND_EXECUTION_WORKFLOW.md)；知识原子动态组合、个性化 HTML PPT、Plan 降本与云端收费的目标架构见 [知识库与个性化课件设计](product/KNOWLEDGE_BASE_PERSONALIZED_DECK_DESIGN.md)。
+完整产品范围见 [产品需求文档](product/PRD.md)，不同用户的完整路径见 [工作流说明](product/WORKFLOWS.md)；如果只想看一份总览，可直接阅读 [产品与系统总说明](product/LEARNING_AGENT_SYSTEM_GUIDE.md)。模型、阿里云年度成本以及 Codex / Skills / Python / 知识库的真实执行边界见 [成本与执行工作流](product/COST_AND_EXECUTION_WORKFLOW.md)；知识原子动态组合、个性化 HTML PPT、Plan 降本与云端收费的目标架构见 [知识库与个性化课件设计](product/KNOWLEDGE_BASE_PERSONALIZED_DECK_DESIGN.md)。
 
 <div align="center">
   <img src="assets/learning-agent-ui.jpg" width="920" alt="Learning Agent interface" />
@@ -102,7 +105,7 @@ DEEPSEEK_API_KEY=你的_DeepSeek_API_Key
 LEARNING_AGENT_HOST=0.0.0.0 ./run.sh
 ```
 
-再通过服务器域名或局域网 IP 的 `8787` 端口访问。反向代理应允许普通短请求；Plan 与 HTML PPT 已在后台生成，网页通过短轮询读取结果，不要求代理维持数分钟的单次连接。
+再通过服务器域名或局域网 IP 的 `8787` 端口访问。Plan 与 HTML PPT 初次生成使用后台任务和短轮询；课件修订候选目前使用同步请求，反向代理仍需为该请求保留足够超时。当前编辑事务按单服务进程设计，不宣称多 worker 或多实例并发安全。
 
 ## 怎么用
 
@@ -115,6 +118,16 @@ LEARNING_AGENT_HOST=0.0.0.0 ./run.sh
 7. 下次打开页面，直接从左侧已有学习项目继续。
 
 本地记录保存在 `userdir/`，关闭网页或重启服务不会清空。该目录不会提交到 GitHub。
+
+### 修改课件与恢复版本
+
+- 默认只读仍可翻页、选文提问和答题。点击“编辑”后才出现格式工具与草稿；保存产生新版本，取消不应用草稿。代码单独编辑，不套用正文格式。
+- 修改题干、选项或答案走右侧修订提议，不直接编辑结构化题目。先确认生成，再查看候选差异并应用；生成授权不等于替换授权。
+- “撤销上次修改”和历史恢复会恢复课件及配套答案；不会删除学习者代码或历史作答。题目改变后不沿用旧题通过状态，恢复旧题时按相应题目版本恢复证据。
+- Markdown 导出含版本与页面 ID，可在外部阅读；不是自动导入通道。外部修改不会自行覆盖活动课件，高亮／下划线在其他阅读器中的显示取决于扩展支持。
+- 一章可以包含多次课；课内预算与课后练习分开。允许继续浏览下一章不等于已经掌握课后任务。
+
+本次实现、真实生成与记录回放的区别、浏览器验证进度和已知边界见 [发布验证报告](projects/learning-agent/design/outputs/SAFE_EDITING_RELEASE_VALIDATION.md)。自动化测试通过不保证所有未来模型输出或所有学习路线均正确。
 
 ### workspace 发布快照
 
@@ -140,6 +153,7 @@ Learning-Agent/
 
 ```bash
 .venv/bin/python -m pytest -q
+node --test tests/*.test.cjs
 .venv/bin/python workspace/dev/tools/validate_workspace.py
 ```
 

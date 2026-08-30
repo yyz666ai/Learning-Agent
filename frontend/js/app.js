@@ -198,87 +198,30 @@
   }
 
   function isLessonRevisionRequest(message) {
-    return /(PPT|讲义|课件|这一页|这节课)/i.test(message) && /(修改|重做|重新生成|再生成|太浅|太深|太难|太长|看不懂|加.*图|加.*代码)/.test(message);
+    return window.LessonEditor.isRevisionRequest(message, Boolean(window.LessonSelection?.get()));
   }
 
   function isSupplementalPracticeRequest(message) {
-    return /(再出|多出|追加|多练|再练).{0,8}(题|练习)|针对.{0,8}(题|练习)/.test(message);
+    if (/(不要|不用|别|不需要|如果|是否)/.test(message)) return false;
+    return /(再出|多出|追加|多练|再练|再给|帮我出).{0,24}(题|练习|作业|项目)|针对.{0,8}(题|练习)/.test(message);
   }
 
-  async function generateSupplementalPractice(instruction) {
-    state.busy = true;
-    addMessage("user", instruction);
-    $("#sendBtn").disabled = true;
-    window.LearningActivity.start("正在生成针对性练习", "正在读取出题规则并检查每道题的答案…");
-    try {
-      const response = await fetch("/api/practice/supplemental/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: USER_ID,
-          module: state.context?.current_task || state.context?.topic || instruction,
-          level: state.context?.level || "beginner",
-          count: 3,
-          lesson_id: window.ArtifactController?.currentLessonId?.() || null,
-          append_to_lesson: true,
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || "练习题暂时没有生成成功");
-      if (result.appended_to_lesson) {
-        const manifest = await window.ArtifactController?.loadCurrentLesson?.();
-        const firstItemId = String(result.item_ids?.[0] || "");
-        const firstPageId = firstItemId.split(":").pop();
-        const firstAdded = manifest?.pages?.findIndex((page) => String(page.id || "") === firstPageId);
-        if (firstAdded >= 0) window.ArtifactController?.showPage?.(firstAdded);
-        addMessage("agent", `已把 **${result.added_count || 0} 道针对性练习**追加到当前讲义末尾，也同步进入题库。现在直接在左侧 PPT 点击作答即可。`);
-      } else {
-        addMessage("agent", `已把 **${result.added_count || 0} 道针对性练习**加入题库。现在可以直接开始做；重复题不会再次收录。`);
-      }
-      await window.InterviewBankController?.load?.();
-      if (!result.appended_to_lesson) await window.InterviewBankController?.startReview?.();
-      window.LearningActivity.finish("针对性练习已准备好", result.appended_to_lesson ? "已定位到讲义中的第一道追加题。" : "题目已经加入题库，并打开复习卡。 ");
-    } catch (error) {
-      addMessage("agent", `这次练习没有生成成功：${error.message}。你可以直接重新发送刚才的要求。`);
-      window.LearningActivity.finish("练习暂时没有生成", "你的要求已经保留，可以直接重试。 ");
-    } finally {
-      state.busy = false;
-      $("#sendBtn").disabled = false;
-    }
-  }
-
-  async function reviseCurrentLesson(instruction) {
-    state.busy = true;
-    addMessage("user", instruction);
-    $("#sendBtn").disabled = true;
-    window.LearningActivity.start("正在按你的要求重做讲义", "Agent 会读取 lesson-revision Skill；新版本通过校验后才替换旧讲义。 ");
-    try {
-      const response = await fetch("/api/lesson/remediate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: USER_ID, remediation: instruction, force: true }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail?.message || "讲义修改暂时没有完成。 ");
-      await window.ArtifactController.loadCurrentLesson();
-      addMessage("agent", "讲义已经按你的要求重新生成，并从第 1 页打开。你可以继续告诉我哪里太浅、太快，或需要更多图和代码。");
-      window.LearningActivity.finish("新版讲义已准备好", "新版本已经通过结构校验，可以从第 1 页重新查看。 ");
-    } catch (error) {
-      addMessage("agent", `这次没有生成出合格的新讲义：${error.message}\n\n旧讲义仍然保留，你可以换一种更具体的说法再试。`);
-      window.LearningActivity.finish("讲义没有被替换", "旧讲义仍然保留，你的修改意见也在对话里。 ");
-    } finally {
-      state.busy = false;
-      $("#sendBtn").disabled = false;
-    }
-  }
 
   async function sendMessage(message, { echoUser = true } = {}) {
     const value = message.trim();
-    if (!value || state.busy) return;
-    if (state.ready && isSupplementalPracticeRequest(value)) {
-      await generateSupplementalPractice(value);
+    if (!value || state.busy || window.LessonEditor?.isBusy()) return;
+    const confirmedAction = window.LessonEditor?.pendingConfirmation(value);
+    if (state.ready && confirmedAction) {
+      if (echoUser) addMessage("user", value);
+      await window.LessonEditor.proposalAction(confirmedAction);
       return;
     }
-    if (state.ready && isLessonRevisionRequest(value)) {
-      await reviseCurrentLesson(value);
+    const reference = window.LessonSelection?.get() || null;
+    if (state.ready && (isSupplementalPracticeRequest(value) || isLessonRevisionRequest(value))) {
+      if (echoUser) addMessage("user", value);
+      const created = await window.LessonEditor.propose(value, isSupplementalPracticeRequest(value) ? "supplemental" : "revision", reference);
+      addMessage("agent", created ? "我先列出修改范围。请确认生成修改稿；你检查并点击「应用修改」后，才会替换当前课件。之后仍可撤销。" : "修改请求尚未建立，原课件没有变化。请查看课件上方提示后重试。");
+      $("#sendBtn").disabled = false;
       return;
     }
     state.busy = true;
@@ -286,6 +229,7 @@
     if (!echoUser && history.at(-1)?.role === "user" && history.at(-1)?.content === value) history.pop();
     if (echoUser) addMessage("user", value);
     const assistant = { role: "agent", content: "" };
+    let responseMode = state.chatMode || "learning";
     const node = messageElement(assistant, true);
     $("#chatFeed").append(node);
     const output = node.querySelector(".markdown-body");
@@ -294,9 +238,12 @@
     try {
       const response = await fetch("/api/chat/stream", {
         method: "POST", headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ user_id: USER_ID, message: value, history, lesson_id: window.ArtifactController?.currentLessonId?.() || null }),
+        body: JSON.stringify({ user_id: USER_ID, message: value, history, reference, lesson_id: window.ArtifactController?.currentLessonId?.() || null }),
       });
-      if (!response.ok || !response.body) throw new Error("连接暂时中断，请稍后再试。");
+      if (!response.ok || !response.body) {
+        const failure = await response.json().catch(() => ({}));
+        throw new Error(failure.detail?.message || "连接暂时中断，请稍后再试。");
+      }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
       while (true) {
         const { value: chunk, done } = await reader.read();
@@ -306,16 +253,21 @@
           const packet = parseSSEBlock(block); if (!packet) return;
           if (packet.event === "message.delta") { assistant.content += packet.data.text || ""; output.innerHTML = window.MarkdownRenderer.render(assistant.content); }
           if (packet.event === "notes.updated") document.dispatchEvent(new CustomEvent("learning-agent:notes-updated", { detail: packet.data }));
+          if (packet.event === "chat.mode") responseMode = packet.data.mode;
           if (packet.event === "error") throw new Error(packet.data.message || "学习引擎暂时不可用。");
         });
         $("#chatFeed").scrollTop = $("#chatFeed").scrollHeight;
         if (done) break;
       }
       node.classList.remove("is-streaming");
+      if (!assistant.content.trim()) throw new Error("没有收到完整回答，请重试。");
       window.MarkdownRenderer.hydrate(output);
       state.messages.push(assistant); saveMessages();
+      state.chatMode = responseMode;
+      if (reference && JSON.stringify(window.LessonSelection?.get()) === JSON.stringify(reference)) window.LessonSelection.clear();
       window.LearningActivity.finish("讲解已送达", "可以继续提问，或按讲义里的下一步操作。 ");
     } catch (error) {
+      if (!$("#chatInput").value.trim()) $("#chatInput").value = value;
       node.remove(); addMessage("agent", `连接没有成功：${error.message}\n\n你刚才的内容还在，可以直接重试。`);
       window.LearningActivity.finish("这次没有完成", "你的输入已保留，点击发送即可重试。");
     } finally {
@@ -336,7 +288,7 @@
     setText("#planMeta", "计划会根据练习证据持续调整");
     setText("#planProgress", `${progress}%`); $("#progressFill").style.width = `${progress}%`;
     setText("#completedLessons", knowledge.total ? `${knowledge.completed || 0} / ${knowledge.total} 知识点` : `${activeIndex} / ${stages.length} 阶段`);
-    setText("#masteryText", `掌握 ${progress}%`);
+    setText("#masteryText", `课堂进度 ${progress}%`);
     setText("#remainingTime", `预计还需 ${context.session_minutes || 25} 分钟`);
     setText("#dueReviewCount", `${context.due_review_count || 0} 个知识点`);
     setText("#coachContext", context.current_task || `正在学习：${context.topic}`);
@@ -414,6 +366,7 @@
   }
 
   async function openLearningProject(project, button = null) {
+    if (!window.LessonEditor?.canLeave()) return;
     if (button) button.disabled = true;
     showActivity(project.current ? "正在打开当前学习" : "正在切换学习项目", "大纲、讲义和进度会一起恢复。");
     try {
@@ -481,6 +434,7 @@
   }
 
   async function startNewLearningProject() {
+    if (!window.LessonEditor?.canLeave()) return;
     setProjectSwitcherOpen(false);
     window.OnboardingController.stop?.();
     const hasCurrent = Boolean(state.context);
@@ -494,6 +448,7 @@
   }
 
   async function confirmProjectDeletion() {
+    if (!window.LessonEditor?.canLeave()) return;
     const project = state.selectedProject;
     if (!project) return;
     const button = $("#confirmProjectDeleteBtn");
@@ -571,6 +526,8 @@
   }
 
   async function enterLearning() {
+    window.LessonSelection?.clear();
+    state.chatMode = "learning";
     window.LearningActivity.start("正在准备讲义", "先读取你的大纲和进度，再生成当前这一小节。");
     try {
       const response = await fetch(`/api/learning-context?user_id=${encodeURIComponent(USER_ID)}`);
@@ -587,7 +544,19 @@
         addMessage("agent", result.feedback);
         celebrateVerifiedSuccess(result);
       });
-      if (!state.messages.some((message) => message.role === "agent" && /第一课|开讲/.test(message.content))) {
+      const lessonId = window.ArtifactController.currentLessonId?.();
+      if (lessonId) {
+        const historyResponse = await fetch(`/api/chat/history?user_id=${encodeURIComponent(USER_ID)}&lesson_id=${encodeURIComponent(lessonId)}`).catch(() => null);
+        if (historyResponse?.ok) {
+          const saved = await historyResponse.json();
+          if (saved.messages?.length) {
+            state.chatMode = [...saved.messages].reverse().find(item => item.role === "assistant")?.chat_mode || "learning";
+            state.messages = saved.messages.map(item => ({role: item.role === "user" ? "user" : "agent", content: item.content}));
+            renderMessages();
+          }
+        }
+      }
+      if (!state.messages.length) {
         addMessage("agent", "第一课已经打开。先看讲义中的第一小步；遇到题目直接点击，答案会在题目下方立即出现。", true);
       }
       window.LearningActivity.finish("讲义已准备好", "从第 1 页开始；最后一页会明确告诉你在哪里提交。 ");
@@ -598,6 +567,8 @@
   }
 
   async function beginOnboarding(archiveCurrent = false, initialTopic = "") {
+    window.LessonSelection?.clear();
+    state.chatMode = "learning";
     state.startupGateActive = false;
     removePlanConversationMessage();
     if (archiveCurrent) {
@@ -631,6 +602,11 @@
       restorePersistedIntent: !archiveCurrent && !initialTopic,
       addAgent: (content) => addMessage("agent", content),
       addUser: (content) => addMessage("user", content),
+      restoreHistory: (history) => {
+        state.messages = history.filter((item) => ["user", "assistant", "agent"].includes(item.role) && typeof item.content === "string")
+          .map((item) => ({ role: item.role === "user" ? "user" : "agent", content: item.content }));
+        renderMessages(); saveMessages();
+      },
       onIntentReady: async () => {
         $("#returnCurrentCourseBtn").hidden = !archiveCurrent;
         $("#promptChips").hidden = true;
@@ -865,16 +841,18 @@
     window.InterviewBankController?.init({ userId: USER_ID, addUser: (content) => addMessage("user", content), addAgent: (content) => addMessage("agent", content), showToast });
     $("#chatForm").addEventListener("submit", async (event) => {
       event.preventDefault(); const input = $("#chatInput"); const value = input.value; if (!value.trim()) return;
+      if (state.busy || window.LessonEditor?.isBusy()) return;
       input.value = "";
       try {
-        if (window.OnboardingController.active) await window.OnboardingController.handleText(value);
+        if (state.ready && (window.LessonSelection?.get() || state.chatMode === "interview" || window.LessonEditor?.pendingConfirmation(value) || isLessonRevisionRequest(value) || isSupplementalPracticeRequest(value))) await sendMessage(value);
+        else if (window.OnboardingController.active) await window.OnboardingController.handleText(value);
         else if (state.startupGateActive || state.ready) {
           await beginOnboarding(true, value);
         }
         else await sendMessage(value);
       } catch (error) { showToast(error.message); input.value = value; }
     });
-    $("#chatInput").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("#chatForm").requestSubmit(); } });
+    $("#chatInput").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); $("#chatForm").requestSubmit(); } });
     $$("[data-prompt]").forEach((button) => button.addEventListener("click", () => sendMessage(button.dataset.prompt)));
     $("#settingsBtn").addEventListener("click", () => $("#settingsDialog").showModal());
     $("#projectMobileBtn").addEventListener("click", toggleProjectSwitcher);

@@ -18,8 +18,14 @@
     pendingQuestionSlot: null, lastDiagnosticQuestionId: null, diagnosisPrefaced: false,
     busy: false, confirmationResult: null, generationId: null,
     existingProject: null, existingDecision: null,
+    sessionId: null, revision: null, epoch: 0, choiceVersion: 0,
   };
   const byId = (id) => document.getElementById(id);
+  let requestSequence = 0;
+  function newRequestId() {
+    // Plain HTTP self-hosting may not expose randomUUID; these are correlation IDs.
+    return global.crypto?.randomUUID?.() || `intent-${Date.now()}-${++requestSequence}-${Math.random().toString(36).slice(2)}`;
+  }
 
   function request(path, payload, options = {}) {
     return fetch(path, {
@@ -95,7 +101,7 @@
   function addUser(content) { state.callbacks.addUser?.(content); }
   function setBusy(value) {
     state.busy = value;
-    [...byId("inlineChoices").querySelectorAll("button")].forEach((button) => { button.disabled = value; });
+    [...byId("inlineChoices").querySelectorAll("button, textarea")].forEach((button) => { button.disabled = value; });
     byId("sendBtn").disabled = value;
   }
   function clearError() { byId("onboardingError").hidden = true; }
@@ -106,12 +112,13 @@
   }
 
   function intentChoice(option, index) {
+    const version = state.choiceVersion;
     const row = document.createElement("div"); row.className = "intent-choice-row";
     const button = document.createElement("button"); button.type = "button"; button.className = "inline-choice";
     const badge = document.createElement("span"); badge.className = "inline-choice-index"; badge.textContent = String.fromCharCode(65 + index);
     const title = document.createElement("strong"); title.textContent = option.label;
     button.append(badge, title);
-    button.addEventListener("click", () => choose(option));
+    button.addEventListener("click", () => version === state.choiceVersion && choose(option));
     const detail = document.createElement("button"); detail.type = "button"; detail.className = "choice-detail";
     detail.setAttribute("aria-label", `了解「${option.label}」`);
     const detailIcon = document.createElement("i"); detailIcon.className = "bi bi-info-circle"; detailIcon.setAttribute("aria-hidden", "true");
@@ -124,27 +131,53 @@
   }
 
   function regularChoice(option, index) {
+    const version = state.choiceVersion;
     const button = document.createElement("button"); button.type = "button"; button.className = "inline-choice";
     const badge = document.createElement("span"); badge.className = "inline-choice-index"; badge.textContent = String.fromCharCode(65 + index);
     const title = document.createElement("strong"); title.textContent = option.label;
     button.append(badge, title);
-    button.addEventListener("click", () => choose(option));
+    button.addEventListener("click", () => version === state.choiceVersion && choose(option));
     return button;
   }
 
   function showChoices(options, { hint = "点一下就可以", progress = "", compact = false, intent = false } = {}) {
+    state.choiceVersion += 1;
     const safeOptions = intent ? options.slice(0, 3) : options.slice(0, 10);
     byId("choiceTrayHint").textContent = hint;
     byId("choiceProgress").textContent = progress;
     byId("inlineChoices").replaceChildren(...safeOptions.map((option, index) => (
       intent ? intentChoice(option, index) : regularChoice(option, index)
     )));
+    if (intent) byId("inlineChoices").append(intentInputRow());
     byId("choiceTray").classList.toggle("is-plan-confirmation", compact);
     byId("choiceTray").classList.toggle("is-intent-question", intent);
     byId("choiceTray").hidden = false;
   }
 
+  function intentInputRow() {
+    const version = state.choiceVersion;
+    const row = document.createElement("div"); row.className = "intent-input-row";
+    const input = document.createElement("textarea"); input.rows = 1;
+    input.placeholder = "直接补充你的需求…";
+    input.setAttribute("aria-label", "补充你的实际需求，Enter 发送");
+    const send = document.createElement("button"); send.type = "button";
+    send.className = "intent-input-send"; send.textContent = "发送";
+    const submit = async () => {
+      if (state.busy || version !== state.choiceVersion || !input.value.trim()) return;
+      const text = input.value.trim();
+      await handleText(text);
+    };
+    send.addEventListener("click", submit);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+        event.preventDefault(); return submit();
+      }
+    });
+    row.append(input, send); return row;
+  }
+
   function hideChoices() {
+    state.choiceVersion += 1;
     byId("choiceTray").hidden = true;
     byId("choiceTrayQuestion").hidden = true;
     byId("choiceTrayQuestion").textContent = "";
@@ -163,10 +196,18 @@
   function recentIntentHistory() { return state.intentHistory.slice(-8); }
 
   async function restoreIntentState() {
+    const epoch = state.epoch;
     try {
       const response = await fetch(`/api/onboarding/intent-state?user_id=${encodeURIComponent(userId)}`);
       if (!response.ok) return false;
       const persisted = await response.json();
+      if (epoch !== state.epoch || !state.active) return true;
+      state.sessionId = persisted.session_id || state.sessionId;
+      state.revision = persisted.revision ?? null;
+      state.intentHistory = persisted.history || [];
+      if (state.intentHistory.length && ["clarify", "interview_bank_intake"].includes(persisted.action)) {
+        state.callbacks.restoreHistory?.(state.intentHistory);
+      }
       state.slots = { ...EMPTY_SLOTS, ...(persisted.slots || {}) };
       state.topic = state.slots.topic || "";
       if (persisted.action === "interview_bank_intake") {
@@ -174,7 +215,7 @@
           addAgent(`已恢复 ${state.slots.interview_question_count} 道已入库面试题，继续生成针对性计划。`);
           await analyzeIntent(
             `已经收录 ${state.slots.interview_question_count} 道真实面试题，请生成针对性计划`,
-            { recordUser: false },
+            { recordUser: false, continuation: true },
           );
           return true;
         }
@@ -185,7 +226,9 @@
       }
       if (persisted.action !== "clarify" || !persisted.question) return false;
       state.clarificationCount = 1;
-      addAgent(`继续上次没有完成的建档：${persisted.question.prompt}`);
+      if (!state.callbacks.restoreHistory || state.intentHistory.at(-1)?.content !== persisted.question.prompt) {
+        addAgent(`继续上次没有完成的建档：${persisted.question.prompt}`);
+      }
       state.pendingQuestionSlot = persisted.question.slot || null;
       if (persisted.question.options?.length) {
         state.stage = "clarifying";
@@ -198,7 +241,8 @@
       } else {
         state.stage = "clarifying_text";
         hideChoices();
-        byId("chatInput").placeholder = "直接粘贴资料；暂时没有就输入“没有”…";
+        byId("chatInput").placeholder = persisted.question.interaction === "material" || persisted.question.slot === "interview_question_source"
+          ? "直接粘贴资料；暂时没有就输入“没有”…" : "直接输入你的想法…";
         byId("chatInput").focus();
       }
       return true;
@@ -229,13 +273,17 @@
     state.teachingPreference = decision.onboarding.teaching_preference || "balanced";
   }
 
-  async function analyzeIntent(text, { recordUser = true } = {}) {
+  async function analyzeIntent(text, { recordUser = true, requestId = null, continuation = false } = {}) {
     const message = text.trim();
     if (!message) return;
+    const epoch = state.epoch;
+    requestId = requestId || newRequestId();
+    const previous = state.intentHistory.at(-1);
+    const priorHistory = (previous?.role === "user" && previous.content === message)
+      ? recentIntentHistory().slice(0, -1) : recentIntentHistory();
     if (recordUser) { addUser(message); state.intentHistory.push({ role: "user", content: message }); }
-    const priorHistory = recentIntentHistory().slice(0, -1);
     setBusy(true); clearError(); hideChoices(); state.stage = "analyzing";
-    state.pendingAction = () => analyzeIntent(message, { recordUser: false });
+    state.pendingAction = () => analyzeIntent(message, { recordUser: false, requestId, continuation });
     global.LearningActivity?.start("正在理解你的需求", "正在结合你刚才的话和前面对话判断下一步。", [
       "正在区分是答疑、面试、项目还是系统学习…",
       "正在检查你已经说过哪些信息，避免重复追问…",
@@ -244,8 +292,14 @@
       const decision = await request("/api/onboarding/intent", {
         user_id: userId, message, history: priorHistory, slots: state.slots,
         has_active_project: Boolean(state.callbacks.hasActiveProject),
-        clarification_count: state.clarificationCount,
+        clarification_count: Math.min(state.clarificationCount, 10),
+        continue_after_intake: continuation,
+        session_id: state.sessionId, request_id: requestId,
+        revision: state.revision, reset_session: state.revision === null,
       });
+      if (epoch !== state.epoch || !state.active) return;
+      state.sessionId = decision.session_id || state.sessionId;
+      state.revision = decision.revision ?? state.revision;
       applyIntentDecision(decision);
       state.intentHistory.push({ role: "assistant", content: decision.question?.prompt || decision.summary });
       if (decision.action === "clarify") {
@@ -263,9 +317,10 @@
         } else {
           state.stage = "clarifying_text";
           hideChoices();
-          byId("chatInput").placeholder = "直接粘贴资料；暂时没有就输入“没有”…";
+          const material = decision.question.interaction === "material" || decision.question.slot === "interview_question_source";
+          byId("chatInput").placeholder = material ? "直接粘贴资料；暂时没有也可以说明…" : "直接输入你的想法…";
           byId("chatInput").focus();
-          global.LearningActivity?.finish("等待你的资料", "有就直接粘贴，没有只需输入“没有”。");
+          global.LearningActivity?.finish(material ? "等待你的资料" : "等你补充", "直接在输入框回复即可。");
         }
         return;
       }
@@ -290,6 +345,11 @@
         return;
       }
       if (decision.action === "interview_bank_intake") {
+        if (Number(decision.slots.interview_question_count || 0) > 0) {
+          addAgent(`已保存 ${decision.slots.interview_question_count} 道面试题，接下来把它们纳入学习方案。`);
+          await analyzeIntent("请根据已收录的题目继续制定计划", { recordUser: false, continuation: true });
+          return;
+        }
         state.stage = "interview_intake";
         hideChoices();
         addAgent("把你收集的面试题直接粘贴到输入框即可；可以一次发多道，我会先去重收录，再生成针对性 Plan。");
@@ -301,9 +361,10 @@
       await state.callbacks.onAnswerInContext?.(message);
       global.LearningActivity?.finish("已切换到对应处理方式", "不会为这句话新建学习计划。");
     } catch (error) {
+      if (epoch !== state.epoch) return;
       showError(error);
       global.LearningActivity?.finish("意图还没有分析完成", "你的输入和已填信息都还在，可以直接重试。");
-    } finally { setBusy(false); }
+    } finally { if (epoch === state.epoch) setBusy(false); }
   }
 
   function renderDiagnostic(result) {
@@ -435,40 +496,7 @@
     const text = value.trim();
     if (!state.active || !text || state.busy) return false;
     if (state.stage === "plan_review") { addUser(text); await revisePlan(text); }
-    else if (state.stage === "clarifying_text" && state.pendingQuestionSlot === "interview_question_source") {
-      if (/^(?:暂时)?没有(?:了)?[.!！？?]?$/.test(text.trim())) {
-        await analyzeIntent(text);
-      } else if (/^有(?:的)?[.!！？?]?$/.test(text.trim())) {
-        addUser(text);
-        state.stage = "interview_intake";
-        addAgent("好的，直接把题目粘贴到输入框发送即可，不需要再选一次。");
-        byId("chatInput").placeholder = "直接粘贴面试题，支持编号列表或多行问题…";
-      } else {
-        state.stage = "interview_intake";
-        await handleText(text);
-      }
-    }
-    else if (state.stage === "interview_intake") {
-      addUser(text); setBusy(true); clearError();
-      global.LearningActivity?.start("正在收录面试题", "正在去重、分类并保存到你的个人题库。 ");
-      try {
-        const payload = await request("/api/interview/intake", {
-          user_id: userId, raw_text: text, source: "chat",
-        });
-        state.slots.interview_question_source = "has_questions";
-        state.slots.interview_question_count = Number(payload.intake?.source_count || 0);
-        addAgent(`已收录 ${payload.intake?.source_count || 0} 道题，其中新增 ${payload.intake?.new_count || 0} 道。现在根据这些题生成学习方案。`);
-        await analyzeIntent(`已经收录 ${state.slots.interview_question_count} 道真实面试题，请生成针对性计划`, { recordUser: false });
-      } catch (error) {
-        byId("chatInput").value = text;
-        state.pendingAction = () => {
-          byId("chatInput").value = "";
-          handleText(text);
-        };
-        showError(error);
-      }
-      finally { setBusy(false); }
-    }
+    else if (state.stage === "clarifying_text" || state.stage === "interview_intake") await analyzeIntent(text);
     else if (state.stage === "diagnostic") {
       addUser(text);
       addAgent("这几道是用来定起点的点击题，直接点上方选项就行；做完后继续用输入框问任何问题。");
@@ -485,14 +513,16 @@
       clarificationCount: 0, diagnostic: null, pendingAction: null, confirmationResult: null,
       pendingQuestionSlot: null, lastDiagnosticQuestionId: null, diagnosisPrefaced: false,
       generationId: null, existingProject: null, existingDecision: null,
+      sessionId: newRequestId(), revision: null, epoch: state.epoch + 1, busy: false,
     });
     if (initialTopic.trim()) analyzeIntent(initialTopic);
     else if (callbacks.restorePersistedIntent) {
-      restoreIntentState().then((restored) => { if (!restored) askTopic(); });
+      const epoch = state.epoch;
+      restoreIntentState().then((restored) => { if (!restored && epoch === state.epoch && state.active) askTopic(); });
     } else askTopic();
   }
 
-  function stop() { state.active = false; hideChoices(); }
+  function stop() { state.active = false; state.epoch += 1; hideChoices(); }
 
   document.addEventListener("DOMContentLoaded", () => {
     byId("retryOnboardingBtn").addEventListener("click", () => state.pendingAction?.());

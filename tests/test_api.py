@@ -23,7 +23,15 @@ from tests.test_lesson_generator import model_lesson_json
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(monkeypatch, tmp_path) -> TestClient:
+    # API tests must never share or modify real learner state.
+    skill = main._intent_skill_text(main.SERVER_ROOT / "workspace/dev")
+    monkeypatch.setattr(main, "_intent_skill_text", lambda _: skill)
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    # Unit/API contract tests must not discover the developer's real published
+    # runtime and silently spend model tokens. Model-specific tests opt in with
+    # an explicit stub release and stub chat function below.
+    monkeypatch.setattr(main, "latest_release", lambda: None)
     return TestClient(main.app)
 
 
@@ -229,7 +237,7 @@ def test_generate_supplemental_practice_reads_skills_validates_and_saves_bank(
 ) -> None:
     captured: dict[str, str] = {}
 
-    def fake_model(user_id: str, prompt: str, release: Path) -> str:
+    def fake_model(user_id: str, prompt: str, release: Path, **kwargs) -> str:
         captured.update({"user_id": user_id, "prompt": prompt, "release": str(release)})
         return json.dumps({"questions": [
             {"title": f"练习 {index}", "prompt": f"问题 {index}？", "options": [
@@ -256,7 +264,7 @@ def test_generate_supplemental_practice_reads_skills_validates_and_saves_bank(
     assert all("answer" not in item for item in bank["questions"])
 
 
-def test_generate_supplemental_practice_appends_to_current_lesson_and_registers_bank(
+def test_confirmed_supplemental_candidate_appends_to_current_lesson_and_registers_bank(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     original = build_starter_lesson(
@@ -264,7 +272,7 @@ def test_generate_supplemental_practice_appends_to_current_lesson_and_registers_
     )
     save_lesson_bundle(tmp_path, "learner", original)
 
-    def fake_model(_: str, __: str, ___: Path) -> str:
+    def fake_model(_: str, __: str, ___: Path, **kwargs) -> str:
         return json.dumps({"questions": [
             {"title": f"练习 {index}", "prompt": f"迁移问题 {index}？", "options": [
                 {"id": "a", "label": "正确"}, {"id": "b", "label": "错误"},
@@ -275,17 +283,23 @@ def test_generate_supplemental_practice_appends_to_current_lesson_and_registers_
     monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
     monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "workspace/releases/current")
     monkeypatch.setattr(main, "chat", fake_model)
-    response = client.post("/api/practice/supplemental/generate", json={
-        "user_id": "learner", "module": "Go 变量", "level": "beginner", "count": 3,
-        "lesson_id": original.manifest.lesson_id, "append_to_lesson": True,
-    })
+    user_root = tmp_path / 'userdir/u_learner'
+    (user_root / 'learning-state.json').write_text(json.dumps({'revision': 1, 'active_topic': 'Go'}))
+    (user_root / 'curriculum.json').write_text(json.dumps({'current_knowledge_point_id': 'starter'}))
+    proposal = client.post('/api/lesson/proposals', json={
+        'user_id': 'learner', 'base_revision': original.public_manifest()['revision'], 'instruction': '追加3题', 'kind': 'supplemental',
+    }).json()
+    path = '/api/lesson/proposals/' + proposal['proposal_id']
+    candidate = client.post(path + '/generate', json={'user_id': 'learner', 'confirmed': True})
+    assert candidate.status_code == 200, candidate.text
+    response = client.post(path + '/apply', json={'user_id': 'learner', 'confirmed': True})
 
-    assert response.status_code == 200
-    assert response.json()["appended_to_lesson"] is True
+    assert response.status_code == 200, response.text
     updated = load_lesson_bundle(tmp_path, "learner", original.manifest.knowledge_point_id)
     assert len(updated.manifest.pages) == len(original.manifest.pages) + 3
     assert "解析 1" not in json.dumps(response.json()["lesson"], ensure_ascii=False)
-    supplemental_id = response.json()["item_ids"][0]
+    added_page = next(p for p in updated.manifest.pages if p.id.startswith('supplemental-'))
+    supplemental_id = f'lesson:{updated.manifest.lesson_id}:{added_page.id}'
     reveal = client.post("/api/practice/review/reveal", json={
         "user_id": "learner", "item_id": supplemental_id,
     })
@@ -316,7 +330,8 @@ def test_supplemental_bank_failure_restores_original_lesson(
         "lesson_id": original.manifest.lesson_id, "append_to_lesson": True,
     })
 
-    assert response.status_code == 500
+    assert response.status_code == 409
+    assert response.json()['detail']['recovery'] == 'confirmation_required'
     restored = load_lesson_bundle(tmp_path, "learner", original.manifest.knowledge_point_id)
     assert len(restored.manifest.pages) == len(original.manifest.pages)
 
@@ -338,7 +353,7 @@ def test_generate_supplemental_practice_repairs_one_structurally_invalid_codex_r
         for index in range(1, 4)
     ]}, ensure_ascii=False)
 
-    def fake_model(_: str, prompt: str, __: Path) -> str:
+    def fake_model(_: str, prompt: str, __: Path, **kwargs) -> str:
         calls.append(prompt)
         return invalid if len(calls) == 1 else valid
 
@@ -353,7 +368,8 @@ def test_generate_supplemental_practice_repairs_one_structurally_invalid_codex_r
     assert response.status_code == 200
     assert response.json()["added_count"] == 3
     assert len(calls) == 2
-    assert "contains an invalid option" in calls[1]
+    assert "上一个回答没有通过结构校验" in calls[1]
+    assert "option" in calls[1]
 
 
 def test_supplemental_practice_rejects_unsafe_user_id_before_codex_call(
@@ -576,7 +592,7 @@ def test_onboarding_intent_uses_fast_skill_prompt_with_recent_history_and_slots(
     assert len(response.json()["question"]["options"]) == 2
     assert "客服 Agent" in captured["prompt"]
     assert '"topic": "LangGraph"' in captured["prompt"]
-    assert "slot filling" in captured["skill"]
+    assert "level_evidence" in captured["skill"]
 
 
 def test_onboarding_intent_rejects_malformed_model_output_without_fixed_fallback(
@@ -700,7 +716,7 @@ def test_onboarding_intent_allows_two_repair_attempts_for_explicit_interview_lev
     assert len(calls) == 3
 
 
-def test_onboarding_intent_recovery_uses_named_java_stack_then_asks_question_source(
+def test_onboarding_intent_invalid_model_does_not_invent_static_questionnaire(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     calls: list[str] = []
@@ -716,13 +732,8 @@ def test_onboarding_intent_recovery_uses_named_java_stack_then_asks_question_sou
         "user_id": "learner", "message": "我要面试 Java 后端岗，有一点基础",
     })
 
-    assert response.status_code == 200
-    assert response.json()["slots"]["topic"] == "Java 后端"
-    assert response.json()["slots"]["level_evidence"] == "有一点基础"
-    assert response.json()["onboarding"] is None
-    assert response.json()["action"] == "clarify"
-    assert response.json()["slots"]["tech_stack"] == ["Java"]
-    assert response.json()["question"]["slot"] == "interview_question_source"
+    assert response.status_code == 502
+    assert response.json()["detail"]["retryable"] is True
     assert len(calls) == 3
 
 
@@ -743,8 +754,8 @@ def test_onboarding_intent_does_not_retry_transport_failure(
         "user_id": "learner", "message": "我要面试前端岗",
     })
 
-    assert response.status_code == 200  # explicit request uses evidence-only recovery
-    assert response.json()["action"] == "clarify"
+    assert response.status_code == 503
+    assert response.json()["detail"]["recovery"] == "retry_intent"
     assert calls == 1
 
 
@@ -792,7 +803,7 @@ def test_onboarding_intent_retries_generic_choices_for_explicit_concept_request(
     assert response.status_code == 200
     assert response.json()["action"] == "ready_for_plan"
     assert response.json()["onboarding"]["goal_route"] == "concept_clarity"
-    assert "不得再问初学、精进或面试" in calls[1]
+    assert "explicit concept-definition" in calls[1]
 
 
 def test_ready_intent_does_not_persist_or_confirm_project(
@@ -1285,9 +1296,8 @@ def test_onboarding_does_not_trust_a_spoofed_interview_question_count(
         "slots": ready["slots"],
     })
 
-    assert response.status_code == 200
-    assert response.json()["action"] == "interview_bank_intake"
-    assert response.json()["slots"]["interview_question_count"] == 0
+    assert response.status_code == 502  # repeatedly fabricated count never becomes accepted state
+    assert not InterviewBankStore(tmp_path).list_questions("learner")
 
 
 def test_interview_bank_question_and_mastery_endpoints(
@@ -1880,7 +1890,7 @@ def test_confirmed_profile_prompt_forbids_more_onboarding(
     monkeypatch.setattr(main, "latest_release", lambda: Path("/tmp/release"))
     captured = {}
 
-    def fake_stream(user_id, prompt, release):
+    def fake_stream(user_id, prompt, release, **kwargs):
         captured["prompt"] = prompt
         return iter([{"event": "message.completed", "data": {}}])
 
@@ -1937,7 +1947,7 @@ def test_unstructured_grade_never_claims_verified_success(
     assert result["verified"] is False
 
 
-def test_lesson_remediation_forces_a_regenerated_lesson(
+def test_lesson_remediation_requires_explicit_proposal_confirmation(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1954,10 +1964,9 @@ def test_lesson_remediation_forces_a_regenerated_lesson(
         json={"user_id": "learner", "remediation": "换一个生活类比"},
     )
 
-    assert response.status_code == 200
-    assert response.json()["lesson_id"] == "remediated"
-    assert captured["request"].force is True
-    assert captured["request"].remediation == "换一个生活类比"
+    assert response.status_code == 409
+    assert response.json()["detail"]["recovery"] == "confirmation_required"
+    assert not captured
 
 
 def test_project_snapshot_restores_backend_course_after_failed_switch(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
@@ -66,6 +66,7 @@ class InterviewPrompt(BaseModel):
 
 
 class LessonManifest(BaseModel):
+    content_version: str = Field(default="", max_length=64)
     lesson_id: str = Field(min_length=1, max_length=96)
     title: str = Field(min_length=1, max_length=240)
     topic: str = Field(min_length=1, max_length=240)
@@ -74,6 +75,9 @@ class LessonManifest(BaseModel):
     knowledge_point_id: str = Field(default="starter", min_length=1, max_length=96)
     chapter_id: str = Field(default="", max_length=64)
     chapter_title: str = Field(default="", max_length=240)
+    planned_sessions: int | None = Field(default=None, ge=1, le=100)
+    session_minutes: int | None = Field(default=None, ge=5, le=240)
+    homework_minutes: int | None = Field(default=None, ge=0, le=10000)
     covered_knowledge_point_ids: list[str] = Field(default_factory=list, max_length=30)
     practice_path: str = Field(min_length=1, max_length=240)
     completion_mode: Literal["choice", "self_practice", "text", "evidence", "output"] = "self_practice"
@@ -93,10 +97,12 @@ class LessonManifest(BaseModel):
 class LessonBundle:
     manifest: LessonManifest
     answer_keys: dict[str, str]
+    explanations: dict[str, str] = field(default_factory=dict)
 
     def public_manifest(self) -> dict[str, Any]:
         """Return only learner-facing fields; grading keys remain server-side."""
-        return self.manifest.model_dump()
+        from .lesson_context import lesson_revision
+        return {**self.manifest.model_dump(), "revision": lesson_revision(self.manifest)}
 
 
 def _slug(value: str) -> str:

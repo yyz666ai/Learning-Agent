@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -31,8 +32,12 @@ class IntentSlots(BaseModel):
     constraints: list[str] = Field(default_factory=list, max_length=8)
     target_role: str | None = Field(default=None, max_length=240)
     tech_stack: list[str] = Field(default_factory=list, max_length=12)
-    interview_question_source: Literal["unknown", "has_questions", "none"] = "unknown"
+    tech_stack_unspecified: bool = False
+    interview_question_source: Literal["unknown", "has_questions", "none", "deferred"] = "unknown"
     interview_question_count: int = Field(default=0, ge=0, le=10_000)
+    course_scope: str | None = Field(default=None, max_length=1000)
+    exam_format: str | None = Field(default=None, max_length=300)
+    priority: str | None = Field(default=None, max_length=500)
 
 
 class IntentOption(BaseModel):
@@ -53,10 +58,14 @@ class IntentQuestion(BaseModel):
     prompt: str = Field(min_length=1, max_length=300)
     slot: str = Field(min_length=1, max_length=96, pattern=r"^[a-z_]+$")
     options: list[IntentOption] = Field(default_factory=list, max_length=3)
+    interaction: Literal["text", "choices", "material"] | None = None
+    reason_to_ask: str = Field(default="", max_length=300)
 
     @model_validator(mode="after")
     def validate_unique_options(self) -> "IntentQuestion":
-        if self.slot == "interview_question_source":
+        if self.interaction is None:
+            self.interaction = "choices" if self.options else "text"
+        if self.slot == "interview_question_source" or self.interaction in {"text", "material"}:
             if self.options:
                 raise ValueError("interview question source must use open text without choice options")
         elif len(self.options) < 2:
@@ -80,6 +89,8 @@ class NormalizedOnboarding(BaseModel):
         "gap_upgrade",
         "senior_engineer",
         "interview_sprint",
+        "academic_course",
+        "exam_review",
     ]
     learning_mode: Literal["systematic", "project", "practice"]
     level_claim: Literal["zero", "some", "experienced"]
@@ -97,6 +108,7 @@ class IntentDecision(BaseModel):
     slots: IntentSlots
     question: IntentQuestion | None = None
     onboarding: NormalizedOnboarding | None = None
+    material_text: str = Field(default="", max_length=4000)
 
     @model_validator(mode="after")
     def validate_action_payload(self) -> "IntentDecision":
@@ -110,6 +122,10 @@ class IntentDecision(BaseModel):
                 raise ValueError("ready_for_plan action requires onboarding")
             if self.question is not None:
                 raise ValueError("ready_for_plan action cannot include a question")
+            # Reuse the stated goal without inventing an extra achievement.
+            # A missing paraphrase is a formatting issue, not another question.
+            if not self.slots.desired_outcome and self.slots.goal:
+                self.slots.desired_outcome = self.slots.goal
             if not self.slots.topic or not self.slots.desired_outcome:
                 raise ValueError("ready_for_plan requires topic and desired_outcome slots")
             if self.onboarding.goal_route != "concept_clarity" and not (self.slots.level_evidence or "").strip():
@@ -117,8 +133,8 @@ class IntentDecision(BaseModel):
             if self.onboarding.goal_route == "interview_sprint":
                 if not (self.slots.target_role or "").strip():
                     raise ValueError("interview plan requires target role")
-                if not [item for item in self.slots.tech_stack if item.strip()]:
-                    raise ValueError("interview plan requires tech stack")
+                if not self.slots.tech_stack_unspecified and not [item for item in self.slots.tech_stack if item.strip()]:
+                    raise ValueError("interview plan requires tech stack or explicit professional focus: for non-coding roles copy learner-stated domains (e.g. 产品设计、评测) into tech_stack; do not ask for programming frameworks")
                 if self.slots.interview_question_source == "unknown":
                     raise ValueError("interview plan requires question source")
                 if (
@@ -129,8 +145,8 @@ class IntentDecision(BaseModel):
         elif self.action == "interview_bank_intake":
             if self.slots.interview_question_source != "has_questions":
                 raise ValueError("interview intake requires has_questions source")
-            if not (self.slots.target_role or "").strip() or not self.slots.tech_stack:
-                raise ValueError("interview intake requires role and tech stack")
+            if not (self.slots.target_role or "").strip():
+                raise ValueError("interview intake requires role")
             if self.question is not None or self.onboarding is not None:
                 raise ValueError("interview intake cannot include question or onboarding")
         elif self.question is not None or self.onboarding is not None:
@@ -140,7 +156,7 @@ class IntentDecision(BaseModel):
 
 def _recent_history(history: list[dict[str, Any]]) -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
-    for item in history[-8:]:
+    for item in history[-40:]:
         role = str(item.get("role") or "")
         content = str(item.get("content") or "").strip()
         if role not in {"user", "agent", "assistant"} or not content:
@@ -185,14 +201,15 @@ def build_intent_prompt(
 决策要求：
 1. 先用新输入填充或修正槽位；用户明确否定时，新输入优先于旧槽位。
 2. 信息足够生成有明确结果的 Plan 就返回 ready_for_plan，不为了补齐表单而追问。
-3. 只有一个缺失槽位会真正改变路线时才返回 clarify；一次只问一题。普通追问给 2–3 个贴合主题的选项；只有 interview_question_source 必须使用开放文本回答，options 必须为空。
+3. 只有缺失信息会真正改变路线时才返回 clarify；一次只问一题并写 reason_to_ask。interaction=choices 给2–3个动态选项；开放问题用 text，索要材料用 material，两者 options=[]。interview_question_source 必须开放文本。
 4. 信息仍不足时可以继续追问，但不得重复已填槽位；一旦足够生成有明确结果的 Plan，必须立即停止追问。
-5. 不得生成“其他”“都不符合”“我直接补充”或 Other 选项；用户会直接在输入框补充。
+5. 不得生成“其他”等占位答案；前端自动附加可直接输入发送的最后一行。不要预选或把自述强行映射成固定菜单。
 6. 当前课程答疑、一次性报错返回 answer_in_context；一批面试题入库返回 interview_bank_intake。
 7. ready_for_plan 时由你根据语义填写 onboarding；不要要求用户为内部默认时间预算再答一题。
 8. 面试目标要保留完整 target_role，并依次只补真正缺失的槽位：基础证据、tech_stack、interview_question_source。不要再问通用学习深度。
-9. 面试技术栈明确后，题目来源仍为 unknown 时，直接在对话中请用户粘贴从小红书、面经或 JD 收集的真实题，暂时没有就回复“没有”；这题不得给选项。粘贴的题目返回 interview_bank_intake，实际入库且 interview_question_count > 0 后才能 ready_for_plan；“没有”才直接 ready，并由后续研究补齐。
-10. 只输出一个 JSON 对象，不要 Markdown，不要解释。
+9. 面试题源 unknown 时开放索取；已说没有设none，不重复确认。有题但未贴仍clarify等待材料；已贴题用interview_bank_intake，并将题目原文片段放material_text，不能编造。明确晚点发、先通用时设deferred。用户明确不懂技术栈且愿意先通用时 tech_stack_unspecified=true，不强行填React。实际入库计数由服务器提供，不靠自述。
+10. 本科跟课用academic_course，考试复习用exam_review；保留course_scope、exam_format和期限，不转工程师。领域经验和否定按语义判断；level_evidence引用用户原话，不要求用户复述标签。已有当前页指代优先answer_in_context。仅问概念才meaning_only，明确还要代码用code_walkthrough。所有明确排除项保留constraints。
+11. 只输出一个 JSON 对象，不要 Markdown，不要解释。
 
 JSON Schema：
 {json.dumps(schema, ensure_ascii=False)}
@@ -218,11 +235,15 @@ def parse_intent_response(response: str) -> IntentDecision:
 def _level_from_text(value: str) -> str | None:
     matches: list[tuple[int, str]] = []
     for level, pattern in (
-        ("zero", r"零基础|从零|初学(?:者)?|小白"),
+        ("zero", r"零基础|从零|初学(?:者)?|小白|刚入门|new to coding|\bbeginner\b"),
         ("experienced", r"熟练|资深|经验丰富"),
         ("some", r"有一(?:点|些|定)基础|学过一点|有基础"),
     ):
-        matches.extend((match.start(), level) for match in re.finditer(pattern, value, flags=re.IGNORECASE))
+        for match in re.finditer(pattern, value, flags=re.IGNORECASE):
+            # A negative statement is evidence against a label, not that label.
+            if re.search(r"(?:不是|并非|不算|不太|没有|不|not a|not)\s*$", value[:match.start()], re.I):
+                continue
+            matches.append((match.start(), level))
     return max(matches, default=(-1, None), key=lambda item: item[0])[1]
 
 
@@ -238,6 +259,8 @@ def _tech_stack_from_text(value: str) -> list[str]:
 
 def _interview_source_from_text(value: str) -> str:
     compact = re.sub(r"\s+", "", value).casefold()
+    if re.search(r"(?:晚点|之后再|以后再|不方便).*(?:先|通用)|先.*通用.*(?:之后|再补)", compact):
+        return "deferred"
     if re.fullmatch(r"(?:暂时)?没有(?:了)?[.!！？?]?", compact):
         return "none"
     if re.search(r"(?:不是|并非)没有(?:现成|收集|准备)?(?:的)?(?:面试)?题", compact):
@@ -272,6 +295,10 @@ def validate_intent_against_message(
     # Request slots are model-authored state, not independent user evidence.
     # Trust only current/prior user messages, with the newest correction first.
     learner_context = " ".join(filter(None, [learner_history, message]))
+    if decision.material_text and decision.material_text not in message:
+        raise ValueError("material evidence must be a verbatim excerpt of the current message")
+    if decision.action == "interview_bank_intake" and not decision.material_text:
+        raise ValueError("material not supplied: ask an open question instead of intake")
     explicit_level = _level_from_text(message)
     if explicit_level is None:
         for item in reversed(history or []):
@@ -291,16 +318,60 @@ def validate_intent_against_message(
     if decision.action == "ready_for_plan" and decision.onboarding is not None and decision.onboarding.goal_route != "concept_clarity":
         evidence = (decision.slots.level_evidence or "").strip()
         evidence_level = _level_from_text(evidence)
-        compact_context = re.sub(r"\s+", "", learner_context).casefold()
-        compact_evidence = re.sub(r"\s+", "", evidence).casefold()
+        def evidence_key(value: str) -> str:
+            # Normalize typography only; never paraphrase or infer missing evidence.
+            value = unicodedata.normalize("NFKC", value).translate(str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'}))
+            return re.sub(r"\s+", "", value).casefold()
+        compact_context = evidence_key(learner_context)
+        compact_evidence = evidence_key(evidence)
         evidence_is_verbatim = len(compact_evidence) >= 2 and compact_evidence in compact_context
         if explicit_level:
             if decision.onboarding.level_claim != explicit_level:
                 raise ValueError("model level claim contradicts learner-authored level evidence")
             if evidence_level != explicit_level:
                 raise ValueError("level evidence must come from learner context")
-        elif evidence_level is None or evidence_level != decision.onboarding.level_claim or not evidence_is_verbatim:
-            raise ValueError("level evidence must come from learner context")
+        else:
+            if not evidence_is_verbatim:
+                raise ValueError("level evidence must come from learner context")
+            if evidence_level is not None and evidence_level != decision.onboarding.level_claim:
+                raise ValueError("model level claim contradicts learner-authored level evidence")
+            if evidence_level is None:
+                if decision.onboarding.level_claim == "experienced":
+                    raise ValueError("years alone do not prove experienced mastery; use some and diagnostic evidence, or ask about target-domain experience")
+                # Accept concrete learner-authored experience without inventing mastery.
+                experience = re.search(r"写了|写过|做过|维护|开发过|用过|学过|没学过|没碰过|从未|工作|项目经验|有.{0,24}基础|years?|built|worked|shipped", evidence, re.I)
+                if not experience:
+                    raise ValueError("level evidence must describe experience in learner context")
+                if re.search(r"(?:不是|并非)\s*(?:零基础|初学|小白)", evidence) and decision.onboarding.level_claim == "zero":
+                    raise ValueError("level cannot be zero when explicitly negated")
+
+    specific_reading = re.search(r"(?:看懂|读懂|阅读).{0,16}(?:现有|同事|这个|那个).{0,12}(?:项目|仓库)|(?:现有|同事的).{0,12}(?:项目|仓库).{0,12}(?:看懂|读懂)", message)
+    if decision.onboarding and (decision.onboarding.goal_route == "urgent_codebase" or specific_reading):
+        supplied = re.search(r"https?://|```|(?:src|app|main)[/.]|目录[：:]", learner_context)
+        generic = re.search(r"通用|不能提供|无法提供|不方便发", learner_context)
+        if not supplied and not generic:
+            raise ValueError("specific repository material is missing: ask for a link, directory or code using an open material question")
+    if decision.onboarding and decision.onboarding.goal_route == "academic_course" and not decision.slots.course_scope:
+        raise ValueError("course_scope is missing for following a real course: invite chapters/syllabus with an open material question, or let learner explicitly choose a general scope")
+
+    correction_requested = bool(re.search(r"不对|不是.+是|其实|改成|换成|换个|纠正", message, flags=re.IGNORECASE))
+    if not correction_requested:
+        for field in ("topic", "target_role", "goal", "desired_outcome"):
+            prior = getattr(prior_slots, field)
+            if prior and prior != "unknown" and getattr(decision.slots, field) != prior:
+                raise ValueError(f"follow-up reply must preserve confirmed {field}")
+    if decision.action == "clarify" and decision.question:
+        slot = decision.question.slot
+        if slot != "interview_question_source" and re.search(r"面试题|面经|JD|真题", decision.question.prompt, re.I) and re.search(r"粘贴|发给|提供|收集", decision.question.prompt):
+            raise ValueError("ask one slot only: remove the extra interview-material request from this question; ask material openly in a later turn only if still unknown")
+        # A question targets a missing field, never the fact already filled in this decision.
+        if slot in {"topic", "goal", "desired_outcome", "target_role", "tech_stack", "interview_question_source"}:
+            filled = getattr(decision.slots, slot, None)
+            if filled and filled != "unknown":
+                # Collected-but-not-yet-supplied material is a legitimate open request.
+                waiting_material = slot == "interview_question_source" and filled == "has_questions" and not decision.slots.interview_question_count
+                if not waiting_material:
+                    raise ValueError(f"question targets already filled slot {slot}; ask only a genuinely missing detail")
 
     if _level_from_text(message) and re.fullmatch(
         r"[\s，,。.!！?？]*(?:我是|我属于|选择)?[\s]*(?:零基础|从零|初学(?:者)?|小白|有一(?:点|些|定)基础|学过一点|有基础|熟练|资深|经验丰富)[\s，,。.!！?？]*",
@@ -312,16 +383,11 @@ def validate_intent_against_message(
             current = getattr(decision.slots, field)
             if prior and current != prior:
                 raise ValueError(f"level-only reply must preserve confirmed {field}")
-    correction_requested = bool(re.search(r"不对|不是.+是|其实|改成|换成|换个|纠正", message, flags=re.IGNORECASE))
-    if not correction_requested:
-        for field in ("topic", "target_role", "goal", "desired_outcome"):
-            prior = getattr(prior_slots, field)
-            current = getattr(decision.slots, field)
-            if prior and prior != "unknown" and current != prior:
-                raise ValueError(f"follow-up reply must preserve confirmed {field}")
     prior_source = prior_slots.interview_question_source
     current_source = decision.slots.interview_question_source
     explicit_source_correction = _interview_source_from_text(message)
+    if explicit_source_correction != "unknown" and (prior_slots.target_role or decision.slots.target_role) and current_source != explicit_source_correction:
+        raise ValueError("interview_question_source contradicts learner answer; preserve none/deferred and do not ask again")
     if (
         prior_source != "unknown"
         and current_source != prior_source
@@ -332,14 +398,18 @@ def validate_intent_against_message(
         r"(是什么意思|是什么(?:[？?。！!]|$)|什么叫|解释一下|弄懂.+(?:意思|概念)|what(?:is|'s))",
         normalized,
     ))
-    if not explicit_definition:
+    if not explicit_definition or decision.action == "answer_in_context":
         return decision
     if decision.action != "ready_for_plan" or decision.onboarding is None:
         raise ValueError("explicit concept-definition request must be ready_for_plan without generic routing choices")
     if decision.onboarding.goal_route != "concept_clarity":
         raise ValueError("explicit concept-definition request must use concept_clarity")
-    if decision.onboarding.concept_scope != "meaning_only":
+    positive_scope = re.sub(r"(?:不需要|不要|不用|不写|不看|无需)(?:任何)?(?:代码|实现)|(?:no|without)(?:any)?code", "", normalized)
+    wants_code = bool(re.search(r"代码|实现|code|implement", positive_scope))
+    if not wants_code and decision.onboarding.concept_scope != "meaning_only":
         raise ValueError("explicit concept-definition request must use meaning_only")
+    if wants_code and decision.onboarding.concept_scope != "code_walkthrough":
+        raise ValueError("explicit concept-definition with implementation requires code_walkthrough")
     return decision
 
 
@@ -502,9 +572,8 @@ def build_intent_correction_prompt(original_prompt: str, validation_error: str) 
     concept_correction = ""
     if "explicit concept-definition" in validation_error:
         concept_correction = """
-用户已经明确在问一个概念“是什么意思/是什么”，不得再问初学、精进或面试。
-直接返回 ready_for_plan：goal_route=concept_clarity、concept_scope=meaning_only、level_claim=zero；
-将 desired_outcome 规范为“能用自己的话解释该概念并判断一个典型场景”。
+概念与实现需求分开判断：纯定义用meaning_only，明确要求代码用code_walkthrough。
+当前课程指代留在answer_in_context，不得因此新建课程。不得删掉用户的实现要求。
 """
     level_correction = ""
     if "explicit learner level" in validation_error:
@@ -519,6 +588,6 @@ def build_intent_correction_prompt(original_prompt: str, validation_error: str) 
 不得猜测水平，也不得改写已确认的主题和目标。
 {concept_correction}
 {level_correction}
-如果只缺用户的真实基础，返回 clarify，仅询问一题，选项必须是“初学”、“有基础”、“熟练”。
-用户选择后把该回答写入 slots.level_evidence，再生成 ready_for_plan。
+只修复上述具体错误；不要为了凑选项改问基础。开放问题允许options=[]。
+用户经历可作证据，否定标签不是该标签；信息足够就ready_for_plan，不重复已回答的问题。
 只输出修正后的一个 JSON 对象。""".strip()

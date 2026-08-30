@@ -11,6 +11,21 @@ from backend.user_memory import (
 )
 
 
+def test_intent_history_survives_refresh_and_new_session_is_separate(tmp_path):
+    first = persist_intent_decision(tmp_path, "learner", message="我想学Go，初学",
+        decision={"action": "clarify", "slots": {"topic": "Go"},
+                  "question": {"prompt": "想达到什么目标？", "options": []}}, session_id="session-go")
+    second = persist_intent_decision(tmp_path, "learner", message="成为工程师",
+        decision={"action": "ready_for_plan", "slots": {"topic": "Go"}}, session_id="session-go")
+    assert second["revision"] == first["revision"] + 1
+    assert second["history"][0]["content"] == "我想学Go，初学"
+    assert second["history"][1]["content"] == "想达到什么目标？"
+    fresh = persist_intent_decision(tmp_path, "learner", message="想学Java",
+        decision={"action": "clarify", "slots": {"topic": "Java"}}, session_id="session-java")
+    assert fresh["history"] == [{"role": "user", "content": "想学Java"}]
+    assert read_intent_state(tmp_path, "learner")["session_id"] == "session-java"
+
+
 def test_intent_state_keeps_current_fact_and_jsonl_keeps_every_change(tmp_path: Path) -> None:
     persist_intent_decision(
         tmp_path,

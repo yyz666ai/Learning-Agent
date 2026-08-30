@@ -149,3 +149,40 @@ def test_estimated_sessions_bullet_is_not_a_knowledge_point() -> None:
     titles = [point.title for point in curriculum.knowledge_points()]
     assert titles == ["Go 工具链负责编译与运行", "go version 用于验证安装"]
     assert curriculum.chapters[0].knowledge_points[0].estimated_sessions == 1
+
+
+def test_chapter_budget_is_not_multiplied_by_concept_count():
+    plan = GO_PLAN.replace("### 阶段 1：程序结构与运行", "每次 40 分钟\n\n### 阶段 1：程序结构与运行\n- 预计课次：1")
+    chapter = curriculum_from_plan(plan, topic="Go", route="foundation_engineer", level="zero").chapters[0]
+    assert chapter.estimated_sessions == 1
+    assert chapter.min_sessions == 1
+    assert chapter.session_minutes == 40
+    assert chapter.estimated_minutes == 40
+
+
+def test_legacy_range_preserves_uncertainty_and_unspecified_budget():
+    plan = GO_PLAN.replace("### 阶段 1：程序结构与运行", "### 阶段 1：程序结构与运行\n> 约 1–2 次课（40 分钟/次）")
+    curriculum = curriculum_from_plan(plan, topic="Go", route="foundation_engineer", level="zero")
+    first, second = curriculum.chapters[:2]
+    assert (first.min_sessions, first.estimated_sessions, first.session_minutes) == (1, 2, 40)
+    assert second.estimated_sessions is None
+    assert "预计课次：1–2" in render_curriculum_plan(curriculum)
+    assert "课次待估" in render_curriculum_plan(curriculum)
+
+
+def test_canonical_schedule_fields_do_not_leak_into_knowledge_bullets():
+    plan = """# Go\n### 阶段 1：运行\n#### 知识点\n- 入口\n- 命令\n- 预计课次：2\n- 单次分钟：40\n- 课外练习分钟：30\n"""
+    chapter = curriculum_from_plan(plan, topic="Go", route="concept_clarity", level="zero").chapters[0]
+    assert [p.title for p in chapter.knowledge_points] == ["入口", "命令"]
+    assert chapter.homework_minutes == 30
+    assert chapter.estimated_minutes == 80
+
+
+def test_session_outline_survives_parsing_and_rendering():
+    plan = GO_PLAN.replace(
+        "- 练习：运行 hello.go",
+        "- 预计课次：2\n- 单次分钟：40\n- 分次安排：第1课安装与运行；第2课构建与验证\n- 练习：运行 hello.go",
+    )
+    curriculum = curriculum_from_plan(plan, topic="Go", route="foundation_engineer", level="zero")
+    assert curriculum.chapters[0].session_outline == ["第1课安装与运行", "第2课构建与验证"]
+    assert "第2课构建与验证" in render_curriculum_plan(curriculum)

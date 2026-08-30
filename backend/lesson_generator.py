@@ -139,6 +139,10 @@ def _repair_generated_wire_format(response: str, topic: str) -> str:
             repaired_pages.append(raw_page)
             continue
         page = dict(raw_page)
+        if page.get("type") in {"explain", "example", "mastery"} and page.get("practice_kind") == page.get("type"):
+            # A display-only page has no practice category. Correct a model's
+            # duplicate page-type field without reclassifying an actual task.
+            page["practice_kind"] = None
         code = page.get("code")
         if isinstance(code, str) and code.strip():
             page_language = str(page.get("language") or language).casefold()
@@ -334,6 +338,9 @@ def parse_lesson_response(
         knowledge_point_id=knowledge_point_id,
         chapter_id=chapter.id if chapter else "",
         chapter_title=chapter.title if chapter else "",
+        planned_sessions=chapter.estimated_sessions if chapter else None,
+        session_minutes=chapter.session_minutes or session_minutes if chapter else session_minutes,
+        homework_minutes=chapter.homework_minutes if chapter else None,
         covered_knowledge_point_ids=covered_ids,
         practice_path=str(practice_path),
         completion_mode=completion_mode,
@@ -354,6 +361,148 @@ def current_point(curriculum: Curriculum) -> KnowledgePoint:
         if point.id == curriculum.current_knowledge_point_id:
             return point
     raise ValueError("current knowledge point is missing")
+
+
+def _structured_scope_concepts(title: str) -> list[str] | None:
+    plain = title.replace("`", "").strip()
+    if re.fullmatch(r"package main\s*与\s*func main\s*的启动约定", plain):
+        return ["package main", "func main", "启动约定"]
+    if re.fullmatch(r"go\s*子命令族[：:]\s*version\s*/\s*run\s*/\s*build", plain):
+        return ["go version", "go run", "go build"]
+    return None
+
+
+def _scope_concepts(title: str) -> list[str]:
+    """Extract literal topic phrases, not a semantic coverage/confidence score.
+
+    Only allowlisted instructional prefixes or an explicit '把「topic」拆成…'
+    wrapper can discard outer wording. Other parentheses retain outer concepts.
+    No synonym/semantic inference is made.
+    """
+    # Source attribution is a separate requirement, not part of a phrase the
+    # learner must see verbatim. Keep the actual source rather than dropping it.
+    structured = _structured_scope_concepts(title)
+    if structured:
+        return structured
+    title = re.sub(r"[（(]官方来源\s*[:：]?\s*([^（）()]+)[）)]", r"、\1、", title)
+    listed = re.search(r"[（(]([^（）()]+)[）)]\s*$", title)
+    quoted = re.search(r"把[「“]([^」”]+)[」”]\s*拆成", title)
+    interview_topic = re.fullmatch(r"(?:附带|补充)(?:一个)?面试点[「“]([^」”]+)[」”]", title)
+    source = title
+    instructional_prefix = re.fullmatch(
+        r"(?:快进)?(?:确认|复习|评估)(?:已掌握区|已掌握内容|已掌握知识点|强项)\s*",
+        title[:listed.start()] if listed else "",
+    )
+    if listed and instructional_prefix and re.search(r"[、；;]|与|\s和\s", listed[1]):
+        source = listed[1]
+    elif quoted:
+        source = quoted[1]
+    elif interview_topic:
+        source = interview_topic[1]
+    elif listed:
+        source = title[:listed.start()] + "、" + listed[1]
+    concepts = []
+    for phrase in re.split(r"[、；;]|\s*与\s*|\s+和\s+|如何", source):
+        phrase = re.sub(r"是什么[？?]?$", "", phrase.strip())
+        # 'HTTP handler 实现' names the API plus an instructional action.
+        # Do not strip arbitrary Chinese suffixes or invent synonyms.
+        phrase = re.sub(r"(?<=[A-Za-z])\s+实现$", "", phrase)
+        if phrase and phrase not in concepts:
+            concepts.append(phrase)
+    return concepts or [title]
+
+
+def _scope_text(text: str) -> str:
+    return re.sub(r"[\s`*]+", "", text).casefold()
+
+
+# Explicit literal subanchors for known compound concepts. They are only used
+# for per-page relevance; aggregate coverage still requires the FULL concepts.
+# Do not infer arbitrary Latin tokens, CJK n-grams, synonyms or confidence scores.
+_SCOPE_PAGE_SUBANCHORS = {
+    "HTTP handler": ("handler", "HandleFunc", "ResponseWriter", "http.Request"),
+    "表驱动单元测试": ("表驱动", "用例表"),
+    "并发取消": ("取消", "ctx.Done", "r.Context"),
+    "资源泄漏排查": ("泄漏", "资源句柄", "resp.Body"),
+    "Python 版本": ("python3 --version", "python --version", "py --version", "版本验证"),
+    "练习目录结构": ("练习目录",),
+    "编辑器打开方式": ("打开文件夹", "Open Folder"),
+}
+
+
+def _validate_scope_evidence(payload: dict, bundle: LessonBundle, points: list[KnowledgePoint]) -> None:
+    """Check cited-content lexical coverage at every fresh-generation boundary.
+
+    This does not prove factual correctness or semantic teaching quality. Cached
+    manifests remain loadable without retroactively inventing scope evidence.
+    """
+    raw_scope = payload.get("scope_evidence")
+    if not isinstance(raw_scope, list):
+        raise ValueError("generated lesson must include scope evidence")
+    page_by_id = {page.id: page for page in bundle.manifest.pages}
+    point_by_id = {point.id: point for point in points}
+    evidence_by_point = {}
+    for item in raw_scope:
+        if not isinstance(item, dict) or not isinstance(item.get("knowledge_point_id"), str):
+            raise ValueError("generated lesson scope evidence is invalid")
+        point_id = item["knowledge_point_id"]
+        if point_id in evidence_by_point:
+            raise ValueError("generated lesson scope evidence contains a duplicate knowledge point")
+        page_ids = item.get("page_ids")
+        if (not isinstance(page_ids, list)
+                or not all(isinstance(page_id, str) for page_id in page_ids)
+                or len(set(page_ids)) < 2):
+            raise ValueError("generated lesson scope evidence needs at least two pages per knowledge point")
+        if any(page_id not in page_by_id for page_id in page_ids):
+            raise ValueError("generated lesson scope evidence references an unknown page")
+        # Titles/eyebrows/IDs alone are not teaching evidence. Use only the
+        # cited body, question and code, never the overall deck title.
+        bodies = {page_id: f"{page_by_id[page_id].markdown}\n{page_by_id[page_id].question or ''}\n{page_by_id[page_id].code}" for page_id in page_ids}
+        if "excerpts" in item:
+            excerpts = item["excerpts"]
+            if not isinstance(excerpts, list) or not excerpts:
+                raise ValueError("generated lesson scope evidence excerpts are invalid")
+            for excerpt in excerpts:
+                if not isinstance(excerpt, dict):
+                    raise ValueError("generated lesson scope evidence excerpt is invalid")
+                page_id, quote = excerpt.get("page_id"), excerpt.get("quote")
+                if (not isinstance(page_id, str) or page_id not in bodies
+                        or not isinstance(quote, str) or not quote.strip()
+                        or quote not in bodies[page_id]):
+                    raise ValueError("generated lesson scope evidence excerpt is not grounded in its cited page")
+        # Explicit ID labels are metadata, but bare IDs such as 'go' and
+        # 'goroutine' are also legitimate domain terms and MUST remain intact.
+        cleaned_bodies = []
+        for body in bodies.values():
+            body = re.sub(rf"知识点\s*(?:ID\s*)?[:：]?\s*{re.escape(point_id)}(?![A-Za-z0-9_-])", "", body)
+            if "-" in point_id:
+                body = re.sub(rf"(?<![\w-]){re.escape(point_id)}(?![\w-])", "", body)
+            cleaned_bodies.append(body)
+        evidence_by_point[point_id] = cleaned_bodies
+    if set(evidence_by_point) != set(bundle.manifest.covered_knowledge_point_ids):
+        raise ValueError("generated lesson scope evidence must match covered knowledge points")
+    for point_id, narratives in evidence_by_point.items():
+        point = point_by_id.get(point_id)
+        if point is None:
+            raise ValueError("generated lesson scope evidence claimed an out-of-scope knowledge point")
+        normalized = [_scope_text(narrative) for narrative in narratives]
+        concepts = _scope_concepts(point.title)
+        anchors = [
+            _scope_text(anchor)
+            for concept in concepts
+            for anchor in (concept, *_SCOPE_PAGE_SUBANCHORS.get(concept, ()))
+        ]
+        # Models may cite surplus overview/quiz pages. Discard those citations
+        # only after validating ALL raw IDs/excerpts above. Never manufacture a
+        # second supporting page, and check every concept on retained pages only.
+        normalized = [body for body in normalized if any(anchor in body for anchor in anchors)]
+        if len(normalized) < 2:
+            raise ValueError(f"generated lesson drifted: scope evidence needs at least two relevant pages for {point_id}")
+        # The full-title form remains compatible; the concept-list form accepts
+        # paraphrased wrappers but still requires EVERY named concept.
+        if ((_structured_scope_concepts(point.title) is not None or not any(_scope_text(point.title) in body for body in normalized))
+                and not all(any(_scope_text(concept) in body for body in normalized) for concept in concepts)):
+            raise ValueError(f"generated lesson drifted away from a covered knowledge point: {point_id}")
 
 
 def build_lesson_prompt(
@@ -415,6 +564,7 @@ def build_lesson_prompt(
 当前知识点：{point.title}
 当前章：{chapter.title}
 本章必须完整讲完的知识点：{'；'.join(f'{item.id}：{item.title}' for item in chapter_points)}
+本章逐项覆盖词组（可分散在引用页正文，不必照抄整句知识点标题）：{json.dumps({item.id: _scope_concepts(item.title) for item in chapter_points}, ensure_ascii=False)}
 学习结果：{point.outcome}
 先修知识点：{', '.join(point.prerequisites) or '无'}
 练习目标：{point.practice}
@@ -422,15 +572,22 @@ def build_lesson_prompt(
 最近学习证据：{'；'.join(recent_evidence) or '暂无'}
 研究依据：{research_evidence or '当前主题使用已验证知识库；没有额外版本敏感事实'}
 单次时长：{session_minutes} 分钟
+整章预计课次：{chapter.estimated_sessions or '尚未估算，不能默认一课'}
+课外练习预算：{chapter.homework_minutes if chapter.homework_minutes is not None else '尚未估算'} 分钟
+计划中的分次目标：{'；'.join(chapter.session_outline) or '尚未细分，请按整章预算安排并标注为建议'}
+这是可分多次阅读的整章课件，不代表所有内容必须在一次学习中完成。若整章超过1课，在开场明确分次目标，并在每次课结束位置写“第N课暂停点”：本次应完成的练习、验收和下次从哪页继续。课外作业另计，不挤进单次时长。不能把浏览完等同于掌握。
 补救要求：{remediation or '首次讲解'}
 {revision_skill}
 {lesson_contract}
 {environment_contract}
 
-先读取 workspace 中的 `adaptive-lesson-flow`、`concept-teaching` 与 `knowledge-curator` Skill；如果当前路线是精进或项目实战，再读取对应的 `practice-drill` 或 `project-practice` Skill。先读取上述 Skill 后，不要扫描用户历史、知识库或其他文件。只输出一个 JSON 对象，
+先读取 workspace 中的 `adaptive-lesson-flow`、`concept-teaching` 与 `knowledge-curator` Skill；如果当前路线是精进或项目实战，必须读取 `practice-drill` 与 `project-practice`，并按该 Skill 路由读取当前主题参考，核对示例与作业验收的一致性。只读取这些明确指定的 Skill/参考，不要扫描用户历史、整份知识库或其他文件。只输出一个 JSON 对象，
 研究依据中的事实必须用于校验本章内容；不要编造未被来源支持的版本号或 API。不要 Markdown 围栏和过程说明。字段必须为：
 title, language, practice_path, completion_mode(choice/self_practice), completion_prompt, output_patterns, output_requirements,
-practice_starter_mode(provided/blank), pages(3–24 页，最后一页 type 必须为 mastery), answer_keys, interview_prompts。
+practice_starter_mode(provided/blank), pages(3–24 页，最后一页 type 必须为 mastery), answer_keys, interview_prompts, scope_evidence。
+scope_evidence 必须逐项对应本章知识点，格式为 {{"knowledge_point_id":"原 id","page_ids":["至少两个不同的真实页面 id"]}}。
+引用页面的正文、问题或代码合起来必须包含该知识点的全部覆盖词组；只在标题或元数据中点名不算覆盖。
+可以附加 excerpts: [{{"page_id":"被引用页 id","quote":"该页正文、问题或代码中的原文片段"}}]，不得编造原文。
 page 字段使用 id, type(explain/example/check/practice/mastery), title, eyebrow, markdown,
 code, language, question, options, practice_kind(classroom/homework/null)。options 必须是对象数组，例如
 [{{"id":"a","label":"选项文字"}},{{"id":"b","label":"选项文字"}}]，answer_keys 的值使用同样的小写 id。
@@ -457,25 +614,29 @@ def _lesson_dir(server_root: Path, user_id: str) -> Path:
 
 
 def save_lesson_bundle(server_root: Path, user_id: str, bundle: LessonBundle) -> None:
-    folder = _lesson_dir(server_root, user_id)
-    folder.mkdir(parents=True, exist_ok=True)
-    lesson = folder / f"{bundle.manifest.knowledge_point_id}.json"
-    answers = folder / f"{bundle.manifest.knowledge_point_id}.answers.json"
-    lesson_temporary = lesson.with_suffix(".json.tmp")
-    answers_temporary = answers.with_suffix(".json.tmp")
-    lesson_temporary.write_text(bundle.manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    answers_temporary.write_text(
-        json.dumps(bundle.answer_keys, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
-    )
-    lesson_temporary.replace(lesson)
-    answers_temporary.replace(answers)
+    from .lesson_versions import LessonVersionStore
+    LessonVersionStore(server_root, user_id, bundle.manifest.knowledge_point_id).save(bundle)
 
 
 def load_lesson_bundle(server_root: Path, user_id: str, knowledge_point_id: str) -> LessonBundle:
+    from .generation_transaction import project_lock
+    with project_lock(server_root, user_id):
+        return _load_lesson_bundle_locked(server_root, user_id, knowledge_point_id)
+
+
+def _load_lesson_bundle_locked(server_root: Path, user_id: str, knowledge_point_id: str) -> LessonBundle:
     if not re.fullmatch(r"[a-z0-9-]{1,96}", knowledge_point_id):
         raise ValueError("invalid knowledge_point_id")
     folder = _lesson_dir(server_root, user_id)
+    from .lesson_versions import LessonVersionStore
+    versions = LessonVersionStore(server_root, user_id, knowledge_point_id)
+    if versions.pointer.exists():
+        return versions.load()
     manifest = LessonManifest.model_validate_json((folder / f"{knowledge_point_id}.json").read_text(encoding="utf-8"))
+    answers = json.loads((folder / f"{knowledge_point_id}.answers.json").read_text(encoding="utf-8"))
+    # Preserve the untouched validated legacy wire content first. Any teaching
+    # contract migration is a distinct reversible revision, not the import.
+    versions.save(LessonBundle(manifest=manifest, answer_keys=answers), reason="legacy_import")
     pages = [
         page.model_copy(update={"code": _comment_legacy_code(manifest.language, page.code)})
         if page.code else page
@@ -520,8 +681,9 @@ def load_lesson_bundle(server_root: Path, user_id: str, knowledge_point_id: str)
             "pages": pages,
         })
     _validate_commented_progressive_code(manifest.pages)
-    answers = json.loads((folder / f"{knowledge_point_id}.answers.json").read_text(encoding="utf-8"))
-    return LessonBundle(manifest=manifest, answer_keys=answers)
+    bundle = LessonBundle(manifest=manifest, answer_keys=answers)
+    versions.save(bundle, reason="compatibility_upgrade")
+    return bundle
 
 
 def generate_and_save_lesson(
@@ -554,11 +716,17 @@ def generate_and_save_lesson(
         "chapter": curriculum.current_chapter(),
         "covered_knowledge_points": curriculum.current_chapter_remaining_points(),
     }
+
+    def parse_generated(candidate: str) -> LessonBundle:
+        parsed = parse_lesson_response(candidate, **parse_kwargs)
+        _validate_scope_evidence(_extract_json(candidate), parsed, curriculum.current_chapter_remaining_points())
+        return parsed
+
     try:
-        bundle = parse_lesson_response(response, **parse_kwargs)
+        bundle = parse_generated(response)
     except ValueError:
         try:
-            bundle = parse_lesson_response(_repair_generated_wire_format(response, curriculum.topic), **parse_kwargs)
+            bundle = parse_generated(_repair_generated_wire_format(response, curriculum.topic))
         except ValueError as repaired_error:
             chapter = curriculum.current_chapter()
             remaining_points = curriculum.current_chapter_remaining_points()
@@ -572,10 +740,12 @@ def generate_and_save_lesson(
 - 当前知识点：{curriculum.current_knowledge_point_id}
 - 本次可覆盖的知识点：
 {scope}
+逐项覆盖词组：{json.dumps({point.id: _scope_concepts(point.title) for point in remaining_points}, ensure_ascii=False)}
 
 额外输出顶层 `scope_evidence` 数组，必须逐一覆盖上面所有知识点：
 `{{"knowledge_point_id":"原 id","page_ids":["至少两个真实页面 id"]}}`。
-每个 page_ids 引用的页面必须确实讲该知识点，且这些页面的标题、讲解或代码合起来必须原样出现对应知识点名称。不得只在总标题点名后讲别的内容。
+每个 page_ids 引用的页面必须确实讲该知识点，且这些页面的正文、问题或代码合起来必须包含对应知识点的全部覆盖词组；不必原样重复整句知识点标题。不得只在标题或元数据点名后讲别的内容。
+可附加 excerpts: [{{"page_id":"被引用页 id","quote":"该页正文、问题或代码的原文片段"}}]，不得编造原文。
 请保留渐进讲解和中文注释。
 特别检查：每个含 options 的页面必须在 answer_keys 中有且只有一个答案；答案 id 必须属于该页 options；page id 不得重复。
 只输出一个完整 JSON 对象，不要 Markdown 代码围栏，不要解释，也不要省略任何页面。
@@ -585,46 +755,9 @@ def generate_and_save_lesson(
 """.strip()
             corrected = model_call(repair_prompt)
             try:
-                bundle = parse_lesson_response(corrected, **parse_kwargs)
+                bundle = parse_generated(corrected)
             except ValueError:
-                bundle = parse_lesson_response(
-                    _repair_generated_wire_format(corrected, curriculum.topic), **parse_kwargs,
-                )
-            corrected_payload = _extract_json(corrected)
-            raw_scope = corrected_payload.get("scope_evidence")
-            if not isinstance(raw_scope, list):
-                raise ValueError("repaired lesson must include scope evidence")
-            page_by_id = {page.id: page for page in bundle.manifest.pages}
-            evidence_by_point: dict[str, list[str]] = {}
-            for item in raw_scope:
-                if not isinstance(item, dict) or not isinstance(item.get("knowledge_point_id"), str):
-                    raise ValueError("repaired lesson scope evidence is invalid")
-                page_ids = item.get("page_ids")
-                if (
-                    not isinstance(page_ids, list)
-                    or not all(isinstance(page_id, str) for page_id in page_ids)
-                    or len(set(page_ids)) < 2
-                ):
-                    raise ValueError("repaired lesson scope evidence needs at least two pages per knowledge point")
-                if any(page_id not in page_by_id for page_id in page_ids):
-                    raise ValueError("repaired lesson scope evidence references an unknown page")
-                evidence_by_point[item["knowledge_point_id"]] = page_ids
-            expected_ids = set(bundle.manifest.covered_knowledge_point_ids)
-            if set(evidence_by_point) != expected_ids:
-                raise ValueError("repaired lesson scope evidence must match covered knowledge points")
-            point_by_id = {point.id: point for point in remaining_points}
-            for point_id, page_ids in evidence_by_point.items():
-                point = point_by_id.get(point_id)
-                if point is None:
-                    raise ValueError("repaired lesson claimed an out-of-scope knowledge point")
-                narrative = "\n".join(
-                    f"{page_by_id[page_id].title}\n{page_by_id[page_id].markdown}\n"
-                    f"{page_by_id[page_id].question or ''}\n{page_by_id[page_id].code}"
-                    for page_id in page_ids
-                )
-                marker = re.sub(r"\s+", "", point.title).casefold()
-                if marker not in re.sub(r"\s+", "", narrative).casefold():
-                    raise ValueError("repaired lesson drifted away from a covered knowledge point")
+                bundle = parse_generated(_repair_generated_wire_format(corrected, curriculum.topic))
     if persist:
         save_lesson_bundle(server_root, user_id, bundle)
     return bundle

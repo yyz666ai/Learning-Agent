@@ -139,7 +139,7 @@ def test_inline_diagnosis_is_clickable_and_bounded() -> None:
     assert 'className = "inline-choice"' in js
     assert '"/api/diagnostics/answer"' in js
     assert "最多 4" in js
-    assert "textarea" not in js
+    assert 'function intentInputRow' in js
     assert 'id="choiceTrayQuestion"' in html
     assert 'addAgent(result.question.prompt)' in js
     assert '你已经有一定基础，我会先问你 3–4 道小题' in js
@@ -152,7 +152,7 @@ def test_open_text_clarification_keeps_question_in_chat_without_choice_tray() ->
     assert "decision.question.options.length" in js
     assert 'state.stage = "clarifying_text"' in js
     assert '直接粘贴资料；暂时没有就输入“没有”' in js
-    assert 'state.pendingQuestionSlot === "interview_question_source"' in js
+    assert 'decision.question.interaction === "material"' in js
     assert 'state.stage = "interview_intake"' in js
 
 
@@ -191,7 +191,7 @@ def test_interview_onboarding_keeps_structured_slots_and_waits_for_pasted_questi
     assert "interview_question_source" in js
     assert 'state.stage = "interview_intake"' in js
     assert 'state.stage === "interview_intake"' in js
-    assert 'request("/api/interview/intake"' in js
+    assert 'request("/api/interview/intake"' not in js  # semantic intake belongs to the server
 
 
 def test_current_project_is_snapshotted_before_new_intent_writes_but_lesson_stays_visible() -> None:
@@ -489,11 +489,12 @@ def test_chat_can_request_a_validated_lesson_revision() -> None:
     artifact = read(ARTIFACT_JS)
 
     assert "isLessonRevisionRequest" in app
-    assert 'fetch("/api/lesson/remediate"' in app
-    assert "正在按你的要求重做讲义" in app
-    assert "loadCurrentLesson" in app
+    assert 'fetch("/api/lesson/remediate"' not in app
+    assert "window.LessonEditor.propose" in app
+    assert "请确认生成修改稿" in app
+    assert "loadCurrentLesson" in read(ROOT / "frontend/js/lesson-editor.js")
     assert "lesson-revision" in read(ROOT / "backend/lesson_generator.py")
-    assert "旧讲义仍然保留" in app
+    assert "原课件没有变化" in app
 
 
 def test_each_lesson_page_places_its_next_step_in_the_ppt_and_final_action_panel() -> None:
@@ -963,7 +964,9 @@ def test_chat_can_generate_supplemental_practice_into_the_bank() -> None:
     bank = read(INTERVIEW_JS)
 
     assert "isSupplementalPracticeRequest" in app
-    assert 'fetch("/api/practice/supplemental/generate"' in app
+    assert 'window.LessonEditor.propose(value, isSupplementalPracticeRequest(value) ? "supplemental" : "revision", reference)' in app
+    assert 'fetch("/api/practice/supplemental/generate"' not in app
+    assert 'fetch("/api/lesson/remediate"' not in app
     assert "openPracticeItem" in bank
     assert "startReview" in bank
 

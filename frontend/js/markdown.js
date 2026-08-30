@@ -27,18 +27,19 @@
   }
 
   function inline(value) {
-    return escapeHtml(value).split(/(`[^`]+`)/g).map((segment) => {
-      if (segment.startsWith("`") && segment.endsWith("`")) {
-        return `<code>${segment.slice(1, -1)}</code>`;
-      }
-      return segment
-        .replace(/==([^=]+)==/g, "<mark>$1</mark>")
-        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-        .replace(/\*([^*]+)\*/g, "<em>$1</em>");
-    }).join("");
+    const codes = [];
+    const safe = escapeHtml(String(value).replace(/\uE000/g, "&#57344;"));
+    return safe.replace(/`([^`]+)`/g, (_, code) => {
+      codes.push(`<code>${code}</code>`); return `\uE000${codes.length - 1}\uE000`;
+    })
+      .replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, "<u>$1</u>")
+      .replace(/==([^=]+)==/g, "<mark>$1</mark>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+      .replace(/\uE000(\d+)\uE000/g, (_, i) => codes[Number(i)]);
   }
 
-  function render(markdown) {
+  function render(markdown, allowHints = true) {
     const lines = String(markdown ?? "").replace(/\r\n?/g, "\n").split("\n");
     const html = [];
     let paragraph = [];
@@ -55,6 +56,18 @@
 
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
+      // Only our attribute-free hint block is supported. Arbitrary HTML stays
+      // escaped; recursive body rendering also disables nested hint blocks.
+      if (allowHints && line === "<details>") {
+        const summary = (lines[index + 1] || "").match(/^<summary>([^\n]*)<\/summary>$/);
+        const end = lines.indexOf("</details>", index + 2);
+        if (summary && end !== -1) {
+          flushParagraph(); closeList();
+          html.push(`<details class="markdown-hints"><summary>${inline(summary[1])}</summary>${render(lines.slice(index + 2, end).join("\n"), false)}</details>`);
+          index = end;
+          continue;
+        }
+      }
       const fence = line.match(/^```([\w+-]*)\s*$/);
       if (fence) {
         flushParagraph(); closeList();

@@ -107,6 +107,23 @@ def test_zero_beginner_skips_diagnosis():
     assert needs_diagnosis(submission(level="zero")) is False
 
 
+@pytest.mark.parametrize("route", ["academic_course", "exam_review"])
+def test_academic_intent_survives_profile_and_state_schema(tmp_path, route):
+    selected = submission(level="zero", topic="数据结构", goal_route=route)
+    persist_intent_decision(tmp_path, "learner", message="每周跟课", decision={
+        "slots": {"course_scope": "树和图", "exam_format": "简答和算法", "constraints": ["每周跟课"]},
+    })
+    confirm_onboarding(tmp_path, selected, None)
+    user = tmp_path / "userdir/u_learner"
+    state = json.loads((user / "learning-state.json").read_text())
+    schema = json.loads((Path(__file__).parents[1] / "workspace/dev/memory/schemas/learning-state.schema.json").read_text())
+    validate(state, schema)
+    assert "每周跟课" in (user / "profile.md").read_text()
+    assert json.loads((user / "profile.json").read_text())["intent_slots"]["course_scope"] == "树和图"
+    prompt = build_plan_prompt(selected, "", "knowledge_base")
+    assert "profile.json" in prompt and "不能强制工程师路线或毕业项目" in prompt
+
+
 def test_experienced_learner_needs_diagnosis():
     assert needs_diagnosis(submission(level="some")) is True
     assert needs_diagnosis(submission(level="experienced")) is True

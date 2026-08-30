@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 try:
     from .learning_content import SAFE_USER_ID
@@ -30,6 +30,19 @@ class Chapter(BaseModel):
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9-]+$")
     title: str = Field(min_length=1, max_length=240)
     knowledge_points: list[KnowledgePoint] = Field(min_length=1, max_length=30)
+    # Chapter budgets are authoritative; legacy point sessions are not additive.
+    estimated_sessions: int | None = Field(default=None, ge=1, le=100)
+    min_sessions: int | None = Field(default=None, ge=1, le=100)
+    session_minutes: int | None = Field(default=None, ge=5, le=240)
+    homework_minutes: int | None = Field(default=None, ge=0, le=10000)
+    session_outline: list[str] = Field(default_factory=list, max_length=100)
+
+    @computed_field
+    @property
+    def estimated_minutes(self) -> int | None:
+        if self.estimated_sessions is None or self.session_minutes is None:
+            return None
+        return self.estimated_sessions * self.session_minutes
 
 
 class Curriculum(BaseModel):
@@ -95,7 +108,7 @@ def _knowledge_items(section: str, fallback: str) -> list[str]:
             item.strip(" 。")
             for item in re.findall(r"(?m)^-\s+(.+)$", block.group("body"))
             if item.strip(" 。")
-            and re.match(r"^预计课次[：:]", item.strip()) is None
+            and re.match(r"^(预计课次|单次分钟|课外练习分钟|分次安排)[：:]", item.strip()) is None
         ]
         if items:
             return items
@@ -108,9 +121,30 @@ def _estimated_sessions(section: str, item_count: int) -> int:
     return max(1, min(20, (total + max(1, item_count) - 1) // max(1, item_count)))
 
 
+def _chapter_budget(section: str, default_minutes: int | None) -> dict:
+    count = re.search(r"(?m)^- 预计课次[：:]\s*(\d+)(?:\s*[–—~至-]\s*(\d+))?\s*$", section)
+    if count is None:
+        count = re.search(r"约\s*(\d+)(?:\s*[–—~至-]\s*(\d+))?\s*次课", section)
+    low = int(count.group(1)) if count else None
+    high = int(count.group(2) or count.group(1)) if count else None
+    if low is not None and high < low:
+        raise ValueError("chapter session range is reversed")
+    minutes = re.search(r"(?m)^- 单次分钟[：:]\s*(\d+)\s*$", section)
+    if minutes is None:
+        minutes = re.search(r"[（(]\s*(\d+)\s*分钟(?:/次)?\s*[）)]", section)
+    homework = re.search(r"(?m)^- 课外练习分钟[：:]\s*(\d+)\s*$", section)
+    return dict(min_sessions=low, estimated_sessions=high,
+                session_minutes=int(minutes.group(1)) if minutes else default_minutes,
+                homework_minutes=int(homework.group(1)) if homework else None,
+                session_outline=[part.strip() for part in _field(section,"分次安排","").split("；") if part.strip()])
+
+
 def curriculum_from_plan(markdown: str, *, topic: str, route: str, level: str) -> Curriculum:
     """Turn a detailed model-authored Markdown plan into a navigable curriculum."""
     headings = list(re.finditer(r"(?m)^###\s+(?:阶段\s*\d+|第\s*\d+\s*章)[：:\s]*(.+)$", markdown))
+    header = markdown[:headings[0].start()] if headings else markdown
+    duration = re.search(r"每次\s*(\d+)\s*分钟", header)
+    default_minutes = int(duration.group(1)) if duration else None
     chapters: list[Chapter] = []
     previous_id: str | None = None
     used_ids: set[str] = set()
@@ -152,6 +186,7 @@ def curriculum_from_plan(markdown: str, *, topic: str, route: str, level: str) -
                 id=f"chapter-{chapter_index}",
                 title=chapter_title,
                 knowledge_points=points,
+                **_chapter_budget(section, default_minutes),
             )
         )
     if not chapters:
@@ -177,6 +212,20 @@ def render_curriculum_plan(curriculum: Curriculum) -> str:
     ]
     for chapter_index, chapter in enumerate(curriculum.chapters, start=1):
         lines.extend((f"### 第 {chapter_index} 章：{chapter.title}", ""))
+        if chapter.estimated_sessions is None:
+            lines.extend(("> 课次待估；知识点数量不等于课次数量。", ""))
+        else:
+            count = str(chapter.estimated_sessions)
+            if chapter.min_sessions and chapter.min_sessions != chapter.estimated_sessions:
+                count = f"{chapter.min_sessions}–{chapter.estimated_sessions}"
+            lines.append(f"- 预计课次：{count}")
+            if chapter.session_minutes:
+                lines.append(f"- 单次分钟：{chapter.session_minutes}")
+            if chapter.homework_minutes is not None:
+                lines.append(f"- 课外练习分钟：{chapter.homework_minutes}")
+            lines.append("")
+        if chapter.session_outline:
+            lines.extend(("- 分次安排：" + "；".join(chapter.session_outline), ""))
         for point_index, point in enumerate(chapter.knowledge_points, start=1):
             marker = "（当前）" if point.id == curriculum.current_knowledge_point_id else ""
             lines.extend(

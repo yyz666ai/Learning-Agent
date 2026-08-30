@@ -27,7 +27,7 @@ def _stage_requirement(goal_route: str) -> str:
         return "1–3 个"
     if goal_route in COMPREHENSIVE_ROUTES:
         return "根据完整能力地图动态安排，通常 12–60 个"
-    return "根据目标范围动态安排 4–30 个"
+    return "根据目标范围动态安排 1–30 个，不为凑章数重复已会内容"
 
 
 def _diagnosis_context(diagnosis: DiagnosisSummary | None) -> str:
@@ -35,10 +35,14 @@ def _diagnosis_context(diagnosis: DiagnosisSummary | None) -> str:
         return "未做诊断；按零基础补齐必要先修，不得假设已经掌握。"
     strengths = "、".join(diagnosis.strengths) or "暂无稳定强项"
     gaps = "、".join(diagnosis.gaps) or "暂无明确缺口"
+    if any("fixture" in str(item).lower() or "synthetic" in str(item).lower() for item in diagnosis.evidence):
+        return (f"合成画像（不是实际用户作答统计）：等级 {diagnosis.estimated_level}；"
+                f"已给定强项：{strengths}；缺口：{gaps}。按这些输入规划，不声称用户做过题或给出正确率。")
     return (
         f"诊断等级：{diagnosis.estimated_level}；正确率：{diagnosis.score:.0%}；"
         f"答题数：{diagnosis.answered_count}；强项：{strengths}；缺口：{gaps}。"
         "Plan 必须说明哪些内容快进、哪些缺口补学，不能只使用自报水平。"
+        "已经完成起点诊断，不要再安排一整章重复摸底；第一章直接补已确认的缺口，强项只作简短回顾。"
     )
 
 
@@ -78,6 +82,9 @@ coverage_areas、prerequisites 和 graduation_project。搜索或证据校验失
     return f"""你是 Learning Agent 的课程总设计师。请为这一位学习者重写一份具体、可执行的 plan.md。
 
 先完整读取 `.codex/skills/learning-plan/SKILL.md`，严格按其中“先展示草案、确认后开课”的流程执行。
+还必须读取 `.codex/skills/learning-plan/references/curriculum-quality.md`，检查先修、承诺能力的练习/证据、时间口径。
+读取 `$USER_DIR/profile.json` 的 intent_slots 和 profile.md，保留用户目标、经验原文、约束、每周节奏、课程范围、题型和暂缓提供的资料；材料未提供不能宣称读过。
+academic_course 按已给章节跟课、讲解、课堂练习与拓展；exam_review 按考试范围、期限、题型、错题安排复习。两者都不能强制工程师路线或毕业项目；研究文件中的 graduation_project 可明确写“不适用，改为考试/课程成果”。
 {research_instruction}
 
 主题：{submission.topic.value}
@@ -99,9 +106,11 @@ coverage_areas、prerequisites 和 graduation_project。搜索或证据校验失
 6. 第一阶段必须能马上开始；不要继续向学习者摸底。
 7. {schedule_requirement}避免宽泛的“学习基础知识”。
 8. Plan 不承载教学代码：可以用 Mermaid 表达知识依赖，但不得嵌入 Go、Python 等编程代码。实际代码必须留到用户确认后的 HTML PPT，再按能力逐页讲解并加详细中文注释。
+9. 当前执行器按章节线性学习；Mermaid 如有只展示同一条线性顺序，不声明尚未实现的并行解锁。非概念速学路线每阶段写“- 预计课次：N”“- 单次分钟：{submission.session_minutes}”“- 课外练习分钟：M”；多课章还写“- 分次安排：第1课目标与暂停点；第2课目标与暂停点…”。课次是整章总量，不是每个知识点各一课。N/M 是合理估计，安装故障可另加时间，未交作业不代表掌握；概念速学只安排短小目标，不强加长期课表。
+10. 面试岗位未确认时，只能生成明确标为“通用预备”的草案，不能承诺岗位面试达标；未知题源不等于用户已经回答没有资料。岗位与材料确认后再定专项；可以调整任何未完成阶段。
 {mastery_instruction}
 
-下面是系统安全兜底计划。保留它的可靠结构，但把内容进一步具体化：
+下面是系统兜底结构示例，不是已验证的个性化结论。它的默认章节、岗位达标表述、评分与时间都必须服从上述用户画像和质量规则：
 
 {fallback_plan}
 """
@@ -120,6 +129,7 @@ def build_plan_revision_prompt(
     return f"""你正在修订学习者尚未确认的学习计划。
 
 必须先读取 `.codex/skills/plan-revision/SKILL.md` 和 `.codex/skills/learning-plan/SKILL.md`。
+还必须读取 `.codex/skills/learning-plan/references/curriculum-quality.md`，校验先修顺序、每个能力的实践证据、明确面试评分锚点及完整范围。
 保留已完成进度与可定位的当前知识点；只修改用户意见影响到的部分。
 
 主题：{submission.topic.value}
@@ -132,6 +142,7 @@ def build_plan_revision_prompt(
 最终只输出完整 Markdown Plan。仍必须包含“## 当前任务”“## 学习成果”“## 教学策略”，
 以及 {stage_requirement} 个具体阶段；每阶段包含“- 本阶段要学：”“- 练习：”“- 完成证据：”。
 完整掌握路线仍必须保留“## 知识覆盖地图”“## 最终达成标准”“## 毕业项目”、阶段知识点和预计课次，最后一阶段交付毕业项目。
+所有路线每阶段保留整章预计课次、单次分钟和课外练习分钟，不把概念数量当课次；当前执行按线性顺序，不展示未实现的并行解锁。
 
 当前 Plan：
 
@@ -152,6 +163,9 @@ def normalize_and_validate_plan(
     if title is None:
         return None
     candidate = candidate[title.start():].strip()
+    # Accept equivalent outcome headings; never fabricate missing content.
+    if not re.search(r"(?m)^## 学习成果\s*$", candidate):
+        candidate = re.sub(r"(?m)^## (?:成功证据|预期成果|学习产出)\s*$", "## 学习成果", candidate, count=1)
     candidate = re.sub(
         r"(?m)^## (\u9636\u6bb5\s*\d+[^\n]*)$",
         r"### \1",
@@ -166,7 +180,7 @@ def normalize_and_validate_plan(
         if fence.group("info").strip().casefold() != "mermaid":
             return None
     comprehensive = goal_route in COMPREHENSIVE_ROUTES
-    minimum_length = 120 if goal_route == "concept_clarity" else (1_200 if comprehensive else 300)
+    minimum_length = 120 if goal_route == "concept_clarity" else (1_200 if comprehensive else 180)
     if not minimum_length <= len(candidate) <= 30_000:
         return None
     if topic.casefold() not in candidate.casefold():
@@ -180,7 +194,7 @@ def normalize_and_validate_plan(
     elif comprehensive:
         minimum_stages, maximum_stages = 12, 60
     else:
-        minimum_stages, maximum_stages = 4, 30
+        minimum_stages, maximum_stages = 1, 30
     if not minimum_stages <= len(stages) <= maximum_stages:
         return None
     for index, match in enumerate(stages):

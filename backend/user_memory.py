@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 from datetime import datetime, timezone
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -61,11 +62,27 @@ def persist_intent_decision(
     *,
     message: str,
     decision: dict[str, Any],
+    session_id: str | None = None,
+    request_id: str | None = None,
+    message_kind: str = "user",
 ) -> dict[str, Any]:
     user_dir = _user_dir(server_root, user_id)
+    previous = read_intent_state(server_root, user_id)
+    session_id = session_id or previous.get("session_id") or "legacy"
+    history = list(previous.get("history") or []) if session_id == previous.get("session_id", "legacy") else []
+    if message_kind == "user":
+        history.append({"role": "user", "content": message.strip()[:4000]})
+    reply = (decision.get("question") or {}).get("prompt") or decision.get("summary")
+    if reply:
+        history.append({"role": "assistant", "content": str(reply)[:1000]})
     recorded_at = _now()
     state = {
         "schema_version": 1,
+        "session_id": session_id,
+        "revision": int(previous.get("revision") or 0) + 1,
+        "request_id": request_id,
+        "history": history[-40:],
+        "response": decision,
         "updated_at": recorded_at,
         "last_message": message.strip()[:4_000],
         "action": decision.get("action"),
@@ -78,7 +95,10 @@ def persist_intent_decision(
     _append_jsonl(user_dir / "onboarding" / "intent-events.jsonl", {
         "schema_version": 1,
         "recorded_at": recorded_at,
+        "session_id": session_id,
+        "request_id": request_id,
         "message": message.strip()[:4_000],
+        "message_kind": message_kind,
         "decision": decision,
     })
     return state
@@ -106,6 +126,8 @@ def append_conversation_event(
     content: str,
     lesson_id: str | None = None,
     status: str = "completed",
+    reference: dict[str, Any] | None = None,
+    chat_mode: str = "learning",
 ) -> Path:
     if role not in {"user", "assistant"}:
         raise ValueError("invalid conversation role")
@@ -118,5 +140,29 @@ def append_conversation_event(
             "content": content.strip()[:20_000],
             "lesson_id": lesson_id,
             "status": status,
+            "reference": reference,
+            "chat_mode": chat_mode,
         },
     )
+
+
+def read_conversation_events(server_root: Path, user_id: str, *, lesson_id: str | None = None, limit: int = 40) -> list[dict]:
+    """Read the active project's memory only; tolerate an interrupted last line."""
+    path = _user_dir(server_root, user_id) / "memory" / "conversation-events.jsonl"
+    events: deque = deque(maxlen=max(1, min(limit, 100)))
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("role") not in {"user", "assistant"}:
+                continue
+            if lesson_id is not None and event.get("lesson_id") != lesson_id:
+                continue
+            if event.get("status") not in {"completed", "submitted"}:
+                continue
+            events.append(event)
+    return list(events)

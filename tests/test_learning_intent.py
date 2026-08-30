@@ -48,7 +48,7 @@ def clarification_payload(*, options: list[dict[str, str]] | None = None) -> dic
 def test_intent_prompt_includes_skill_recent_history_existing_slots_and_correction_rule() -> None:
     history = [
         {"role": "user", "content": f"旧消息 {index}"}
-        for index in range(10)
+        for index in range(45)
     ]
     prompt = build_intent_prompt(
         message="不对，我其实只想看懂现有项目",
@@ -63,8 +63,8 @@ def test_intent_prompt_includes_skill_recent_history_existing_slots_and_correcti
     assert '"topic": "LangGraph"' in prompt
     assert "最近对话" in prompt
     assert "新输入优先" in prompt
-    assert "旧消息 1" not in prompt
-    assert "旧消息 2" in prompt
+    assert '"content": "旧消息 1"' not in prompt
+    assert '"content": "旧消息 44"' in prompt
     assert "信息仍不足时可以继续追问" in prompt
     assert "不得重复已填槽位" in prompt
 
@@ -369,7 +369,8 @@ def test_correction_prompt_requires_one_level_question_without_rewriting_known_s
     correction = learning_intent.build_intent_correction_prompt(original, "ready_for_plan requires level evidence")
 
     assert "不得猜测水平" in correction
-    assert "初学" in correction and "有基础" in correction and "熟练" in correction
+    assert "只修复上述具体错误" in correction
+    assert "选项必须是" not in correction
     assert "前端" in correction
 
 

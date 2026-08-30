@@ -33,15 +33,15 @@ def test_confirmed_profile_forbids_more_onboarding():
     assert "直接交给教学 Skill" in skill
 
 
-def test_topic_only_intent_uses_three_meaningful_routes_before_detail_questions() -> None:
+def test_topic_only_intent_uses_dynamic_goal_questions_not_fixed_routes() -> None:
     skill = INTENT_ROUTER_SKILL.read_text(encoding="utf-8")
 
     assert "初学" in skill
     assert "精进" in skill
     assert "面试" in skill
-    assert "仅有主题" in skill
-    assert "初学" in skill and "想学到什么程度" in skill
-    assert "精进" in skill and "现有项目" in skill
+    assert "只有主题时问想用它做到什么" in skill
+    assert "不固定生成" in skill
+    assert "快捷回答必须对应当前问题的同一维度" in skill
     assert "面试" in skill and "面试题" in skill
 
 
@@ -77,14 +77,13 @@ def test_intent_router_skill_owns_multiturn_slot_filling_and_dynamic_questions()
     onboarding = ONBOARDING_SKILL.read_text(encoding="utf-8")
 
     assert "learning-intent-router" in agents
-    assert "slot filling" in intent
-    assert "最近 8 条" in intent
-    assert "新输入优先" in intent
-    assert "一次只问一个问题" in intent
-    assert "2–3 个" in intent
+    assert "同项目历史" in intent
+    assert "明确纠正覆盖旧事实" in intent
+    assert "一次一个问题" in intent
+    assert "2–3个动态短选项" in intent
     assert "其他" in intent and "不得" in intent
     assert "ready_for_plan" in intent
-    assert "不为了补齐表单" in intent
+    assert "而不是让用户填完问卷" in intent
     assert "意图槽位" in onboarding
 
     evals = (INTENT_ROUTER_SKILL.parent / "evals/evals.json").read_text(encoding="utf-8")
@@ -100,9 +99,9 @@ def test_intent_router_skill_owns_multiturn_slot_filling_and_dynamic_questions()
 def test_intent_router_forbids_duplicate_same_topic_learning_projects():
     intent = INTENT_ROUTER_SKILL.read_text(encoding="utf-8")
 
-    assert "同主题项目" in intent
-    assert "不得创建重复项目" in intent
-    assert "继续已有项目" in intent
+    assert "同主题匹配" in intent
+    assert "由界面与服务端处理" in intent
+    assert "不伪造用户确认" in intent
     assert "合并" in intent
 
 
@@ -123,10 +122,37 @@ def test_teaching_limits_visible_work():
 
     assert "每轮最多一个新核心概念" in skill
     assert "默认只展示 1–3 道当前选择题" in skill
-    assert "点击选择判断 → 动手运行 → 仅终端输出验收" in skill
+    assert "点击选择判断 → 课后独立练习 → 对话答疑" in skill
     assert "在同一份翻页讲义中按页出现" in skill
     assert "不要向学习者播报读文件、路由 Skill、检查 Schema" in skill
     assert "正确选项必须与本页讲解事实一致" in skill
+
+
+def test_concept_skill_uses_current_manifest_not_legacy_deck_or_terminal_gate():
+    skill = CONCEPT_SKILL.read_text(encoding="utf-8")
+    assert "JSON" in skill and "answer_keys" in skill
+    assert "<html>" not in skill
+    assert "仅终端输出验收" not in skill
+    assert "CPython" in skill and "字节码" in skill
+    assert "docs.python.org/3/glossary.html#term-bytecode" in skill
+
+
+def test_practice_skills_honor_requested_shape_and_verify_concurrency_contract():
+    project = (WORKSPACE / ".codex/skills/project-practice/SKILL.md").read_text()
+    quiz = QUIZ_SKILL.read_text()
+    assert "go-cancellation.md" in project
+    assert "用户指定" in project
+    assert "默认生成 3 道" not in quiz
+    assert "编程" in quiz and "project-practice" in quiz
+
+
+def test_advanced_generation_requires_project_skill_and_its_routed_references():
+    from backend.curriculum import curriculum_from_plan
+    from backend.lesson_generator import build_lesson_prompt
+    from tests.test_curriculum import GO_PLAN
+    prompt = build_lesson_prompt(curriculum_from_plan(GO_PLAN,topic="Go",route="gap_upgrade",level="experienced"),profile="有基础",recent_evidence=[],session_minutes=40)
+    assert "practice-drill` 与 `project-practice" in prompt
+    assert "按该 Skill 路由读取当前主题参考" in prompt
 
 
 def test_advanced_drill_does_not_dump_a_batch():
@@ -299,3 +325,10 @@ def test_all_skills_have_behavior_cases_and_runner_can_find_them():
     assert all((path / "evals/evals.json").is_file() for path in skill_dirs)
     runner = EVAL_RUNNER.read_text(encoding="utf-8")
     assert 'root / ".codex/skills"' in runner
+
+
+def test_go_counterexample_requires_reproducible_cancellation_not_scheduler_luck():
+    reference = (WORKSPACE / ".codex/skills/project-practice/references/go-cancellation.md").read_text(encoding="utf-8")
+    assert "反例必须可重复" in reference
+    assert "先进入 ctx.Err" in reference
+    assert "只保留 Sleep 不可中断" in reference

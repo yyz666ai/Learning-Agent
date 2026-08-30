@@ -74,13 +74,21 @@ The first run prepares the teaching workspace automatically. Open:
 ## How to use it
 
 1. Type your real goal, such as “Learn Go from scratch,” “Help me understand this LangGraph project,” or “Prepare me for a Java backend interview.”
-2. If essential context is missing, answer the 3–4 compact follow-up choices.
+2. Answer only the follow-ups that affect your plan. Options are dynamic shortcuts, never preselected; you can type your own answer. Paste existing interview questions or project material directly into chat.
 3. Review the generated plan. Confirm it or ask for changes directly in chat.
 4. Learn through the HTML slides, answer classroom quizzes, and run code in the generated project.
 5. Ask questions in chat; mistakes, assignments, notes, and mastery are stored locally.
 6. On your next visit, resume an existing learning project from the sidebar.
 
 Local data is stored in `userdir/` and survives restarts. It is never committed to Git.
+
+### Edit, confirm, and undo lessons
+
+The classroom is read-only by default. Use **Edit** to change the current page's title, Markdown, or code. The toolbar supports H1/H2/H3, bold, italic, highlighting, and underline, with preview and Save/Cancel. Existing quiz questions remain protected from this text editor.
+
+To revise a lesson or add practice through chat, describe the change, confirm candidate generation, review the differences, and then choose **Apply** or **Cancel**. A generated candidate does not replace your current lesson automatically. **Undo** and **Version history** restore lesson versions without deleting your code or past attempts; revised questions require fresh answers.
+
+HTML keeps interactive quizzes and page navigation, while a same-version Markdown copy is stored on the backend and available through **Export Markdown**. It excludes private grading keys. Current version locks support a single service process, not multiple workers. See the [release validation report](projects/learning-agent/design/outputs/SAFE_EDITING_RELEASE_VALIDATION.md) for tested paths and limitations.
 
 ## Repository layout
 
@@ -102,6 +110,7 @@ The `tests/` directory is intentionally public: it protects teaching flows, quiz
 
 ```bash
 .venv/bin/python -m pytest -q
+node --test tests/*.test.cjs
 .venv/bin/python workspace/dev/tools/validate_workspace.py
 ```
 

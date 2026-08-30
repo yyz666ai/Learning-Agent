@@ -31,7 +31,7 @@
     "active_task": {"type": ["string", "null"]},
     "active_topic": {"type": "string", "minLength": 1, "maxLength": 240},
     "learning_mode": {"enum": ["systematic", "project", "practice"]},
-    "goal_route": {"enum": ["concept_clarity", "foundation_engineer", "urgent_codebase", "syntax_reading", "project_delivery", "gap_upgrade", "senior_engineer", "interview_sprint"]},
+    "goal_route": {"enum": ["concept_clarity", "foundation_engineer", "urgent_codebase", "syntax_reading", "project_delivery", "gap_upgrade", "senior_engineer", "interview_sprint", "academic_course", "exam_review"]},
     "concept_scope": {"enum": ["not_applicable", "meaning_only", "code_walkthrough"]},
     "session_minutes": {"type": "integer", "minimum": 10, "maximum": 120},
     "deadline_days": {"type": ["integer", "null"], "minimum": 1, "maximum": 365},

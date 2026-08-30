@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f8fafc">
   <title>Learning Agent · 一步一步学会</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="/css/style.css?v=20260823-learning-focus">
+  <link rel="stylesheet" href="/css/style.css?v=20260830-reviewed-editor">
 </head>
 <body>
   <a class="skip-link" href="#chatInput">跳到对话输入框</a>
@@ -53,7 +53,22 @@
         <div><span id="lessonCounter">本章 1 / 1</span><i aria-hidden="true"></i><span id="masteryText">掌握 0%</span><i aria-hidden="true"></i><span id="lessonRemaining">预计还需 25 分钟</span></div>
         <button class="icon-button" id="collapseArtifactBtn" type="button" aria-label="收起讲义"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
       </header>
+      <nav class="lesson-edit-toolbar" aria-label="课件编辑与版本">
+        <button id="lessonEditBtn" type="button" aria-expanded="false" aria-controls="lessonEditor" disabled>只读 · 编辑</button>
+        <button id="lessonUndoBtn" type="button" disabled>撤销</button><button id="lessonHistoryBtn" type="button">版本记录</button><button id="lessonExportBtn" type="button">导出 Markdown</button>
+      </nav>
+      <p id="editorStatus" class="editor-status" role="status"></p>
       <div class="artifact-scroll">
+        <section id="lessonEditor" class="lesson-editor" hidden aria-label="编辑本页课件">
+          <label for="editorTitle">本页标题</label><input id="editorTitle" maxlength="300">
+          <div id="editorFormatToolbar" class="editor-format-toolbar" role="group" aria-label="正文格式">
+            <button type="button" data-format="h1" aria-label="一级标题">H1</button><button type="button" data-format="h2" aria-label="二级标题">H2</button><button type="button" data-format="h3" aria-label="三级标题">H3</button>
+            <button type="button" data-format="bold"><b>加粗</b></button><button type="button" data-format="italic"><i>斜体</i></button><button type="button" data-format="highlight">高亮</button><button type="button" data-format="underline"><u>下划线</u></button>
+          </div>
+          <div class="editor-fields"><label for="editorMarkdown">正文 · Markdown</label><textarea id="editorMarkdown" rows="12" spellcheck="false"></textarea><label for="editorCode">代码 · 原样保存，不添加文字格式</label><textarea id="editorCode" rows="6" spellcheck="false"></textarea></div>
+          <div class="editor-preview-label">正文预览</div><article id="editorPreview" class="markdown-body"></article>
+          <footer><button id="editorPreviewToggle" type="button">预览</button><button id="editorCancelBtn" type="button">取消</button><button id="editorSaveBtn" class="primary-button" type="button">保存新版本</button></footer>
+        </section>
         <article class="lesson-page" id="lessonPage" aria-live="polite">
           <div class="page-count" id="pageCount">第 1 页 / 共 1 页</div>
           <p class="eyebrow" id="pageEyebrow">先建立直觉</p>
@@ -104,9 +119,10 @@
       </header>
       <div class="message-list" id="chatFeed" aria-live="polite"></div>
       <div class="conversation-bottom">
+        <section id="lessonProposalPanel" class="lesson-proposal" hidden aria-label="课件修改确认"><strong id="lessonProposalStatus" role="status"></strong><p id="lessonProposalSummary"></p><div id="lessonProposalDiff"></div><div id="lessonProposalActions"></div></section>
         <button class="chat-primary-action" id="chatPrimaryAction" type="button" hidden></button>
         <section class="activity-status" id="activityStatus" role="status" aria-live="polite" hidden><span class="activity-orb" aria-hidden="true"><i></i><i></i><i></i></span><span><strong id="activityStatusLabel">正在准备</strong><small id="activityStatusDetail">这一步完成后会告诉你接下来做什么。</small><span class="activity-progress-meta" id="activityProgressText">正在估算所需时间</span><i class="activity-track" aria-hidden="true"><b id="activityProgressFill"></b></i><small class="activity-current-step" id="activityCurrentStep">当前：正在建立任务</small></span></section>
-        <div class="prompt-chips" id="promptChips" hidden><button data-prompt="请换一个更生活化的说法。" type="button">换个说法</button><button data-prompt="先别告诉我答案，给我一个最小提示。" type="button">给我提示</button><button data-prompt="根据我刚才的表现，再出一道同难度练习。" type="button">再练一道</button></div>
+        <div class="prompt-chips" id="promptChips" hidden><button data-prompt="请换一个更生活化的说法。" type="button">换个说法</button><button data-prompt="先别告诉我答案，给我一个最小提示。" type="button">给我提示</button><button data-prompt="根据我刚才的表现，再出一道同难度练习。" type="button">再练一道</button><button data-prompt="开始模拟面试，请根据当前课程一次只问一道简答题。" type="button">模拟面试</button></div>
         <section class="choice-tray" id="choiceTray" aria-label="可选回答" hidden>
           <p class="choice-tray-question" id="choiceTrayQuestion" aria-live="polite" hidden></p>
           <div class="choice-tray-head"><span id="choiceTrayHint">点一下就可以，不用打字</span><span id="choiceProgress"></span></div>
@@ -114,6 +130,7 @@
         </section>
         <div class="inline-error" id="onboardingError" hidden role="alert"><span id="onboardingErrorText"></span><button id="retryOnboardingBtn" type="button">重新连接</button></div>
         <form class="coach-composer" id="chatForm">
+          <div id="lessonQuote" class="lesson-quote" hidden><span id="lessonQuoteText"></span><button id="removeLessonQuote" type="button" aria-label="移除课件引用">×</button></div>
           <label class="sr-only" for="chatInput">给学习教练发消息</label>
           <textarea id="chatInput" rows="2" placeholder="问当前课程，或直接输入想学的新知识…"></textarea>
           <div><span>Enter 发送 · Shift+Enter 换行</span><span class="composer-actions"><button class="send-button" id="sendBtn" type="submit" aria-label="发送"><i class="bi bi-arrow-up" aria-hidden="true"></i></button></span></div>
@@ -133,6 +150,8 @@
   <div class="praise-toast" id="praiseToast" hidden aria-live="polite"><strong>答对了</strong><span>答对了，继续下一页。</span></div>
   <div class="confetti-layer" id="celebrationLayer" hidden aria-hidden="true"></div>
   <div class="toast" id="toast" hidden aria-live="polite"></div>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script><script src="/js/markdown.js?v=20260823-code-frame"></script><script src="/js/activity-progress.js?v=20260823-detail"></script><script src="/js/artifact.js?v=20260826-background-jobs"></script><script src="/js/onboarding.js?v=20260826-open-materials"></script><script src="/js/interview-bank.js?v=20260823-unified"></script><script src="/js/app.js?v=20260824-no-voice"></script>
+  <dialog class="settings-dialog" id="lessonHistoryDialog" aria-labelledby="lessonHistoryTitle"><header><h2 id="lessonHistoryTitle">课件版本记录</h2><button id="lessonHistoryClose" class="dialog-close" type="button" aria-label="关闭版本记录"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><p>恢复只影响课件，代码、对话和历史作答会保留。</p><div id="lessonHistoryList"></div></dialog>
+  <dialog class="settings-dialog" id="lessonRestoreDialog" aria-labelledby="lessonRestoreTitle"><header><h2 id="lessonRestoreTitle">确认恢复课件？</h2></header><p>恢复只影响课件；你的代码、对话和历史作答不会删除。修改过的题目需要重新作答。</p><div class="lesson-editor-actions"><button id="lessonRestoreCancel" type="button" autofocus>暂不恢复</button><button id="lessonRestoreConfirm" type="button">确认恢复</button></div></dialog>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script><script src="/js/markdown.js?v=20260830-editor"></script><script src="/js/activity-progress.js?v=20260823-detail"></script><script src="/js/lesson-selection.js?v=20260830"></script><script src="/js/artifact.js?v=20260830-editor"></script><script src="/js/onboarding.js?v=20260830-intent-input"></script><script src="/js/interview-bank.js?v=20260823-unified"></script><script src="/js/lesson-editor.js?v=20260830-reviewed"></script><script src="/js/app.js?v=20260830-editor"></script>
 </body>
 </html>

@@ -25,9 +25,13 @@ GoalRoute = Literal[
     "gap_upgrade",
     "senior_engineer",
     "interview_sprint",
+    "academic_course",
+    "exam_review",
 ]
 
 ROUTE_STRATEGIES: dict[str, dict[str, str]] = {
+    "academic_course": {"label": "本科课程跟学", "teaching_focus": "按课程章节与先修依赖理解概念、算法及推导", "practice_focus": "章节习题、解释与拓展练习", "review_intensity": "按章节错题间隔复习", "graduation_evidence": "能独立完成课程范围内的习题并解释方法"},
+    "exam_review": {"label": "课程考试复习", "teaching_focus": "按考试范围、剩余时间和薄弱点安排优先级", "practice_focus": "题型练习、简答与算法推演，不强制毕业项目", "review_intensity": "错题重做和考前综合回顾", "graduation_evidence": "在限定时间完成范围内综合练习并解释错因"},
     "concept_clarity": {"label": "概念速学", "teaching_focus": "先建立准确直觉，再决定是否查看代码实现", "practice_focus": "用生活比喻、流程图和少量点击判断快速验证理解", "review_intensity": "本次即时回顾，不默认安排每日课表", "graduation_evidence": "能用大白话判断它解决什么问题、什么时候适合使用"},
     "foundation_engineer": {"label": "从零到工程师", "teaching_focus": "完整学习、复习、实战与阶段验收", "practice_focus": "选择判断、真实文件和综合项目逐步推进", "review_intensity": "完整间隔复习", "graduation_evidence": "独立完成并解释一个综合项目"},
     "urgent_codebase": {"label": "紧急看懂项目", "teaching_focus": "优先入口、调用链和关键文件", "practice_focus": "用选择判断快速理解项目，再修改一个目标位置", "review_intensity": "轻量回顾，减少繁琐记忆", "graduation_evidence": "能解释调用链并完成一次目标修改"},
@@ -39,6 +43,18 @@ ROUTE_STRATEGIES: dict[str, dict[str, str]] = {
 }
 
 ROUTE_PHASES: dict[str, list[tuple[str, str, str, str]]] = {
+    "academic_course": [
+        ("建立章节与先修地图", "结合课程范围梳理 {topic} 的概念与依赖", "解释一个核心概念", "能指出章节间的联系"),
+        ("逐章理解与推导", "按先修顺序学习 {topic} 的原理与方法", "完成章节基础题并解释步骤", "能独立推导和说明方法"),
+        ("章节习题与拓展", "把 {topic} 原理迁移到新的问题", "完成习题与一道变式", "能区分适用条件与边界"),
+        ("复习与综合检验", "回顾 {topic} 的薄弱点和知识联系", "重做错题并完成综合练习", "能独立完成并复盘"),
+    ],
+    "exam_review": [
+        ("确认范围与优先级", "根据考试范围梳理 {topic} 的考点与薄弱处", "做少量代表题", "形成按剩余时间排序的复习清单"),
+        ("核心考点补缺", "只补 {topic} 范围内阻塞解题的原理", "讲解并重做典型题", "能说明方法与适用边界"),
+        ("题型与变式训练", "练习 {topic} 的目标题型", "完成简答、推演或代码变式", "能独立写出解题步骤"),
+        ("综合模拟与错题回顾", "整合 {topic} 的考点并回顾错因", "限时完成综合题后重做错题", "有可核对的答案与错因，不承诺考试分数"),
+    ],
     "concept_clarity": [
         ("先讲懂它是什么", "用一个具体场景和比喻理解 {topic} 解决的问题", "完成 1–2 道点击判断", "能区分它和一个容易混淆的做法"),
         ("放回真实场景", "看懂 {topic} 的最小流程、输入输出和适用边界", "选择一个真实场景并判断是否适合使用", "能用一句大白话说清它的用途"),
@@ -199,8 +215,9 @@ def _render_interview_context(slots: dict[str, object]) -> str:
     stack = [item for item in stack if item]
     source = str(slots.get("interview_question_source") or "unknown")
     source_label = {
-        "has_questions": "已收录现成题",
+        "has_questions": "用户有现成题（是否收录见下方数量）",
         "none": "暂时没有现成题",
+        "deferred": "稍后补题，先按通用范围准备",
         "unknown": "尚未确认",
     }.get(source, "尚未确认")
     count = int(slots.get("interview_question_count") or 0)
@@ -209,6 +226,8 @@ def _render_interview_context(slots: dict[str, object]) -> str:
         lines.append(f"- 目标岗位：{role}")
     if stack:
         lines.append(f"- 技术栈：{'、'.join(stack)}")
+    elif slots.get("tech_stack_unspecified"):
+        lines.append("- 技术栈：尚不确定，先按岗位通用范围，允许后续调整")
     lines.append(f"- 面试题来源：{source_label}")
     if count:
         lines.append(f"- 已收录题目：{count} 道")
@@ -301,6 +320,14 @@ def confirm_onboarding(
     plan_path = user_dir / relative_plan
     intent_slots = read_intent_state(server_root, submission.user_id).get("slots", {})
     profile_markdown = render_profile(submission, diagnosis)
+    if isinstance(intent_slots, dict):
+        profile_markdown += "\n## 用户已明确的需求\n"
+        for key, label in (("goal", "目标"), ("desired_outcome", "预期成果"), ("level_evidence", "经历原文"),
+                           ("course_scope", "课程范围"), ("exam_format", "考试题型"), ("deadline", "期限"),
+                           ("target_context", "使用场景"), ("priority", "目标先后"), ("constraints", "约束与节奏")):
+            value = intent_slots.get(key)
+            if value:
+                profile_markdown += f"- {label}：{('；'.join(map(str, value)) if isinstance(value, list) else value)}\n"
     if submission.goal_route == "interview_sprint" and isinstance(intent_slots, dict):
         profile_markdown += "\n" + _render_interview_context(intent_slots)
     _atomic_write(user_dir / "profile.md", profile_markdown)
