@@ -356,6 +356,10 @@ def test_generate_lesson_api_persists_model_manifest_and_grades_saved_answers(
     captured: dict[str, str] = {}
 
     def fake_chat(user_id: str, prompt: str, release: Path, **kwargs) -> str:
+        if kwargs.get("generation") == "lesson_review":
+            from tests.semantic_review_fixtures import review_response
+            assert kwargs["timeout"] == 120
+            return review_response(prompt)
         assert kwargs == {"generation": "lesson"}
         captured["prompt"] = prompt
         return model_lesson_json(curriculum.current_knowledge_point_id)

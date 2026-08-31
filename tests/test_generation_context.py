@@ -88,7 +88,8 @@ def test_lesson_never_injects_unrelated_language_reference(tmp_path, topic, has_
     assert ("【规则 .codex/skills/project-practice/references/go-cancellation.md】" in prompt) == has_go_reference
 
 
-def test_generation_command_disables_reasoning_without_changing_user_config(tmp_path, monkeypatch):
+@pytest.mark.parametrize("kind", ["plan", "lesson_review"])
+def test_generation_command_disables_reasoning_without_changing_user_config(tmp_path, monkeypatch, kind):
     captured = {}
     user = codex_driver.ensure_user("prepared_test", tmp_path)
     config = user / ".codex-runtime/home/config.toml"
@@ -102,7 +103,7 @@ def test_generation_command_disables_reasoning_without_changing_user_config(tmp_
 
     monkeypatch.setattr(codex_driver, "_capture_process", capture)
     assert codex_driver.chat("prepared_test", "生成", ROOT / "workspace/dev", server_root=tmp_path,
-        generation="plan") == "# Go Plan"
+        generation=kind) == "# Go Plan"
     assert 'model_reasoning_effort="none"' in captured["cmd"]
     assert 'model_supports_reasoning_summaries=true' in captured["cmd"]
     assert not any("model_providers.deepseek" in arg for arg in captured["cmd"])

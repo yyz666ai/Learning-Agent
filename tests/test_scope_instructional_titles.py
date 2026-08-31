@@ -1,9 +1,10 @@
-"""Portable lexical-scope cases; fixtures contain no saved learner responses."""
+"""Original title/body fixtures now go intact to a semantic reviewer."""
 
 import pytest
 
-from backend.curriculum import KnowledgePoint
-from backend.lesson_generator import _scope_concepts, _validate_scope_evidence
+import json
+from backend.curriculum import Chapter, Curriculum, KnowledgePoint
+from backend.lesson_review import LessonCoverageError, LessonReviewUnavailable, review_lesson
 from backend.lesson_manifest import build_starter_lesson
 
 
@@ -28,17 +29,26 @@ DIRECTORY_BODIES = [
 ]
 
 
-def validate(title, bodies, *, page_ids=None):
+def validate(title, bodies, *, page_ids=None, status="covered"):
     point = KnowledgePoint(id="scope", title=title, outcome="解释并操作", practice="运行", mastery_criteria="结果正确")
+    curriculum = Curriculum(topic="Go", route="concept_clarity", level="zero",
+        current_knowledge_point_id="scope", chapters=[Chapter(id="chapter", title="本课", knowledge_points=[point])])
     bundle = build_starter_lesson(topic="Go", language="go", session_minutes=20, goal_route="foundation_engineer")
     bundle.manifest.covered_knowledge_point_ids = [point.id]
     for page, body in zip(bundle.manifest.pages, bodies):
-        page.markdown = body
-        page.code = ""
-        page.question = ""
-        page.title = title  # Titles cannot substitute for missing body evidence.
-    evidence = {"knowledge_point_id": point.id, "page_ids": page_ids or [p.id for p in bundle.manifest.pages[:len(bodies)]]}
-    _validate_scope_evidence({"scope_evidence": [evidence]}, bundle, [point])
+        page.markdown, page.code, page.question, page.title = body, "", "", title
+    captured = []
+    def model(prompt):
+        captured.append(prompt)
+        return json.dumps({"coverage": [{"knowledge_point_id": point.id, "status": status,
+            "reason": "审阅者报告：已有充分讲解" if status == "covered" else "审阅者报告：缺少必要讲解",
+            "page_ids": page_ids if page_ids is not None else [bundle.manifest.pages[0].id]}]})
+    report = review_lesson(bundle, curriculum, profile="零基础", model_call=model)
+    data = json.loads(captured[0].split("待审数据：\n", 1)[1])
+    assert data["knowledge_points"][0]["title"] == title
+    assert data["pages"][0]["markdown"] == bodies[0]
+    assert len(captured) == 1
+    return report
 
 
 @pytest.mark.parametrize("title,bodies", [
@@ -46,43 +56,20 @@ def validate(title, bodies, *, page_ids=None):
     (SKELETON_TITLE, SKELETON_BODIES),
     (DIRECTORY_TITLE, DIRECTORY_BODIES),
 ])
-def test_explicit_instructional_title_parts_can_be_taught_across_pages(title, bodies):
+def test_original_instructional_title_and_body_reach_reviewer_intact(title, bodies):
     validate(title, bodies)
 
 
-@pytest.mark.parametrize("title,bodies,missing", [
-    (INSTALL_TITLE, INSTALL_BODIES, "go version"),
-    (INSTALL_TITLE, INSTALL_BODIES, "go.dev/dl"),
-    (INSTALL_TITLE, INSTALL_BODIES, "当前稳定版"),
-    (INSTALL_TITLE, INSTALL_BODIES, "不写死"),
-    (SKELETON_TITLE, SKELETON_BODIES, "package main"),
-    (SKELETON_TITLE, SKELETON_BODIES, "func main"),
-    (SKELETON_TITLE, SKELETON_BODIES, "执行顺序"),
-    (DIRECTORY_TITLE, DIRECTORY_BODIES, "课程根目录"),
-    (DIRECTORY_TITLE, DIRECTORY_BODIES, "练习目录"),
-    (DIRECTORY_TITLE, DIRECTORY_BODIES, "工作流"),
-    (DIRECTORY_TITLE, DIRECTORY_BODIES, "用编辑器打开项目"),
+@pytest.mark.parametrize("title,bodies", [
+    (INSTALL_TITLE, INSTALL_BODIES),
+    (SKELETON_TITLE, SKELETON_BODIES),
+    (DIRECTORY_TITLE, DIRECTORY_BODIES),
 ])
-def test_instructional_extraction_keeps_every_substantive_requirement(title, bodies, missing):
-    with pytest.raises(ValueError, match="drifted"):
-        validate(title, [body.replace(missing, "其他内容") for body in bodies])
+def test_reviewer_can_reject_content_even_with_matching_titles(title, bodies):
+    with pytest.raises(LessonCoverageError):
+        validate(title, bodies, status="missing")
 
 
-def test_one_real_page_plus_unrelated_page_is_still_insufficient():
-    with pytest.raises(ValueError, match="at least two relevant pages"):
-        validate(INSTALL_TITLE, [INSTALL_BODIES[0], "只练习字符串拼接。"])
-
-
-def test_unknown_colon_prefix_is_not_silently_discarded():
-    title = "资源泄漏排查：channel、goroutine"
-    assert any("资源泄漏排查" in concept for concept in _scope_concepts(title))
-    with pytest.raises(ValueError, match="drifted"):
-        validate(title, ["channel 传递值。", "goroutine 执行任务。"])
-
-
-def test_installation_template_uses_captured_source_and_command():
-    title = INSTALL_TITLE.replace("Go", "Python").replace("go.dev/dl", "python.org/downloads").replace("go version", "python --version")
-    bodies = [body.replace("Go", "Python").replace("go.dev/dl", "python.org/downloads").replace("go version", "python --version") for body in INSTALL_BODIES]
-    validate(title, bodies)
-    with pytest.raises(ValueError, match="drifted"):
-        validate(title, INSTALL_BODIES)
+def test_untrusted_reviewer_cannot_cite_unknown_page():
+    with pytest.raises(LessonReviewUnavailable):
+        validate(INSTALL_TITLE, INSTALL_BODIES, page_ids=["invented"])

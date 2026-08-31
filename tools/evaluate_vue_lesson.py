@@ -58,7 +58,8 @@ def main():
 
     def model(uid, prompt, release, **kwargs):
         start = time.monotonic()
-        result = driver.chat(uid, prompt, release, server_root=isolated, timeout=240, **kwargs)
+        kwargs.setdefault("timeout", 240)
+        result = driver.chat(uid, prompt, release, server_root=isolated, **kwargs)
         call = {"seconds": round(time.monotonic() - start, 2), "prompt": prompt, "output": result}
         calls.append(call)
         (run / f"call-{len(calls)}.json").write_text(json.dumps(call, ensure_ascii=False, indent=2), encoding="utf-8")

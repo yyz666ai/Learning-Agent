@@ -96,3 +96,27 @@ def test_lesson_unavailable_overwrites_previous_success(tmp_path, monkeypatch):
     record = client.get("/api/support/bug-report?user_id=demo").json()["generation"]["lesson"]
     assert record["status"] == "failed"
     assert record["category"] == "provider"
+
+
+@pytest.mark.parametrize("kind,category", [("LessonCoverageError", "content_review"), ("LessonReviewUnavailable", "review_unavailable")])
+def test_semantic_review_failure_is_not_a_structure_failure(tmp_path, monkeypatch, kind, category):
+    from backend import lesson_review
+    monkeypatch.setattr(main, "SERVER_ROOT", tmp_path)
+    monkeypatch.setattr(main, "latest_release", lambda: tmp_path / "release")
+    monkeypatch.setattr(main, "read_learning_context", lambda *a: {"profile_status": "confirmed", "plan_status": "confirmed"})
+    monkeypatch.setattr(main, "read_state", lambda *a: {})
+    curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
+    monkeypatch.setattr(main, "load_curriculum", lambda *a: curriculum)
+    monkeypatch.setattr(main, "project_guard", lambda *a: None)
+    def fail(*args, **kwargs):
+        raise getattr(lesson_review, kind)("内容审阅：示例说明尚不充分")
+    monkeypatch.setattr(main, "generate_and_save_lesson", fail)
+    client = TestClient(main.app)
+    response = client.post("/api/lesson/generate", json={"user_id": "demo", "force": True})
+    assert response.status_code == 502
+    assert response.json()["detail"]["error_type"] == category
+    assert response.json()["detail"]["error_stage"] == "lesson_review"
+    assert "结构检查" not in response.text
+    record = client.get("/api/support/bug-report?user_id=demo").json()["generation"]["lesson"]
+    assert record["category"] == category
+    assert "示例说明" not in str(record)

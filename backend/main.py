@@ -1042,6 +1042,7 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
             remediation=request.remediation,
             research_evidence=research_evidence,
             model_call=lambda prompt: chat(request.user_id, prompt, release, generation="lesson"),
+            review_call=lambda prompt: chat(request.user_id, prompt, release, generation="lesson_review", timeout=120),
             persist=False,
         )
         with project_lock(SERVER_ROOT, request.user_id):
@@ -1060,12 +1061,16 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
             },
         ) from exc
     except Exception as exc:
+        from backend.lesson_review import LessonCoverageError, LessonReviewUnavailable
         error_type = "validation" if isinstance(exc, (ValueError, TypeError, json.JSONDecodeError)) else "provider"
         message = (
             "课程内容已返回，但未通过结构检查。请重新生成。"
             if error_type == "validation"
             else "教学模型没有完成这次课程生成。请稍后重试。"
         )
+        if isinstance(exc, (LessonCoverageError, LessonReviewUnavailable)):
+            error_type = "content_review" if isinstance(exc, LessonCoverageError) else "review_unavailable"
+            message = str(exc)
         logger.exception(
             "lesson generation failed user_id=%s knowledge_point_id=%s error_type=%s",
             request.user_id,
@@ -1078,7 +1083,7 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
             detail={
                 "message": message,
                 "retryable": True,
-                "error_stage": "lesson_generation",
+                "error_stage": "lesson_review" if error_type in {"content_review", "review_unavailable"} else "lesson_generation",
                 "error_type": error_type,
             },
         ) from exc

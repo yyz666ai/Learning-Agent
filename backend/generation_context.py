@@ -38,6 +38,9 @@ def profile_slots(user_dir: Path) -> dict:
 
 def prepare_generation_context(release: Path, user_dir: Path, kind: str,
                                message: str, allow_research: bool) -> str:
+    if kind == "lesson_review":
+        return ("【独立课件审阅】不调用工具、不联网、不读写文件。"
+                "只审阅本次提供的课程，不加载历史课程或其他生成任务。只返回要求的 JSON。\n" + message)
     if kind == "diagnosis":
         # Before confirmation, profile.md can still describe the previous
         # course. Use only the current intent supplied by the guarded caller.

@@ -8,6 +8,7 @@ import platform
 from pathlib import Path
 
 from .generation_transaction import project_lock
+from .lesson_review import LessonCoverageError, LessonReviewUnavailable
 from .user_memory import _atomic_json, _user_dir
 
 logger = logging.getLogger(__name__)
@@ -16,8 +17,8 @@ _RULES = {
     "drifted away from a covered": "scope_missing_terms",
     "scope evidence": "scope_citations",
 }
-_CATEGORIES = {"none", "validation", "provider"}
-_RULE_CODES = {"none", "structure", "provider", *_RULES.values()}
+_CATEGORIES = {"none", "validation", "provider", "content_review", "review_unavailable"}
+_RULE_CODES = {"none", "structure", "provider", "semantic_coverage", "semantic_review_unavailable", *_RULES.values()}
 
 
 def _read_records(path: Path) -> dict:
@@ -57,6 +58,10 @@ def record_generation(root: Path, user_id: str, operation: str, *, error: Except
     rule = "none" if error is None else "structure" if category == "validation" else "provider"
     if category == "validation":
         rule = next((code for pattern, code in _RULES.items() if pattern in str(error)), rule)
+    if isinstance(error, LessonCoverageError):
+        category, rule = "content_review", "semantic_coverage"
+    elif isinstance(error, LessonReviewUnavailable):
+        category, rule = "review_unavailable", "semantic_review_unavailable"
     try:
         with project_lock(root, user_id):
             records = _read_records(path)

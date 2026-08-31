@@ -441,7 +441,7 @@ def chat(
                 and provider.get("env_key") == "DEEPSEEK_API_KEY"
                 and env.get("DEEPSEEK_API_KEY")):
             transport = deepseek_generation_transport(env["DEEPSEEK_API_KEY"], timeout,
-                allow_tools=allow_research, json_output=generation in {"lesson", "diagnosis"})
+                allow_tools=allow_research, json_output=generation in {"lesson", "diagnosis", "lesson_review"})
     started = time.monotonic()
     if generation:
         logger.info("generation.start kind=%s research=%s requested_reasoning=none", generation, allow_research)

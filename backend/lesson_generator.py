@@ -7,6 +7,8 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
+from .lesson_review import review_lesson
+
 try:
     from .curriculum import Chapter, Curriculum, KnowledgePoint
     from .learning_content import SAFE_USER_ID
@@ -372,202 +374,6 @@ def current_point(curriculum: Curriculum) -> KnowledgePoint:
     raise ValueError("current knowledge point is missing")
 
 
-def _structured_scope_concepts(title: str) -> list[str] | None:
-    plain = title.replace("`", "").strip()
-    if re.fullmatch(r"package main\s*与\s*func main\s*的启动约定", plain):
-        return ["package main", "func main", "启动约定"]
-    if re.fullmatch(r"go\s*子命令族[：:]\s*version\s*/\s*run\s*/\s*build", plain):
-        return ["go version", "go run", "go build"]
-    return None
-
-
-def _scope_concepts(title: str) -> list[str]:
-    """Extract literal topic phrases, not a semantic coverage/confidence score.
-
-    Only allowlisted instructional prefixes or an explicit '把「topic」拆成…'
-    wrapper can discard outer wording. Other parentheses retain outer concepts.
-    No synonym/semantic inference is made.
-    """
-    # Source attribution is a separate requirement, not part of a phrase the
-    # learner must see verbatim. Keep the actual source rather than dropping it.
-    structured = _structured_scope_concepts(title)
-    if structured:
-        return structured
-    # These explicit instructional forms name their obligations in the body.
-    # Capture the actual source/command, not a language-specific substitute.
-    # Keep stable-version and source-of-version caveats as literal obligations.
-    installation = re.fullmatch(
-        r"(?P<tool>[A-Za-z][A-Za-z0-9 +#.-]*) 官方安装与版本验证[：:]从 "
-        r"(?P<source>\S+) 安装当前稳定版[，,]`(?P<command>[^`]+)` 确认安装成功"
-        r"[（(]版本号以官方页面为准[，,]不写死版本[）)]",
-        title.strip(),
-    )
-    if installation:
-        return [
-            f"{installation['tool']} 官方安装", installation["source"],
-            "当前稳定版", installation["command"], "版本号", "官方页面", "不写死",
-        ]
-    labeled = re.fullmatch(r"(?P<label>最小程序骨架|课程目录与编辑器工作流)[：:]\s*(?P<body>.+)", title)
-    if labeled:
-        concepts = []
-        if labeled["label"] == "课程目录与编辑器工作流":
-            concepts.extend(["课程目录", "编辑器", "工作流"])
-        for concept in _scope_concepts(labeled["body"]):
-            # An explicit command and its execution order are both required;
-            # they need not appear as one uninterrupted sentence on a page.
-            execution = re.fullmatch(r"`([^`]+)`\s*的执行顺序", concept)
-            concepts.extend([execution[1], "执行顺序"] if execution else [concept])
-        return list(dict.fromkeys(concepts))
-    title = re.sub(r"[（(]官方来源\s*[:：]?\s*([^（）()]+)[）)]", r"、\1、", title)
-    listed = re.search(r"[（(]([^（）()]+)[）)]\s*$", title)
-    quoted = re.search(r"把[「“]([^」”]+)[」”]\s*拆成", title)
-    interview_topic = re.fullmatch(r"(?:附带|补充)(?:一个)?面试点[「“]([^」”]+)[」”]", title)
-    source = title
-    instructional_prefix = re.fullmatch(
-        r"(?:快进)?(?:确认|复习|评估)(?:已掌握区|已掌握内容|已掌握知识点|强项)\s*",
-        title[:listed.start()] if listed else "",
-    )
-    if listed and instructional_prefix and re.search(r"[、；;]|与|\s和\s", listed[1]):
-        source = listed[1]
-    elif quoted:
-        source = quoted[1]
-    elif interview_topic:
-        source = interview_topic[1]
-    elif listed:
-        source = title[:listed.start()] + "、" + listed[1]
-    concepts = []
-    for phrase in re.split(r"[、；;]|\s*与\s*|\s+和\s+|如何", source):
-        phrase = re.sub(r"是什么[？?]?$", "", phrase.strip())
-        # 'HTTP handler 实现' names the API plus an instructional action.
-        # Do not strip arbitrary Chinese suffixes or invent synonyms.
-        phrase = re.sub(r"(?<=[A-Za-z])\s+实现$", "", phrase)
-        # Explicit identifier[/identifier] + optional Chinese description names
-        # literal obligations, not one mandatory contiguous sentence. Do not
-        # guess synonyms or split arbitrary Chinese descriptions into n-grams.
-        technical = re.fullmatch(
-            r"([A-Za-z_$][A-Za-z0-9_$]*(?:\s*/\s*[A-Za-z_$][A-Za-z0-9_$]*)*)"
-            r"(?:\s+([\u3400-\u9fff]+))?", phrase.replace("`", ""),
-        )
-        parts = [*re.split(r"\s*/\s*", technical[1]), technical[2]] if technical else [phrase]
-        for part in parts:
-            if part and part not in concepts:
-                concepts.append(part)
-    return concepts or [title]
-
-
-def _scope_text(text: str) -> str:
-    return re.sub(r"[\s`*]+", "", text).casefold()
-
-
-def _contains_scope_term(body: str, term: str) -> bool:
-    if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", term):
-        # Keep spaces for word boundaries: 'contract', 'triggerLater' and
-        # 'NonProxy' must not count as track, trigger or Proxy evidence.
-        plain = re.sub(r"[`*]+", "", body)
-        return re.search(rf"(?<![A-Za-z0-9_$]){re.escape(term)}(?![A-Za-z0-9_$])", plain, re.I) is not None
-    return _scope_text(term) in _scope_text(body)
-
-
-# Explicit literal subanchors for known compound concepts. They are only used
-# for per-page relevance; aggregate coverage still requires the FULL concepts.
-# Do not infer arbitrary Latin tokens, CJK n-grams, synonyms or confidence scores.
-_SCOPE_PAGE_SUBANCHORS = {
-    "HTTP handler": ("handler", "HandleFunc", "ResponseWriter", "http.Request"),
-    "表驱动单元测试": ("表驱动", "用例表"),
-    "并发取消": ("取消", "ctx.Done", "r.Context"),
-    "资源泄漏排查": ("泄漏", "资源句柄", "resp.Body"),
-    "Python 版本": ("python3 --version", "python --version", "py --version", "版本验证"),
-    "练习目录结构": ("练习目录",),
-    "编辑器打开方式": ("打开文件夹", "Open Folder"),
-}
-
-
-def _validate_scope_evidence(payload: dict, bundle: LessonBundle, points: list[KnowledgePoint]) -> None:
-    """Check cited-content lexical coverage at every fresh-generation boundary.
-
-    This does not prove factual correctness or semantic teaching quality. Cached
-    manifests remain loadable without retroactively inventing scope evidence.
-    """
-    raw_scope = payload.get("scope_evidence")
-    if not isinstance(raw_scope, list):
-        raise ValueError("generated lesson must include scope evidence")
-    page_by_id = {page.id: page for page in bundle.manifest.pages}
-    point_by_id = {point.id: point for point in points}
-    evidence_by_point = {}
-    for item in raw_scope:
-        if not isinstance(item, dict) or not isinstance(item.get("knowledge_point_id"), str):
-            raise ValueError("generated lesson scope evidence is invalid")
-        point_id = item["knowledge_point_id"]
-        if point_id in evidence_by_point:
-            raise ValueError("generated lesson scope evidence contains a duplicate knowledge point")
-        page_ids = item.get("page_ids")
-        if (not isinstance(page_ids, list)
-                or not all(isinstance(page_id, str) for page_id in page_ids)
-                or len(set(page_ids)) < 2):
-            raise ValueError("generated lesson scope evidence needs at least two pages per knowledge point")
-        if any(page_id not in page_by_id for page_id in page_ids):
-            raise ValueError("generated lesson scope evidence references an unknown page")
-        # Titles/eyebrows/IDs alone are not teaching evidence. Use only the
-        # cited body, question and code, never the overall deck title.
-        bodies = {page_id: f"{page_by_id[page_id].markdown}\n{page_by_id[page_id].question or ''}\n{page_by_id[page_id].code}" for page_id in page_ids}
-        if "excerpts" in item:
-            excerpts = item["excerpts"]
-            if not isinstance(excerpts, list) or not excerpts:
-                raise ValueError("generated lesson scope evidence excerpts are invalid")
-            for excerpt in excerpts:
-                if not isinstance(excerpt, dict):
-                    raise ValueError("generated lesson scope evidence excerpt is invalid")
-                page_id, quote = excerpt.get("page_id"), excerpt.get("quote")
-                if (not isinstance(page_id, str) or page_id not in bodies
-                        or not isinstance(quote, str) or not quote.strip()
-                        or quote not in bodies[page_id]):
-                    raise ValueError("generated lesson scope evidence excerpt is not grounded in its cited page")
-        # Explicit ID labels are metadata, but bare IDs such as 'go' and
-        # 'goroutine' are also legitimate domain terms and MUST remain intact.
-        cleaned_bodies = []
-        for body in bodies.values():
-            body = re.sub(rf"知识点\s*(?:ID\s*)?[:：]?\s*{re.escape(point_id)}(?![A-Za-z0-9_-])", "", body)
-            if "-" in point_id:
-                body = re.sub(rf"(?<![\w-]){re.escape(point_id)}(?![\w-])", "", body)
-            cleaned_bodies.append(body)
-        evidence_by_point[point_id] = cleaned_bodies
-    if set(evidence_by_point) != set(bundle.manifest.covered_knowledge_point_ids):
-        raise ValueError("generated lesson scope evidence must match covered knowledge points")
-    coverage_errors = []
-    for point_id, narratives in evidence_by_point.items():
-        point = point_by_id.get(point_id)
-        if point is None:
-            raise ValueError("generated lesson scope evidence claimed an out-of-scope knowledge point")
-        concepts = _scope_concepts(point.title)
-        anchors = [
-            anchor
-            for concept in concepts
-            for anchor in (concept, *_SCOPE_PAGE_SUBANCHORS.get(concept, ()))
-        ]
-        # Models may cite surplus overview/quiz pages. Discard those citations
-        # only after validating ALL raw IDs/excerpts above. Never manufacture a
-        # second supporting page, and check every concept on retained pages only.
-        relevant = [body for body in narratives if any(_contains_scope_term(body, anchor) for anchor in anchors)]
-        if len(relevant) < 2:
-            coverage_errors.append(
-                f"generated lesson drifted: scope evidence needs at least two relevant pages for {point_id}. "
-                f"知识点“{point.title}”必须在至少两张引用页的正文/问题/代码中讲解；"
-                f"目前仅 {len(relevant)} 张引用页含匹配正文。至少两页，每页至少自然出现一个覆盖词组：{'、'.join(concepts)}；"
-                "这些页面合起来还须涵盖全部词组。若只有一个词组，它必须分别出现在两页的正文/问题/代码中。"
-                "仅用同义改写或只写在页面标题不会被此词面检查识别。"
-                "可以补充讲解或修正 page_ids 指向已有真实讲解页，不能虚构引用。"
-            )
-            continue
-        # Every named obligation is required, even when title syntax is split.
-        missing = [concept for concept in concepts if not any(_contains_scope_term(body, concept) for body in relevant)]
-        if missing:
-            coverage_errors.append(f"generated lesson drifted away from a covered knowledge point: {point_id}; 缺少覆盖词组：{'、'.join(missing)}")
-    # A single bounded model repair must see all lexical failures, otherwise it
-    # can fix the first title and immediately fail on the next one.
-    if coverage_errors:
-        raise ValueError("\n".join(coverage_errors))
-
-
 def build_lesson_prompt(
     curriculum: Curriculum,
     *,
@@ -627,7 +433,7 @@ def build_lesson_prompt(
 当前知识点：{point.title}
 当前章：{chapter.title}
 本章必须完整讲完的知识点：{'；'.join(f'{item.id}：{item.title}' for item in chapter_points)}
-本章逐项覆盖词组（可分散在引用页正文，不必照抄整句知识点标题）：{json.dumps({item.id: _scope_concepts(item.title) for item in chapter_points}, ensure_ascii=False)}
+本章学习目标与完成标准（语义审阅使用同一份要求，不按标题拆词）：{json.dumps([item.model_dump(include={'id', 'title', 'outcome', 'practice', 'mastery_criteria'}) for item in chapter_points], ensure_ascii=False)}
 学习结果：{point.outcome}
 先修知识点：{', '.join(point.prerequisites) or '无'}
 练习目标：{point.practice}
@@ -647,11 +453,7 @@ def build_lesson_prompt(
 使用后台已提供的 `adaptive-lesson-flow`、`concept-teaching`、`progressive-code-teaching`、`quiz-designer` 与 `visual-explainer` 规则；精进或项目实战同时遵循已提供的 `practice-drill`、`project-practice` 与相关主题参考，核对示例与作业验收的一致性。本次只生成内容，不重复读文件、不联网、不执行知识库策展或状态写入。只输出一个 JSON 对象，
 研究依据中的事实必须用于校验本章内容；不要编造未被来源支持的版本号或 API。不要 Markdown 围栏和过程说明。字段必须为：
 title, language, practice_path, completion_mode(choice/self_practice), completion_prompt, output_patterns, output_requirements,
-practice_starter_mode(provided/blank), pages(3–24 页，最后一页 type 必须为 mastery), answer_keys, interview_prompts, scope_evidence。
-scope_evidence 必须是数组，逐项对应本章知识点，格式为 [{{"knowledge_point_id":"原 id","page_ids":["page-1","page-2"]}}]，不能写成按 id 索引的对象。每项至少引用两个不同的真实页面 id。
-引用页面的正文、问题或代码合起来必须包含该知识点的全部覆盖词组；只在标题或元数据中点名不算覆盖。
-scope_evidence 只输出 knowledge_point_id 和 page_ids，不输出 excerpts；后台直接检查这些页面的正文，不需要重复抄写引文。
-词面检查的逐页要求：每个知识点至少有两张引用页，每页至少自然出现一个覆盖词组；全部引用页合起来涵盖全部词组。若知识点只有一个覆盖词组（如“解构失响应”），须在两页正文/问题/代码中分别使用该词组：一页定义，另一页针对它解释示例或布置练习；仅同义改写不能通过词面检查。不必在每页重复全部技术词，不用关键词清单冒充讲解。
+practice_starter_mode(provided/blank), pages(3–24 页，最后一页 type 必须为 mastery), answer_keys, interview_prompts。
 page 字段使用 id, type(explain/example/check/practice/mastery), title, eyebrow, markdown,
 code, language, question, options, practice_kind(classroom/homework/null)。options 必须是对象数组，例如
 [{{"id":"a","label":"选项文字"}},{{"id":"b","label":"选项文字"}}]，answer_keys 的值使用同样的小写 id。
@@ -669,7 +471,7 @@ practice_starter_mode：第一个非常简单的例子可用 provided；课后�
 当路线为 interview_sprint 时，interview_prompts 必须有 2–4 项；每项字段为 id, question, reference_answer,
 answer_structure, common_omissions, follow_ups。answer_structure 和 common_omissions 必须是字符串数组，不能返回单个字符串。follow_ups 每项字段为 prompt, answer_points，其中 answer_points 也必须是字符串数组。即使用户没有提供面试题也必须生成，答案要适合口述并能应对追问；其他路线可返回空数组。
 
-最终结构检查：pages[-1].type 必须为 "mastery"，它之后不能再有页面。面试题仅填顶层 interview_prompts，前端会自动显示在最后一页，不再另建“面试表达练习”practice 页。只保留一个 homework 页，课堂不另设编程 practice 页。第一次代码示例保持 3–12 行非空非注释代码，之后才扩展；每个 code 字段都检查中文注释数量。scope_evidence 必须是数组。每个知识点至少有两张真正相关的引用页，正文、问题或代码合起来覆盖全部指定词组；技术标识符与中文描述可以分别讲解，例如“track / trigger 依赖收集”要求 track、trigger、依赖收集全部出现，不要求连续复述标题。不只放在标题，不堆砌关键词。只返回完整 JSON。
+最终结构检查：pages[-1].type 必须为 "mastery"，它之后不能再有页面。面试题仅填顶层 interview_prompts，前端会自动显示在最后一页，不再另建“面试表达练习”practice 页。只保留一个 homework 页，课堂不另设编程 practice 页。第一次代码示例保持 3–12 行非空非注释代码，之后才扩展；每个 code 字段都检查中文注释数量。教学覆盖由独立模型结合正文和代码进行语义审阅，允许同义表述，不要求标题原词或固定两页。只返回完整 JSON。
 """
 
 
@@ -761,6 +563,7 @@ def generate_and_save_lesson(
     recent_evidence: list[str],
     session_minutes: int,
     model_call: Callable[[str], str],
+    review_call: Callable[[str], str] | None = None,
     remediation: str = "",
     research_evidence: str = "",
     persist: bool = True,
@@ -785,7 +588,6 @@ def generate_and_save_lesson(
 
     def parse_generated(candidate: str) -> LessonBundle:
         parsed = parse_lesson_response(candidate, **parse_kwargs)
-        _validate_scope_evidence(_extract_json(candidate), parsed, curriculum.current_chapter_remaining_points())
         return parsed
 
     try:
@@ -806,13 +608,8 @@ def generate_and_save_lesson(
 - 当前知识点：{curriculum.current_knowledge_point_id}
 - 本次可覆盖的知识点：
 {scope}
-逐项覆盖词组：{json.dumps({point.id: _scope_concepts(point.title) for point in remaining_points}, ensure_ascii=False)}
 
-额外输出顶层 `scope_evidence` 数组，必须逐一覆盖上面所有知识点：
-`{{"knowledge_point_id":"原 id","page_ids":["至少两个真实页面 id"]}}`。
-每个 page_ids 引用的页面必须确实讲该知识点，且这些页面的正文、问题或代码合起来必须包含对应知识点的全部覆盖词组；不必原样重复整句知识点标题。不得只在标题或元数据点名后讲别的内容。
-不输出 excerpts，后台会直接核对页面正文。
-请保留渐进讲解和中文注释。
+请实质讲解本章知识点，保留渐进讲解和中文注释。不要照抄标题堆关键词，也不要求每个知识点固定两页。
 特别检查：每个含 options 的页面必须在 answer_keys 中有且只有一个答案；答案 id 必须属于该页 options；page id 不得重复。
 只输出一个完整 JSON 对象，不要 Markdown 代码围栏，不要解释，也不要省略任何页面。
 
@@ -830,6 +627,8 @@ def generate_and_save_lesson(
                 bundle = parse_generated(corrected)
             except ValueError:
                 bundle = parse_generated(_repair_generated_wire_format(corrected, curriculum.topic))
+    # Semantic decisions must not enter the structural repair/regeneration loop.
+    review_lesson(bundle, curriculum, profile=profile, model_call=review_call or model_call)
     if persist:
         save_lesson_bundle(server_root, user_id, bundle)
     return bundle

@@ -13,6 +13,7 @@ from backend.lesson_generator import (
     parse_lesson_response,
 )
 
+from tests.semantic_review_fixtures import review_response
 from tests.test_curriculum import GO_PLAN
 
 
@@ -106,7 +107,7 @@ def test_generator_prompt_contains_profile_point_prerequisites_evidence_and_time
         profile="零基础；喜欢边做边学",
         recent_evidence=["上一题把编译和运行混淆了"],
         session_minutes=25,
-        model_call=fake_model,
+        model_call=fake_model, review_call=review_response,
     )
 
     prompt = captured["prompt"]
@@ -134,7 +135,7 @@ def test_generator_can_validate_without_persisting_before_project_guard(tmp_path
         profile="零基础",
         recent_evidence=[],
         session_minutes=25,
-        model_call=lambda _: model_lesson_json(curriculum.current_knowledge_point_id),
+        model_call=lambda _: model_lesson_json(curriculum.current_knowledge_point_id), review_call=review_response,
         persist=False,
     )
 
@@ -356,7 +357,7 @@ def test_generator_repairs_missing_chinese_comments_before_persisting(tmp_path: 
         profile="零基础",
         recent_evidence=[],
         session_minutes=25,
-        model_call=lambda _prompt: json.dumps(payload, ensure_ascii=False),
+        model_call=lambda _prompt: json.dumps(payload, ensure_ascii=False), review_call=review_response,
     )
 
     code = bundle.manifest.pages[1].code
@@ -376,7 +377,7 @@ def test_generator_normalizes_common_model_answer_key_list_before_validation(tmp
         profile="零基础",
         recent_evidence=[],
         session_minutes=25,
-        model_call=lambda _prompt: json.dumps(payload, ensure_ascii=False),
+        model_call=lambda _prompt: json.dumps(payload, ensure_ascii=False), review_call=review_response,
     )
 
     assert bundle.answer_keys == {"check": "b"}
@@ -417,7 +418,7 @@ def test_generator_normalizes_interview_prompt_string_lists_without_second_model
         profile="零基础",
         recent_evidence=[],
         session_minutes=25,
-        model_call=fake_model,
+        model_call=fake_model, review_call=review_response,
     )
 
     assert calls == 1
@@ -444,7 +445,7 @@ def test_generator_retries_once_when_model_omits_choice_answer_key(tmp_path: Pat
 
     bundle = generate_and_save_lesson(
         tmp_path, "learner", curriculum=curriculum, profile="零基础",
-        recent_evidence=[], session_minutes=25, model_call=fake_model,
+        recent_evidence=[], session_minutes=25, model_call=fake_model, review_call=review_response,
     )
 
     assert bundle.answer_keys == {"check": "b"}
@@ -474,31 +475,30 @@ def test_generator_rejects_structurally_repaired_lesson_that_changes_the_knowled
     ]
     responses = iter([json.dumps(broken, ensure_ascii=False), json.dumps(drifted, ensure_ascii=False)])
 
-    with pytest.raises(ValueError, match="drifted"):
+    from backend.lesson_review import LessonCoverageError
+    with pytest.raises(LessonCoverageError, match="漏讲"):
         generate_and_save_lesson(
             tmp_path, "learner", curriculum=curriculum, profile="零基础",
-            recent_evidence=[], session_minutes=25, model_call=lambda _prompt: next(responses),
+            recent_evidence=[], session_minutes=25, model_call=lambda _prompt: next(responses), review_call=lambda prompt: review_response(prompt, missing=True),
         )
 
     assert not (tmp_path / "userdir/u_learner/lessons/package-main.json").exists()
 
 
-def test_generator_rejects_scope_evidence_that_repeats_one_page(tmp_path: Path) -> None:
+def test_legacy_self_reported_scope_does_not_override_independent_review(tmp_path: Path) -> None:
     curriculum = curriculum_from_plan(GO_PLAN, topic="Go", route="foundation_engineer", level="zero")
-    broken = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
-    broken["answer_keys"] = {}
-    corrected = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
-    corrected["scope_evidence"] = [
-        {"knowledge_point_id": point.id, "page_ids": ["example", "example"]}
-        for point in curriculum.current_chapter_remaining_points()
-    ]
-    responses = iter([json.dumps(broken, ensure_ascii=False), json.dumps(corrected, ensure_ascii=False)])
-
-    with pytest.raises(ValueError, match="at least two pages"):
-        generate_and_save_lesson(
-            tmp_path, "learner", curriculum=curriculum, profile="零基础",
-            recent_evidence=[], session_minutes=25, model_call=lambda _prompt: next(responses),
-        )
+    payload = json.loads(model_lesson_json(curriculum.current_knowledge_point_id))
+    payload["scope_evidence"] = [{"knowledge_point_id": "invented", "page_ids": ["fake"]}]
+    calls = []
+    def reviewer(prompt):
+        calls.append(prompt)
+        return review_response(prompt)
+    bundle = generate_and_save_lesson(tmp_path, "learner", curriculum=curriculum, profile="零基础",
+        recent_evidence=[], session_minutes=25, model_call=lambda _: json.dumps(payload),
+        review_call=reviewer)
+    assert bundle.manifest.knowledge_point_id == curriculum.current_knowledge_point_id
+    assert len(calls) == 1
+    assert '"invented"' not in calls[0] and '"fake"' not in calls[0]
 
 
 def test_first_long_code_dump_without_progressive_build_up_is_rejected() -> None:
