@@ -51,7 +51,9 @@ def test_course_preparation_title_has_animated_ellipsis_with_reduced_motion_fall
     html = read(INDEX)
     css = read(STYLE)
 
-    assert 'id="pageTitle">课程准备中<span class="loading-ellipsis"' in html
+    title = html.split('id="pageTitle">', 1)[1].split('</h2>', 1)[0]
+    assert 'data-i18n="课程准备中"' in title
+    assert '<span class="loading-ellipsis"' in title
     assert "@keyframes loading-dot" in css
     assert ".loading-ellipsis" in css
     assert "prefers-reduced-motion" in css
@@ -233,7 +235,7 @@ def test_concept_plan_review_uses_relevant_choices_and_refreshes_real_duration()
     assert "这份短方案" in onboarding
     assert "把概念讲得更简短" not in onboarding
     assert "await revisePlan(text)" in onboarding
-    assert 'setText("#remainingTime", `预计还需 ${context.session_minutes || 25} 分钟`)' in app
+    assert 'setText("#remainingTime", () => t("预计还需 {0} 分钟", {0: context.session_minutes || 25}))' in app
 
 
 def test_topic_onboarding_starts_with_free_text_and_no_preset_goal_choices() -> None:
@@ -584,7 +586,7 @@ def test_failed_lesson_generation_replaces_loading_page_with_retry_action() -> N
     assert 'id="lessonLoadError"' in html
     assert 'id="retryLessonBtn"' in html
     assert "showLessonLoadFailure" in artifact
-    assert 'setText("pageTitle", "课程生成失败")' in artifact
+    assert 'setText("pageTitle", () => t("课程生成失败"))' in artifact
     assert 'byId("retryLessonBtn").addEventListener' in artifact
 
 
@@ -826,7 +828,7 @@ def test_confirmed_profile_shows_project_home_without_auto_opening_lesson() -> N
     assert "await enterLearning()" not in initialize
     assert 'classList.add("is-onboarding")' in js
     assert "archivedMessages" in js
-    assert 'setText("#coachContext", "输入你现在想解决的事")' in js
+    assert 'setText("#coachContext", () => t("输入你现在想解决的事"))' in js
     assert "previousMessages" in js
     assert "STORAGE_PREVIOUS_MESSAGES" in js
 

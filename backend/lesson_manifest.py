@@ -23,6 +23,7 @@ class LessonOption(BaseModel):
 
 
 class LessonPage(BaseModel):
+    locale: Literal['zh-CN', 'en'] | None = None
     id: str = Field(min_length=1, max_length=96)
     type: PageType
     title: str = Field(min_length=1, max_length=240)
@@ -66,6 +67,7 @@ class InterviewPrompt(BaseModel):
 
 
 class LessonManifest(BaseModel):
+    locale: Literal['zh-CN', 'en'] = 'zh-CN'
     content_version: str = Field(default="", max_length=64)
     lesson_id: str = Field(min_length=1, max_length=96)
     title: str = Field(min_length=1, max_length=240)

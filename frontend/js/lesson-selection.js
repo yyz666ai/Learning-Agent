@@ -1,4 +1,8 @@
 "use strict";
+{
+  const i18n = () => (typeof window !== "undefined" ? window : globalThis).LearningI18n;
+  const t = (key, params = {}) => i18n()?.t(key, params) ?? String(key).replace(/\{(\w+)\}/g, (m, k) => params[k] == null ? m : String(params[k]));
+  const bindUI = (node, property, render) => { if (i18n()) return i18n().bind(node, property, render); const value = render(); if (property.startsWith("@")) node.setAttribute(property.slice(1), value); else node[property] = value; return value; };
 (function (global) {
   function createQuoteState() {
     let manifest = null, draft = null;
@@ -24,14 +28,14 @@
   const byId = id => global.document.getElementById(id);
   const button = global.document.createElement("button");
   button.type = "button"; button.id = "askSelectionBtn"; button.className = "ask-selection";
-  button.textContent = "提问"; button.hidden = true;
-  button.setAttribute("aria-label", "引用选中内容并提问");
+  bindUI(button, "textContent", () => t("提问")); button.hidden = true;
+  bindUI(button, "@aria-label", () => t("引用选中内容并提问"));
   global.document.body.append(button);
   function render() {
     const quote = state.get(), panel = byId("lessonQuote");
     if (!panel) return;
     panel.hidden = !quote;
-    byId("lessonQuoteText").textContent = quote ? `${manifest?.pages.find(p => p.id === quote.page_id)?.title || "课件引用"} · ${quote.quote}` : "";
+    bindUI(byId("lessonQuoteText"), "textContent", () => quote ? `${manifest?.pages.find(p => p.id === quote.page_id)?.title || t("课件引用")} · ${quote.quote}` : "");
   }
   function clear() { state.clear(); candidate = null; button.hidden = true; render(); }
   function capture() {
@@ -60,3 +64,5 @@
   global.document.addEventListener("learning-agent:page-change", event => { page = event.detail.page; candidate = null; button.hidden = true; });
   global.LessonSelection = {get: state.get, clear};
 })(typeof window !== "undefined" ? window : globalThis);
+
+}

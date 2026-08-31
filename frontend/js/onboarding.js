@@ -1,5 +1,9 @@
 "use strict";
-
+{
+  const i18n = () => (typeof window !== "undefined" ? window : globalThis).LearningI18n;
+  const t = (key, params = {}) => i18n()?.t(key, params) ?? String(key).replace(/\{(\w+)\}/g, (m, k) => params[k] == null ? m : String(params[k]));
+  const resolveText = value => typeof value === "function" ? value() : value;
+  const bindUI = (node, property, render) => { if (i18n()) return i18n().bind(node, property, render); const value = render(); if (property.startsWith("@")) node.setAttribute(property.slice(1), value); else node[property] = value; return value; };
 (function createConversationalOnboarding(global) {
   const query = new URLSearchParams(global.location.search);
   const userId = query.get("user_id") || "yang";
@@ -18,7 +22,7 @@
     pendingQuestionSlot: null, lastDiagnosticQuestionId: null, diagnosisPrefaced: false,
     busy: false, confirmationResult: null, generationId: null,
     existingProject: null, existingDecision: null,
-    sessionId: null, revision: null, epoch: 0, choiceVersion: 0, diagnosisRequestId: null,
+    sessionId: null, revision: null, epoch: 0, choiceVersion: 0, diagnosisRequestId: null, diagnosisLocale: null,
   };
   const byId = (id) => document.getElementById(id);
   let requestSequence = 0;
@@ -28,13 +32,14 @@
   }
 
   function request(path, payload, options = {}) {
+    payload = {...payload, locale: payload.locale || global.LearningI18n?.getLocale() || "zh-CN"};
     return fetch(path, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", "X-Learning-Locale": payload.locale },
       body: JSON.stringify(payload), ...options,
     }).then(async (response) => {
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const error = new Error(result.detail?.message || "连接暂时中断，你刚才的内容已保留。");
+        const error = new Error(result.detail?.message || t("连接暂时中断，你刚才的内容已保留。"));
         error.recovery = result.detail?.recovery;
         throw error;
       }
@@ -57,13 +62,13 @@
         continue;
       }
       const job = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(job.detail?.message || "课程生成状态暂时无法读取。");
-      if (job.status === "completed") return job.result;
+      if (!response.ok) throw new Error(job.detail?.message || t("课程生成状态暂时无法读取。"));
+      if (job.status === "completed") return {...job.result, locale:job.locale || job.result?.locale || payload.locale};
       if (job.status === "failed") return job.result || {
-        personalized: false, user_message: "课程生成暂时中断，请直接重试。",
+        personalized: false, get user_message() { return t("课程生成暂时中断，请直接重试。"); },
       };
     }
-    const timeout = new Error("详细课程研究与生成超过 11 分钟，请重试；你刚才的主题和目标都已保留。");
+    const timeout = new Error(t("详细课程研究与生成超过 11 分钟，请重试；你刚才的主题和目标都已保留。"));
     timeout.name = "GenerationTimeoutError";
     throw timeout;
   }
@@ -71,6 +76,7 @@
   function submission() {
     return {
       user_id: userId,
+      locale: global.LearningI18n?.getLocale() || "zh-CN",
       learning_mode: state.learningMode,
       goal_route: state.goalRoute,
       level_claim: state.levelClaim,
@@ -106,8 +112,8 @@
   }
   function clearError() { byId("onboardingError").hidden = true; }
   function showError(error) {
-    byId("onboardingErrorText").textContent = error.message || "连接暂时中断，你刚才的内容已保留。";
-    byId("retryOnboardingBtn").textContent = error.recovery === "restart_diagnosis" ? "重新开始诊断" : "重试";
+    bindUI(byId("onboardingErrorText"), "textContent", () => (window.LearningI18n?.errorText(error.message) ?? error.message) || t("连接暂时中断，你刚才的内容已保留。"));
+    bindUI(byId("retryOnboardingBtn"), "textContent", () => error.recovery === "restart_diagnosis" ? t("重新开始诊断") : t("重试"));
     byId("onboardingError").hidden = false;
   }
 
@@ -115,15 +121,15 @@
     const version = state.choiceVersion;
     const row = document.createElement("div"); row.className = "intent-choice-row";
     const button = document.createElement("button"); button.type = "button"; button.className = "inline-choice";
-    const badge = document.createElement("span"); badge.className = "inline-choice-index"; badge.textContent = String.fromCharCode(65 + index);
-    const title = document.createElement("strong"); title.textContent = option.label;
+    const badge = document.createElement("span"); badge.className = "inline-choice-index"; bindUI(badge, "textContent", () => String.fromCharCode(65 + index));
+    const title = document.createElement("strong"); bindUI(title, "textContent", () => option.label);
     button.append(badge, title);
     button.addEventListener("click", () => version === state.choiceVersion && choose(option));
     const detail = document.createElement("button"); detail.type = "button"; detail.className = "choice-detail";
-    detail.setAttribute("aria-label", `了解「${option.label}」`);
+    bindUI(detail, "@aria-label", () => t("了解「{0}」", {0: option.label}));
     const detailIcon = document.createElement("i"); detailIcon.className = "bi bi-info-circle"; detailIcon.setAttribute("aria-hidden", "true");
     const tooltip = document.createElement("span"); tooltip.className = "choice-tooltip";
-    tooltip.setAttribute("role", "tooltip"); tooltip.textContent = option.detail;
+    tooltip.setAttribute("role", "tooltip"); bindUI(tooltip, "textContent", () => option.detail);
     detail.append(detailIcon, tooltip);
     detail.addEventListener("click", (event) => { event.stopPropagation(); row.classList.toggle("is-detail-open"); });
     row.append(button, detail);
@@ -133,18 +139,19 @@
   function regularChoice(option, index) {
     const version = state.choiceVersion;
     const button = document.createElement("button"); button.type = "button"; button.className = "inline-choice";
-    const badge = document.createElement("span"); badge.className = "inline-choice-index"; badge.textContent = String.fromCharCode(65 + index);
-    const title = document.createElement("strong"); title.textContent = option.label;
+    const badge = document.createElement("span"); badge.className = "inline-choice-index"; bindUI(badge, "textContent", () => String.fromCharCode(65 + index));
+    const title = document.createElement("strong"); bindUI(title, "textContent", () => option.label);
     button.append(badge, title);
     button.addEventListener("click", () => version === state.choiceVersion && choose(option));
     return button;
   }
 
-  function showChoices(options, { hint = "点一下就可以", progress = "", compact = false, intent = false } = {}) {
+  function showChoices(options, config = {}) {
+    const {compact = false, intent = false} = config;
     state.choiceVersion += 1;
     const safeOptions = intent ? options.slice(0, 3) : options.slice(0, 10);
-    byId("choiceTrayHint").textContent = hint;
-    byId("choiceProgress").textContent = progress;
+    bindUI(byId("choiceTrayHint"), "textContent", () => config.hint || t("点一下就可以"));
+    bindUI(byId("choiceProgress"), "textContent", () => config.progress || "");
     byId("inlineChoices").replaceChildren(...safeOptions.map((option, index) => (
       intent ? intentChoice(option, index) : regularChoice(option, index)
     )));
@@ -158,10 +165,10 @@
     const version = state.choiceVersion;
     const row = document.createElement("div"); row.className = "intent-input-row";
     const input = document.createElement("textarea"); input.rows = 1;
-    input.placeholder = "直接补充你的需求…";
-    input.setAttribute("aria-label", "补充你的实际需求，Enter 发送");
+    bindUI(input, "placeholder", () => t("直接补充你的需求…"));
+    bindUI(input, "@aria-label", () => t("补充你的实际需求，Enter 发送"));
     const send = document.createElement("button"); send.type = "button";
-    send.className = "intent-input-send"; send.textContent = "发送";
+    send.className = "intent-input-send"; bindUI(send, "textContent", () => t("发送"));
     const submit = async () => {
       if (state.busy || version !== state.choiceVersion || !input.value.trim()) return;
       const text = input.value.trim();
@@ -180,7 +187,7 @@
     state.choiceVersion += 1;
     byId("choiceTray").hidden = true;
     byId("choiceTrayQuestion").hidden = true;
-    byId("choiceTrayQuestion").textContent = "";
+    bindUI(byId("choiceTrayQuestion"), "textContent", () => "");
     byId("choiceTray").classList.remove("is-plan-confirmation", "is-intent-question");
     byId("inlineChoices").replaceChildren();
   }
@@ -188,8 +195,8 @@
   function askTopic() {
     state.stage = "topic";
     hideChoices();
-    addAgent("你现在想解决什么？直接输入就行。可以是一个概念、一个项目、一场面试，也可以是“我想用 LangGraph 做客服 Agent”这样的具体结果。");
-    byId("chatInput").placeholder = "例如：下周面试 Java 后端，或用 LangGraph 做客服 Agent…";
+    addAgent(t("你现在想解决什么？直接输入就行。可以是一个概念、一个项目、一场面试，也可以是“我想用 LangGraph 做客服 Agent”这样的具体结果。"));
+    bindUI(byId("chatInput"), "placeholder", () => t("例如：下周面试 Java 后端，或用 LangGraph 做客服 Agent…"));
     byId("chatInput").focus();
   }
 
@@ -229,7 +236,9 @@
             // The persisted intent has just been revalidated. A cancelled id is
             // a tombstone, not a resumable job; a fresh request remains server-bound.
             state.diagnosisRequestId = current.status === "cancelled" ? null : current.request_id;
+            state.diagnosisLocale = current.locale || "zh-CN";
             if (current.status === "completed") {
+              global.LearningI18n?.noticeJobLocale('diagnosis', current.locale || current.result?.locale || 'zh-CN');
               state.diagnosisPrefaced = true;
               if (current.result.complete) await confirm({diagnostic_session_id: current.result.session_id});
               else renderDiagnostic(current.result);
@@ -244,37 +253,37 @@
       }
       if (persisted.action === "interview_bank_intake") {
         if (Number(state.slots.interview_question_count || 0) > 0) {
-          addAgent(`已恢复 ${state.slots.interview_question_count} 道已入库面试题，继续生成针对性计划。`);
+          addAgent(t("已恢复 {0} 道已入库面试题，继续生成针对性计划。", {0: state.slots.interview_question_count}));
           await analyzeIntent(
-            `已经收录 ${state.slots.interview_question_count} 道真实面试题，请生成针对性计划`,
+            t("已经收录 {0} 道真实面试题，请生成针对性计划", {0: state.slots.interview_question_count}),
             { recordUser: false, continuation: true },
           );
           return true;
         }
         state.stage = "interview_intake";
-        addAgent("继续上次没有完成的建档：把你收集的面试题直接粘贴到输入框，我会先去重入库，再生成针对性 Plan。");
-        byId("chatInput").placeholder = "直接粘贴面试题，支持编号列表或多行问题…";
+        addAgent(t("继续上次没有完成的建档：把你收集的面试题直接粘贴到输入框，我会先去重入库，再生成针对性 Plan。"));
+        bindUI(byId("chatInput"), "placeholder", () => t("直接粘贴面试题，支持编号列表或多行问题…"));
         return true;
       }
       if (persisted.action !== "clarify" || !persisted.question) return false;
       state.clarificationCount = 1;
       if (!state.callbacks.restoreHistory || state.intentHistory.at(-1)?.content !== persisted.question.prompt) {
-        addAgent(`继续上次没有完成的建档：${persisted.question.prompt}`);
+        addAgent(t("继续上次没有完成的建档：{0}", {0: persisted.question.prompt}));
       }
       state.pendingQuestionSlot = persisted.question.slot || null;
       if (persisted.question.options?.length) {
         state.stage = "clarifying";
         showChoices(persisted.question.options, {
-          hint: "选一个最接近的；也可以直接输入修改或补充",
-          progress: "已恢复上次进度",
+          get hint() { return t("选一个最接近的；也可以直接输入修改或补充"); },
+          get progress() { return t("已恢复上次进度"); },
           intent: true,
         });
-        byId("chatInput").placeholder = "也可以直接输入你真正想要的结果…";
+        bindUI(byId("chatInput"), "placeholder", () => t("也可以直接输入你真正想要的结果…"));
       } else {
         state.stage = "clarifying_text";
         hideChoices();
-        byId("chatInput").placeholder = persisted.question.interaction === "material" || persisted.question.slot === "interview_question_source"
-          ? "直接粘贴资料；暂时没有就输入“没有”…" : "直接输入你的想法…";
+        bindUI(byId("chatInput"), "placeholder", () => persisted.question.interaction === "material" || persisted.question.slot === "interview_question_source"
+          ? t("直接粘贴资料；暂时没有就输入“没有”…") : t("直接输入你的想法…"));
         byId("chatInput").focus();
       }
       return true;
@@ -287,7 +296,7 @@
     const query = new URLSearchParams({ user_id: userId, topic });
     const response = await fetch(`/api/projects/match?${query.toString()}`);
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.detail?.message || "暂时无法检查已有学习项目。");
+    if (!response.ok) throw new Error(result.detail?.message || t("暂时无法检查已有学习项目。"));
     return result.project || null;
   }
 
@@ -316,9 +325,9 @@
     if (recordUser) { addUser(message); state.intentHistory.push({ role: "user", content: message }); }
     setBusy(true); clearError(); hideChoices(); state.stage = "analyzing";
     state.pendingAction = () => analyzeIntent(message, { recordUser: false, requestId, continuation });
-    global.LearningActivity?.start("正在理解你的需求", "正在结合你刚才的话和前面对话判断下一步。", [
-      "正在区分是答疑、面试、项目还是系统学习…",
-      "正在检查你已经说过哪些信息，避免重复追问…",
+    global.LearningActivity?.start(() => t("正在理解你的需求"), () => t("正在结合你刚才的话和前面对话判断下一步。"), [
+      () => t("正在区分是答疑、面试、项目还是系统学习…"),
+      () => t("正在检查你已经说过哪些信息，避免重复追问…"),
     ]);
     try {
       const decision = await request("/api/onboarding/intent", {
@@ -341,18 +350,18 @@
         if (decision.question.options.length) {
           state.stage = "clarifying";
           showChoices(decision.question.options, {
-            hint: "选一个最接近的；也可以直接打字修改或补充",
-            progress: "正在理解需求", intent: true,
+            get hint() { return t("选一个最接近的；也可以直接打字修改或补充"); },
+            get progress() { return t("正在理解需求"); }, intent: true,
           });
-          byId("chatInput").placeholder = "不想选也没关系，直接输入你真正想要的结果…";
-          global.LearningActivity?.finish("还差一个关键决定", "点选项或直接打字都可以。");
+          bindUI(byId("chatInput"), "placeholder", () => t("不想选也没关系，直接输入你真正想要的结果…"));
+          global.LearningActivity?.finish(() => t("还差一个关键决定"), () => t("点选项或直接打字都可以。"));
         } else {
           state.stage = "clarifying_text";
           hideChoices();
           const material = decision.question.interaction === "material" || decision.question.slot === "interview_question_source";
-          byId("chatInput").placeholder = material ? "直接粘贴资料；暂时没有也可以说明…" : "直接输入你的想法…";
+          bindUI(byId("chatInput"), "placeholder", () => material ? t("直接粘贴资料；暂时没有也可以说明…") : t("直接输入你的想法…"));
           byId("chatInput").focus();
-          global.LearningActivity?.finish(material ? "等待你的资料" : "等你补充", "直接在输入框回复即可。");
+          global.LearningActivity?.finish(() => material ? t("等待你的资料") : t("等你补充"), () => t("直接在输入框回复即可。"));
         }
         return;
       }
@@ -362,12 +371,12 @@
           state.stage = "existing_project";
           state.existingProject = existingProject;
           state.existingDecision = decision;
-          addAgent(`你已经有一个「${existingProject.topic}」学习项目，不需要再建一个重复项目。`);
+          addAgent(t("你已经有一个「{0}」学习项目，不需要再建一个重复项目。", {0: existingProject.topic}));
           showChoices([
-            { id: "continue-existing", label: "继续已有项目", value: "continue_existing", detail: `从现有 ${existingProject.progress || 0}% 进度继续` },
-            { id: "merge-existing", label: "把新目标合并进去", value: "merge_existing", detail: "保留已完成进度，调整后续 Plan" },
-          ], { hint: "选一个；想换主题也可以直接输入", progress: "已有同主题项目", intent: true });
-          global.LearningActivity?.finish("找到了已有学习项目", "继续学习或把新目标合并进去，不会创建副本。");
+            { id: "continue-existing", get label() { return t("继续已有项目"); }, value: "continue_existing", detail: t("从现有 {0}% 进度继续", {0: existingProject.progress || 0}) },
+            { id: "merge-existing", get label() { return t("把新目标合并进去"); }, value: "merge_existing", get detail() { return t("保留已完成进度，调整后续 Plan"); } },
+          ], { get hint() { return t("选一个；想换主题也可以直接输入"); }, get progress() { return t("已有同主题项目"); }, intent: true });
+          global.LearningActivity?.finish(() => t("找到了已有学习项目"), () => t("继续学习或把新目标合并进去，不会创建副本。"));
           return;
         }
         hideChoices();
@@ -378,59 +387,61 @@
       }
       if (decision.action === "interview_bank_intake") {
         if (Number(decision.slots.interview_question_count || 0) > 0) {
-          addAgent(`已保存 ${decision.slots.interview_question_count} 道面试题，接下来把它们纳入学习方案。`);
-          await analyzeIntent("请根据已收录的题目继续制定计划", { recordUser: false, continuation: true });
+          addAgent(t("已保存 {0} 道面试题，接下来把它们纳入学习方案。", {0: decision.slots.interview_question_count}));
+          await analyzeIntent(t("请根据已收录的题目继续制定计划"), { recordUser: false, continuation: true });
           return;
         }
         state.stage = "interview_intake";
         hideChoices();
-        addAgent("把你收集的面试题直接粘贴到输入框即可；可以一次发多道，我会先去重收录，再生成针对性 Plan。");
-        byId("chatInput").placeholder = "直接粘贴面试题，支持编号列表或多行问题…";
-        global.LearningActivity?.finish("等待你粘贴面试题", "题目会先保存到你的个人题库。 ");
+        addAgent(t("把你收集的面试题直接粘贴到输入框即可；可以一次发多道，我会先去重收录，再生成针对性 Plan。"));
+        bindUI(byId("chatInput"), "placeholder", () => t("直接粘贴面试题，支持编号列表或多行问题…"));
+        global.LearningActivity?.finish(() => t("等待你粘贴面试题"), () => t("题目会先保存到你的个人题库。 "));
         return;
       }
       state.active = false; hideChoices();
       await state.callbacks.onAnswerInContext?.(message);
-      global.LearningActivity?.finish("已切换到对应处理方式", "不会为这句话新建学习计划。");
+      global.LearningActivity?.finish(() => t("已切换到对应处理方式"), () => t("不会为这句话新建学习计划。"));
     } catch (error) {
       if (epoch !== state.epoch) return;
       showError(error);
-      global.LearningActivity?.finish("意图还没有分析完成", "你的输入和已填信息都还在，可以直接重试。");
+      global.LearningActivity?.finish(() => t("意图还没有分析完成"), () => t("你的输入和已填信息都还在，可以直接重试。"));
     } finally { if (epoch === state.epoch) setBusy(false); }
   }
 
   function renderDiagnostic(result) {
     state.stage = "diagnostic"; state.diagnostic = result;
     byId("choiceTrayQuestion").hidden = true;
-    byId("choiceTrayQuestion").textContent = "";
+    bindUI(byId("choiceTrayQuestion"), "textContent", () => "");
     if (state.lastDiagnosticQuestionId !== result.question.id) {
       addAgent(result.question.prompt);
       state.lastDiagnosticQuestionId = result.question.id;
     }
     showChoices(result.question.options.map((option) => ({ ...option, value: option.id })), {
-      hint: "真实选择题，直接点击", progress: `诊断 ${result.answered_count + 1} / 最多 4`,
+      get hint() { return t("真实选择题，直接点击"); }, get progress() { return t("诊断 {0} / 最多 4", {0: result.answered_count + 1}); },
     });
   }
 
   async function beginDiagnosis() {
     const epoch = state.epoch;
     setBusy(true); clearError(); state.pendingAction = beginDiagnosis;
+    if (!state.diagnosisRequestId) state.diagnosisLocale = global.LearningI18n?.getLocale() || "zh-CN";
     state.diagnosisRequestId = state.diagnosisRequestId || newRequestId();
     if (!state.diagnosisPrefaced) {
-      addAgent("你已经有一定基础，我会先问你 3–4 道小题，快速确认从哪里开始，然后就进入学习。");
+      addAgent(t("你已经有一定基础，我会先问你 3–4 道小题，快速确认从哪里开始，然后就进入学习。"));
       state.diagnosisPrefaced = true;
     }
     global.LearningActivity?.diagnosis?.({status: "queued", elapsed_seconds: 0});
     try {
       const result = await global.DiagnosisJobs.waitForDiagnosis({
-        payload: {...submission(), request_id: state.diagnosisRequestId, intent_session_id: state.sessionId, intent_revision: state.revision},
+        payload: {...submission(), locale: state.diagnosisLocale, request_id: state.diagnosisRequestId, intent_session_id: state.sessionId, intent_revision: state.revision},
         isCurrent: () => state.active && epoch === state.epoch,
         onStatus: job => global.LearningActivity?.diagnosis?.(job),
       });
       if (epoch !== state.epoch || !state.active) return;
+      global.LearningI18n?.noticeJobLocale('diagnosis', result.locale || state.diagnosisLocale || 'zh-CN');
       if (result.complete) { await confirm({diagnostic_session_id: result.session_id}); return; }
       renderDiagnostic(result);
-      global.LearningActivity?.finish("第一题准备好了", "直接点击输入框上方的选项即可。");
+      global.LearningActivity?.finish(() => t("第一题准备好了"), () => t("直接点击输入框上方的选项即可。"));
     } catch (error) {
       if (epoch !== state.epoch || !state.active) return;
       // Only an explicit retry after a confirmed terminal failure gets a fresh id.
@@ -444,7 +455,7 @@
   async function answerDiagnostic(option) {
     const epoch = state.epoch;
     setBusy(true); clearError(); state.pendingAction = beginDiagnosis; addUser(option.label);
-    global.LearningActivity?.start("正在判断你的起点", "这会决定哪些内容快进、哪些内容慢讲。");
+    global.LearningActivity?.start(() => t("正在判断你的起点"), () => t("这会决定哪些内容快进、哪些内容慢讲。"));
     try {
       const next = await request("/api/diagnostics/answer", {
         user_id: userId, session_id: state.diagnostic.session_id,
@@ -452,75 +463,77 @@
       });
       if (epoch !== state.epoch || !state.active) return;
       if (next.complete) await confirm({ diagnostic_session_id: next.session_id });
-      else { renderDiagnostic(next); global.LearningActivity?.finish("下一道诊断题已准备好", "再点一题，就能更准确地开始。"); }
+      else { renderDiagnostic(next); global.LearningActivity?.finish(() => t("下一道诊断题已准备好"), () => t("再点一题，就能更准确地开始。")); }
     } catch (error) { if (epoch === state.epoch && state.active) showError(error); }
     finally { if (epoch === state.epoch && state.active) setBusy(false); }
   }
 
   function planReviewChoices() {
-    const confirmChoice = { label: "确认并开始", value: "confirm_plan", description: state.goalRoute === "concept_clarity" ? "开始概念讲解" : "生成第一章讲义" };
+    const confirmChoice = { get label() { return t("确认并开始"); }, value: "confirm_plan", description: state.goalRoute === "concept_clarity" ? t("开始概念讲解") : t("生成第一章讲义") };
     return [confirmChoice];
   }
 
   async function confirm(extra = {}) {
+    const planSubmission = submission();
     const epoch = state.epoch;
     const isCurrent = () => state.active && epoch === state.epoch;
     setBusy(true); clearError(); hideChoices(); state.pendingAction = () => confirm(extra);
-    addAgent("路线已经清楚了。我会先生成完整 `plan.md` 给你确认，确认后才开始第一章。");
+    addAgent(t("路线已经清楚了。我会先生成完整 `plan.md` 给你确认，确认后才开始第一章。"));
     global.LearningActivity?.startPlanGeneration?.();
     try {
-      const result = await request("/api/onboarding/confirm", { ...submission(), ...extra });
+      const result = await request("/api/onboarding/confirm", { ...planSubmission, ...extra });
       if (!isCurrent()) return;
       state.generationId = result.generation_id;
       try {
-        const personalized = await waitForPersonalizedPlan(submission(), result.generation_id);
+        const personalized = await waitForPersonalizedPlan(planSubmission, result.generation_id);
         if (!isCurrent()) return;
-        if (!personalized.personalized) throw new Error(personalized.user_message || "模型还没有生成合格的详细课程大纲，请点击重试。");
+        if (!personalized.personalized) throw new Error(personalized.user_message || t("模型还没有生成合格的详细课程大纲，请点击重试。"));
+        global.LearningI18n?.noticeJobLocale('plan', personalized.locale || planSubmission.locale || 'zh-CN');
         state.generationId = null;
         state.confirmationResult = result; state.stage = "plan_review";
         await state.callbacks.onPlanReady?.(personalized);
         if (!isCurrent()) return;
         addAgent(state.goalRoute === "concept_clarity"
-          ? "这份短方案已经显示。确认后我就开始概念讲解；不会再问时长或做起点诊断。"
-          : "完整计划已经显示。先看看是否符合你的目标；需要修改就直接在下面说。");
-        showChoices(planReviewChoices(), { hint: "满意就开始；要改直接在下面说", compact: true });
-        global.LearningActivity?.finish("专属大纲已生成", "请先阅读并确认，课程不会自动开始。");
+          ? t("这份短方案已经显示。确认后我就开始概念讲解；不会再问时长或做起点诊断。")
+          : t("完整计划已经显示。先看看是否符合你的目标；需要修改就直接在下面说。"));
+        showChoices(planReviewChoices(), { get hint() { return t("满意就开始；要改直接在下面说"); }, compact: true });
+        global.LearningActivity?.finish(() => t("专属大纲已生成"), () => t("请先阅读并确认，课程不会自动开始。"));
       } finally { /* Background generation is polled through short requests. */ }
     } catch (error) {
       if (!isCurrent()) return;
       await cancelActiveGeneration();
       if (!isCurrent()) return;
       const message = error?.name === "GenerationTimeoutError"
-        ? "详细课程研究与生成超过 11 分钟，请重试；你刚才的主题和目标都已保留。"
-        : error?.message || "详细课程暂时没有生成成功，请重试。";
+        ? t("详细课程研究与生成超过 11 分钟，请重试；你刚才的主题和目标都已保留。")
+        : error?.message || t("详细课程暂时没有生成成功，请重试。");
       showError(new Error(message));
-      global.LearningActivity?.finish("生成暂时中断", "你的选择已保留，可以直接重试。");
+      global.LearningActivity?.finish(() => t("生成暂时中断"), () => t("你的选择已保留，可以直接重试。"));
       await state.callbacks.onFailed?.(error);
     } finally { if (isCurrent()) setBusy(false); }
   }
 
   async function confirmPlan() {
     setBusy(true); clearError(); hideChoices(); state.pendingAction = confirmPlan;
-    global.LearningActivity?.start("正在锁定学习计划", "确认后马上为你准备第一章。");
+    global.LearningActivity?.start(() => t("正在锁定学习计划"), () => t("确认后马上为你准备第一章。"));
     try {
       await request("/api/plans/confirm", { user_id: userId }); state.active = false;
       await state.callbacks.onConfirmed?.(state.confirmationResult || {});
-      global.LearningActivity?.finish("学习计划已确认", "第一章已经开始生成。");
-    } catch (error) { showError(error); global.LearningActivity?.finish("计划还没有确认", "当前草案仍然保留，可以重试。"); }
+      global.LearningActivity?.finish(() => t("学习计划已确认"), () => t("第一章已经开始生成。"));
+    } catch (error) { showError(error); global.LearningActivity?.finish(() => t("计划还没有确认"), () => t("当前草案仍然保留，可以重试。")); }
     finally { setBusy(false); }
   }
 
   async function revisePlan(feedback) {
     setBusy(true); clearError(); hideChoices(); state.pendingAction = () => revisePlan(feedback);
-    global.LearningActivity?.start("正在按你的意见调整 Plan", "已完成的路线不会被清空。");
+    global.LearningActivity?.start(() => t("正在按你的意见调整 Plan"), () => t("已完成的路线不会被清空。"));
     try {
       const revised = await request("/api/plans/revise", { ...submission(), feedback });
-      if (!revised.revised) throw new Error("这次修改没有生成合格的新计划，请换一种说法再试。");
+      if (!revised.revised) throw new Error(t("这次修改没有生成合格的新计划，请换一种说法再试。"));
       state.stage = "plan_review"; await state.callbacks.onPlanReady?.(revised);
-      addAgent("计划已经按你的意见更新。请再看一遍，满意后点确认；还可以继续调整。");
-      showChoices(planReviewChoices(), { hint: "满意就开始；还要改就继续输入", compact: true });
-      global.LearningActivity?.finish("Plan 已更新", "请阅读新版计划并确认。");
-    } catch (error) { showError(error); global.LearningActivity?.finish("计划修改暂时中断", "旧草案还在，可以直接重试。"); }
+      addAgent(t("计划已经按你的意见更新。请再看一遍，满意后点确认；还可以继续调整。"));
+      showChoices(planReviewChoices(), { get hint() { return t("满意就开始；还要改就继续输入"); }, compact: true });
+      global.LearningActivity?.finish(() => t("Plan 已更新"), () => t("请阅读新版计划并确认。"));
+    } catch (error) { showError(error); global.LearningActivity?.finish(() => t("计划修改暂时中断"), () => t("旧草案还在，可以直接重试。")); }
     finally { setBusy(false); }
   }
 
@@ -536,7 +549,7 @@
           await state.callbacks.onContinueExistingProject?.(state.existingProject);
         } else if (option.value === "merge_existing") {
           await state.callbacks.onMergeExistingProject?.(state.existingProject);
-          await revisePlan(`保留已有学习进度，并合并这次的新目标：${state.existingDecision?.summary || state.slots.desired_outcome || state.slots.goal}`);
+          await revisePlan(t("保留已有学习进度，并合并这次的新目标：{0}", {0: state.existingDecision?.summary || state.slots.desired_outcome || state.slots.goal}));
         }
       } catch (error) { showError(error); }
       finally { setBusy(false); }
@@ -555,7 +568,7 @@
     else if (state.stage === "clarifying_text" || state.stage === "interview_intake") await analyzeIntent(text);
     else if (state.stage === "diagnostic") {
       addUser(text);
-      addAgent("这几道是用来定起点的点击题，直接点上方选项就行；做完后继续用输入框问任何问题。");
+      addAgent(t("这几道是用来定起点的点击题，直接点上方选项就行；做完后继续用输入框问任何问题。"));
     } else await analyzeIntent(text);
     return true;
   }
@@ -595,3 +608,5 @@
     get active() { return state.active; }, userId,
   };
 }(window));
+
+}

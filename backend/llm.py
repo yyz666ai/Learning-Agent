@@ -8,6 +8,7 @@ import json
 import os
 import urllib.request
 from pathlib import Path
+from backend.localization import language_instruction
 
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 BASE_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -44,8 +45,7 @@ def chat(
         return "[错误] 缺少 DEEPSEEK_API_KEY"
 
     messages: list[dict] = []
-    if system:
-        messages.append({"role": "system", "content": system})
+    messages.append({"role": "system", "content": (system or '') + language_instruction()})
     messages.append({"role": "user", "content": prompt})
 
     payload = {

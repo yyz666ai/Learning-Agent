@@ -215,6 +215,8 @@ def stream_chat(
 ) -> Iterator[dict]:
     """Stream learner-facing events from one ``codex exec --json`` process."""
     user_dir = ensure_user(user_id, server_root)
+    from backend.localization import model_language_instruction
+    message += model_language_instruction(server_root, user_id)
     codex_home = user_dir / ".codex-runtime" / "home"
     secrets = load_secrets(server_root / ".secrets.env")
     env = build_env(user_dir, codex_home, secrets)
@@ -430,6 +432,8 @@ def chat(
         if not allow_research:
             options += ["--disable", "shell_tool", "-c", 'web_search="disabled"']
         cmd[-1:-1] = options
+    from backend.localization import model_language_instruction
+    message += model_language_instruction(server_root, user_id)
     transport = nullcontext(None)
     config_path = codex_home / "config.toml"
     if generation and config_path.is_file():

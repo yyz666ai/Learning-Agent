@@ -23,6 +23,12 @@ def _digest(value: object) -> str:
 def lesson_revision(manifest: LessonManifest) -> str:
     payload = manifest.model_dump()
     payload.pop("progress", None)
+    # Preserve hashes of immutable snapshots created before locale fields existed.
+    if payload.get('locale') == 'zh-CN':
+        payload.pop('locale', None)
+    for page in payload.get('pages', []):
+        if page.get('locale') is None:
+            page.pop('locale', None)
     # Additive optional scheduling fields must not invalidate old snapshots.
     for key in ("planned_sessions", "session_minutes", "homework_minutes"):
         if payload.get(key) is None:

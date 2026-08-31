@@ -59,8 +59,10 @@ def test_missing_codex_reports_error_without_guessing_user_directories(monkeypat
 def test_all_driver_paths_send_long_unicode_prompt_via_utf8_stdin(tmp_path, monkeypatch, capsys, method):
     assert hasattr(codex_driver, 'codex_command'), 'every driver path must use shared command resolver'
     prompt = '学习项目 空格与中文\n' * 14000
+    from backend.localization import language_instruction
+    expected_length = len(prompt) + (len(language_instruction()) if method in {'chat', 'stream_chat'} else 0)
     child = ('import json,sys,os; text=sys.stdin.read(); '
-             f'assert len(text)=={len(prompt)}; assert os.environ["DEEPSEEK_API_KEY"]=="fixture-key"; '
+             f'assert len(text)=={expected_length}; assert text.startswith("学习项目 空格与中文\\n"); assert os.environ["DEEPSEEK_API_KEY"]=="fixture-key"; '
              'assert ".codex-runtime" in os.environ["CODEX_HOME"]; '
              'print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"中文回复"}},ensure_ascii=False))')
     calls = []

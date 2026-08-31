@@ -6,6 +6,7 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from .localization import current_locale, submit_localized
 
 
 class GenerationJobRegistry:
@@ -34,10 +35,11 @@ class GenerationJobRegistry:
                 "user_id": user_id,
                 "generation_id": generation_id,
                 "status": "queued",
+                "locale": current_locale(),
                 "result": None,
             }
             self._jobs[key] = job
-        self._executor.submit(self._run, key, work)
+        submit_localized(self._executor, self._run, key, work)
         return self.get(user_id, generation_id)
 
     def _run(self, key: tuple[str, str], work: Callable[[], dict[str, Any]]) -> None:

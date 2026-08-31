@@ -1,5 +1,8 @@
 "use strict";
-
+{
+  const i18n = () => (typeof window !== "undefined" ? window : globalThis).LearningI18n;
+  const t = (key, params = {}) => i18n()?.t(key, params) ?? String(key).replace(/\{(\w+)\}/g, (m, k) => params[k] == null ? m : String(params[k]));
+  const bindUI = (node, property, render) => { if (i18n()) return i18n().bind(node, property, render); const value = render(); if (property.startsWith("@")) node.setAttribute(property.slice(1), value); else node[property] = value; return value; };
 (function exposeActivityProgress(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -7,9 +10,9 @@
 }(typeof window === "undefined" ? globalThis : window, function createActivityProgress() {
   function formatDuration(milliseconds) {
     const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
-    if (seconds < 60) return `${seconds} 秒`;
+    if (seconds < 60) return t("{0} 秒", {0: seconds});
     const minutes = Math.ceil(seconds / 60);
-    return `${minutes} 分钟`;
+    return t("{0} 分钟", {0: minutes});
   }
 
   function estimate(elapsedMs, estimateMs) {
@@ -21,8 +24,8 @@
         completedPercent: 92,
         remainingPercent: 8,
         elapsedText: formatDuration(elapsed),
-        etaText: "超出常见时间，仍在生成",
-        label: `已完成 92% · 剩余 8% · 已等待 ${formatDuration(elapsed)} · 超出常见时间，仍在生成`,
+        get etaText() { return t("超出常见时间，仍在生成"); },
+        label: t("已完成 92% · 剩余 8% · 已等待 {0} · 超出常见时间，仍在生成", {0: formatDuration(elapsed)}),
       };
     }
     const ratio = elapsed / expected;
@@ -33,9 +36,11 @@
       remainingPercent: 100 - percent,
       elapsedText: formatDuration(elapsed),
       etaText: formatDuration(expected - elapsed),
-      label: `已完成 ${percent}% · 剩余 ${100 - percent}% · 已等待 ${formatDuration(elapsed)} · 预计还需 ${formatDuration(expected - elapsed)}`,
+      label: t("已完成 {0}% · 剩余 {1}% · 已等待 {2} · 预计还需 {3}", {0: percent, 1: 100 - percent, 2: formatDuration(elapsed), 3: formatDuration(expected - elapsed)}),
     };
   }
 
   return { estimate, formatDuration };
 }));
+
+}

@@ -18,6 +18,7 @@ from .lesson_manifest import LessonBundle, LessonManifest, LessonPage
 from .lesson_versions import LessonVersionStore, _atomic_json
 from .practice_bank import PracticeBankStore
 from .supplemental_practice import append_supplemental_questions, parse_supplemental_response
+from .localization import current_locale, locale_context, language_instruction
 
 _GENERATING: set[tuple[str, str]] = set()
 
@@ -41,7 +42,8 @@ def validate_bundle(bundle: LessonBundle, *, check_teaching_quality: bool = True
         if path.is_absolute() or '..' in path.parts or not path.parts or '\\' in value or any(ord(c) < 32 for c in value):
             raise ValueError('unsafe practice path')
     if check_teaching_quality:
-        _validate_commented_progressive_code(manifest.pages)
+        with locale_context(manifest.locale):
+            _validate_commented_progressive_code(manifest.pages)
     return LessonBundle(manifest, dict(bundle.answer_keys), dict(bundle.explanations))
 
 
@@ -155,7 +157,10 @@ class LessonMutationService:
             if set(patch) != required:
                 raise ValueError('unexpected or missing page edit fields')
             seen.add(page.id)
-            pages[page.id] = LessonPage.model_validate({**page.model_dump(), **patch})
+            # AI replacements use the captured generation language. Manual edits
+            # keep the original code language even after the interface switches.
+            page_locale = current_locale() if allow_questions and patch.get('code') != page.code else page.locale
+            pages[page.id] = LessonPage.model_validate({**page.model_dump(), **patch, 'locale':page_locale})
         keys = answer_keys if answer_keys is not None else {}
         if not isinstance(keys, dict) or set(keys) != revised_choices or not all(isinstance(value, str) for value in keys.values()):
             raise ValueError('every revised question requires exactly its paired private answer key')
@@ -186,7 +191,7 @@ class LessonMutationService:
 
     @staticmethod
     def _public(value: dict) -> dict:
-        allowed = {'proposal_id', 'status', 'summary', 'affected_page_ids', 'base_revision', 'kind', 'changes', 'error', 'applied_revision'}
+        allowed = {'proposal_id', 'status', 'summary', 'affected_page_ids', 'base_revision', 'kind', 'changes', 'error', 'applied_revision', 'locale'}
         return {key: value[key] for key in allowed if key in value}
 
     def proposal(self, proposal_id: str) -> dict:
@@ -206,9 +211,11 @@ class LessonMutationService:
                 previous = json.loads(path.read_text(encoding='utf-8'))
                 if (previous.get('base_revision') == base_revision and previous.get('instruction') == instruction.strip()
                         and previous.get('kind') == kind and previous.get('page_id') == page_id
+                        and previous.get('locale', 'zh-CN') == current_locale()
                         and previous.get('guard') == guard and previous.get('status') in {'proposed', 'generating', 'candidate'}):
                     return self.proposal(previous['proposal_id'])
             value = {'proposal_id': secrets.token_hex(16), 'status': 'proposed', 'summary': instruction.strip(),
+                     'locale': current_locale(),
                      'instruction': instruction.strip(), 'kind': kind, 'base_revision': base_revision,
                      'page_id': page_id,
                      'affected_page_ids': [p.id for p in selected] if kind == 'revision' else [],
@@ -217,6 +224,12 @@ class LessonMutationService:
             return self._public(value)
 
     def generate(self, proposal_id: str, *, confirmed: bool, model_call: Callable[[str], str]) -> dict:
+        with project_lock(self.server_root, self.user_id):
+            value = self._read(proposal_id)
+        with locale_context(value.get('locale', 'zh-CN')):
+            return self._generate(proposal_id, confirmed=confirmed, model_call=model_call)
+
+    def _generate(self, proposal_id: str, *, confirmed: bool, model_call: Callable[[str], str]) -> dict:
         if confirmed is not True:
             raise ValueError('explicit confirmation is required to generate')
         with project_lock(self.server_root, self.user_id):
@@ -253,7 +266,7 @@ class LessonMutationService:
                            '每个修改的选择题必须配套一个答案，不得给未修改题目的答案；不在题干、正文或代码泄露答案。'
                            '非选择题但有 question 的作业页修改时包含 question，不要 options 或答案。'
                            '只能修改以下页面，保留所有未修改字段；代码需中文注释：' + json.dumps(value['affected_page_ids']))
-            raw = model_call(prompt)
+            raw = model_call(prompt + language_instruction())
             if value['kind'] == 'supplemental':
                 questions = parse_supplemental_response(raw, expected_count=None)
                 appended = append_supplemental_questions(bundle, questions)

@@ -111,6 +111,16 @@ To revise a lesson or add practice through chat, describe the change, confirm ca
 
 HTML keeps interactive quizzes and page navigation, while a same-version Markdown copy is stored on the backend and available through **Export Markdown**. It excludes private grading keys. Current version locks support a single service process, not multiple workers. See the [release validation report](projects/learning-agent/design/outputs/SAFE_EDITING_RELEASE_VALIDATION.md) for tested paths and limitations.
 
+## Interface and teaching language
+
+Chinese is the default. Use the **globe icon in the upper-right corner** to select **English** or **中文**. The preference survives a refresh. Newly started onboarding, Plans, lessons, exercises and chat responses use that language; in-progress jobs keep the language captured when they started.
+
+Existing courses, conversations and learner notes are not rewritten. Use **Translate to current language** in the full Plan window or lesson controls, confirm the scope, and view a read-only translation of the current Plan or chapter. Close that view to return to the original. Translation preserves source content, code, question identities and answer records. After editing the original, confirm a new translation.
+
+Preferences live in `userdir/u_<id>/preferences.json`; read-only variants live in that user's `translations/` directory. Saving errors offer retry instead of claiming success. Interface `locale` is separate from the programming `language` field.
+
+See the [bilingual validation record](docs/superpowers/plans/2026-08-31-bilingual-validation.md) for evidence and limitations. This adds language support to the local application, not a production account, billing or quota system.
+
 ## Repository layout
 
 ```text

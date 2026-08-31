@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 
 from .lesson_review import review_lesson
+from .localization import current_locale, locale_context, language_instruction, text
 
 try:
     from .curriculum import Chapter, Curriculum, KnowledgePoint
@@ -53,6 +54,10 @@ def _starter_filename(language: str) -> str:
 def _comment_legacy_code(language: str, code: str) -> str:
     """Add concise teaching comments when an old cached sample has none."""
     if not code.strip():
+        return code
+    if current_locale() == 'en':
+        # Missing English teaching comments must be repaired by the model, not
+        # silently filled with generic Chinese comments.
         return code
     effective = _effective_code_lines(code)
     required_comments = 2 if len(effective) >= 8 else 1
@@ -201,9 +206,18 @@ def _validate_commented_progressive_code(pages: list[LessonPage]) -> None:
         if not page.code.strip():
             continue
         lines = _effective_code_lines(page.code)
-        comment_count = sum(bool(_CHINESE_COMMENT.search(line)) for line in lines)
+        page_locale = page.locale or current_locale()
+        comment_pattern = re.compile(r'(?:#|//|/\*|<!--|--)\s*.*[A-Za-z]{3}') if page_locale == 'en' else _CHINESE_COMMENT
+        comment_count = sum(bool(comment_pattern.search(line)) for line in lines)
         required_comments = 2 if len(lines) >= 8 else 1
         if comment_count < required_comments:
+            if page_locale == 'en':
+                raise ValueError(
+                    f'every generated code block requires detailed English comments: '
+                    f'page {page.id} needs at least {required_comments} instructional comments in its code field; '
+                    f'found {comment_count}. Use the programming language comment syntax. '
+                    'Explanations in Markdown do not count as code comments.'
+                )
             raise ValueError(
                 "every generated code block requires detailed Chinese comments: "
                 f"页面 {page.id} 的 code 字段需要至少 {required_comments} 处中文代码注释，目前只有 {comment_count} 处。"
@@ -341,6 +355,7 @@ def parse_lesson_response(
     if chapter and len(pages) < min(12, len(covered_ids) + 2):
         raise ValueError("chapter deck is too short to cover its knowledge points")
     manifest = LessonManifest(
+        locale=current_locale(),
         lesson_id=f"{knowledge_point_id}-lesson",
         title=str(payload.get("title") or knowledge_point_id),
         topic=topic,
@@ -355,7 +370,7 @@ def parse_lesson_response(
         covered_knowledge_point_ids=covered_ids,
         practice_path=str(practice_path),
         completion_mode=completion_mode,
-        completion_prompt=str(payload.get("completion_prompt") or "课堂选择题完成后即可继续；课后练习的代码、结果或问题直接发到右侧输入栏。"),
+        completion_prompt=str(payload.get("completion_prompt") or text("课堂选择题完成后即可继续；课后练习的代码、结果或问题直接发到右侧输入栏。", "Complete the classroom questions to continue. Send homework code, results or questions in the chat on the right.")),
         output_patterns=output_patterns,
         output_requirements=requirements,
         practice_starter_mode=payload.get("practice_starter_mode") or "provided",
@@ -548,7 +563,8 @@ def _load_lesson_bundle_locked(server_root: Path, user_id: str, knowledge_point_
             "output_requirements": [],
             "pages": pages,
         })
-    _validate_commented_progressive_code(manifest.pages)
+    with locale_context(manifest.locale):
+        _validate_commented_progressive_code(manifest.pages)
     bundle = LessonBundle(manifest=manifest, answer_keys=answers)
     versions.save(bundle, reason="compatibility_upgrade")
     return bundle
@@ -588,6 +604,7 @@ def generate_and_save_lesson(
 
     def parse_generated(candidate: str) -> LessonBundle:
         parsed = parse_lesson_response(candidate, **parse_kwargs)
+        parsed = LessonBundle(manifest=parsed.manifest.model_copy(update={'locale': current_locale()}), answer_keys=parsed.answer_keys, explanations=parsed.explanations)
         return parsed
 
     try:

@@ -1,5 +1,9 @@
 "use strict";
-
+{
+  const i18n = () => (typeof window !== "undefined" ? window : globalThis).LearningI18n;
+  const t = (key, params = {}) => i18n()?.t(key, params) ?? String(key).replace(/\{(\w+)\}/g, (m, k) => params[k] == null ? m : String(params[k]));
+  const resolveText = value => typeof value === "function" ? value() : value;
+  const bindUI = (node, property, render) => { if (i18n()) return i18n().bind(node, property, render); const value = render(); if (property.startsWith("@")) node.setAttribute(property.slice(1), value); else node[property] = value; return value; };
 (function createLearningApp() {
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -39,14 +43,14 @@
     state.archivedMessages = state.messages.slice(-50);
     localStorage.setItem(STORAGE_MESSAGES, JSON.stringify(state.archivedMessages));
   }
-  function setText(selector, value) { const node = $(selector); if (node) node.textContent = value ?? ""; }
+  function setText(selector, value) { const node = $(selector); if (node) bindUI(node, "textContent", () => (typeof value === "function" ? value() : value) ?? ""); }
   function setArtifactCollapsed(collapsed) {
     $("#appShell").classList.toggle("is-artifact-collapsed", collapsed);
     $("#reopenArtifactBtn").hidden = !collapsed;
     $("#reopenArtifactBtn").setAttribute("aria-expanded", String(!collapsed));
   }
   function showToast(message) {
-    const toast = $("#toast"); toast.textContent = message; toast.hidden = false;
+    const toast = $("#toast"); bindUI(toast, "textContent", () => resolveText(message)); toast.hidden = false;
     clearTimeout(showToast.timer); showToast.timer = window.setTimeout(() => { toast.hidden = true; }, 2200);
   }
   let activityPhaseTimer = null;
@@ -61,13 +65,13 @@
     if (!activityRun || !window.ActivityProgress) return;
     const result = window.ActivityProgress.estimate(Date.now() - activityRun.startedAt, activityRun.estimateMs);
     $("#activityProgressFill").style.width = `${result.percent}%`;
-    setText("#activityProgressText", result.label);
+    setText("#activityProgressText", () => activityRun ? window.ActivityProgress.estimate(Date.now() - activityRun.startedAt, activityRun.estimateMs).label : result.label);
   }
-  function showActivity(label, detail = "这一步完成后会告诉你接下来做什么。", phases = [], options = {}) {
+  function showActivity(label, detail = () => t("这一步完成后会告诉你接下来做什么。"), phases = [], options = {}) {
     const panel = $("#activityStatus");
     $("#activityProgressFill").parentElement.hidden = false;
-    setText("#activityStatusLabel", label); setText("#activityStatusDetail", detail);
-    setText("#activityCurrentStep", `当前：${detail.replace(/…+$/, "")}`);
+    setText("#activityStatusLabel", () => resolveText(label)); setText("#activityStatusDetail", () => resolveText(detail));
+    setText("#activityCurrentStep", () => t("当前：{0}", {0: resolveText(detail).replace(/…+$/, "")}));
     panel.hidden = false; panel.classList.add("is-active");
     clearTimeout(showActivity.timer);
     window.clearInterval(activityPhaseTimer);
@@ -85,13 +89,13 @@
       let phaseIndex = 0;
       activityPhaseTimer = window.setInterval(() => {
         phaseIndex = (phaseIndex + 1) % phases.length;
-        setText("#activityCurrentStep", `当前：${phases[phaseIndex].replace(/…+$/, "")}`);
+        setText("#activityCurrentStep", () => t("当前：{0}", {0: resolveText(phases[phaseIndex]).replace(/…+$/, "")}));
       }, 2800);
     }
   }
   function finishActivity(label, detail) {
     const panel = $("#activityStatus");
-    if (label) { setText("#activityStatusLabel", label); setText("#activityStatusDetail", detail || "下一步已经为你准备好了。"); }
+    if (label) { setText("#activityStatusLabel", () => resolveText(label)); setText("#activityStatusDetail", () => resolveText(detail) || t("下一步已经为你准备好了。")); }
     panel.classList.remove("is-active");
     window.clearInterval(activityPhaseTimer);
     activityPhaseTimer = null;
@@ -104,29 +108,31 @@
       localStorage.setItem(key, JSON.stringify([...samples, durationSeconds]));
     }
     $("#activityProgressFill").style.width = "100%";
-    setText("#activityProgressText", "本次等待已结束");
-    setText("#activityCurrentStep", "当前：已完成");
+    setText("#activityProgressText", () => t("本次等待已结束"));
+    setText("#activityCurrentStep", () => t("当前：已完成"));
     activityRun = null;
     clearTimeout(showActivity.timer);
     showActivity.timer = window.setTimeout(() => { panel.hidden = true; }, 2200);
   }
   function startPlanGeneration() {
-    showActivity("正在生成你的学习大纲", "正在判断你真正要达到的结果…", [
-      "正在核对可靠资料和必要知识点…",
-      "正在根据你的目标排列学习顺序…",
-      "正在检查大纲是否有跳步或遗漏…",
-      "正在把结果整理成可确认的 Plan…",
+    showActivity(() => t("正在生成你的学习大纲"), () => t("正在判断你真正要达到的结果…"), [
+      () => t("正在核对可靠资料和必要知识点…"),
+      () => t("正在根据你的目标排列学习顺序…"),
+      () => t("正在检查大纲是否有跳步或遗漏…"),
+      () => t("正在把结果整理成可确认的 Plan…"),
     ], { operation: "plan", estimateSeconds: 240 });
   }
   function startLessonGeneration() {
-    showActivity("正在生成完整章节", "正在按大纲生成讲解、中文注释代码和选择题…", [
-      "正在拆分本章知识点和顺序…",
-      "正在生成逐页讲解与代码演示…",
-      "正在检查选择题答案和中文注释…",
-      "正在整理课后练习和项目目录…",
+    showActivity(() => t("正在生成完整章节"), () => t("正在按大纲生成讲解、中文注释代码和选择题…"), [
+      () => t("正在拆分本章知识点和顺序…"),
+      () => t("正在生成逐页讲解与代码演示…"),
+      () => t("正在检查选择题答案和中文注释…"),
+      () => t("正在整理课后练习和项目目录…"),
     ], { operation: "lesson", estimateSeconds: 180 });
   }
   function showDiagnosisActivity(job) {
+    const t = key => window.LearningI18n?.t(key) ?? key;
+    const write = (selector, render) => setText(selector, window.LearningI18n ? render : render());
     window.clearInterval(activityPhaseTimer);
     window.clearInterval(activityProgressTimer);
     clearTimeout(showActivity.timer);
@@ -135,10 +141,11 @@
     panel.hidden = false;
     const terminal = ["failed", "cancelled", "interrupted"].includes(job.status);
     panel.classList.toggle("is-active", !terminal);
-    setText("#activityStatusLabel", terminal ? "诊断已停止" : job.status === "unknown" ? "正在重新连接" : "正在校准起点");
-    setText("#activityStatusDetail", "只用几道小题找到合适的第一课；用时取决于模型与网络。");
-    setText("#activityCurrentStep", window.DiagnosisJobs.statusText(job));
-    setText("#activityProgressText", "显示服务器最近一次状态；不估算完成百分比。");
+    const label = () => terminal ? t("诊断已停止") : job.status === "unknown" ? t("正在重新连接") : t("正在校准起点");
+    write("#activityStatusLabel", label);
+    write("#activityStatusDetail", () => t("只用几道小题找到合适的第一课；用时取决于模型与网络。"));
+    write("#activityCurrentStep", () => window.DiagnosisJobs.statusText(job));
+    write("#activityProgressText", () => t("显示服务器最近一次状态；不估算完成百分比。"));
     $("#activityProgressFill").parentElement.hidden = true;
   }
   window.LearningActivity = { start: showActivity, startPlanGeneration, startLessonGeneration, finish: finishActivity, diagnosis: showDiagnosisActivity };
@@ -149,7 +156,7 @@
     const pageHeight = Math.max(panel.clientHeight, 1);
     const pages = Math.max(1, Math.ceil(panel.scrollHeight / pageHeight));
     const current = Math.min(pages, Math.round(panel.scrollTop / pageHeight) + 1);
-    label.textContent = `大纲 ${current} / ${pages}`;
+    bindUI(label, "textContent", () => t("大纲 {0} / {1}", {0: current, 1: pages}));
     $("#outlinePreviousBtn").disabled = panel.scrollTop <= 1;
     $("#outlineNextBtn").disabled = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 1;
   }
@@ -192,7 +199,7 @@
       window.queueMicrotask(() => window.MarkdownRenderer.hydrate(content));
     }
     if (message.role !== "user") {
-      const label = document.createElement("span"); label.className = "message-label"; label.textContent = "Learning Agent";
+      const label = document.createElement("span"); label.className = "message-label"; bindUI(label, "textContent", () => "Learning Agent");
       item.append(label);
     }
     item.append(content);
@@ -223,6 +230,8 @@
   }
 
   function isSupplementalPracticeRequest(message) {
+    if (/\b(?:do not|don't|never|no need|without|if|whether)\b|\b(?:explain|describe|what|why|how)\b/i.test(message)) return false;
+    if (/\b(?:give|create|generate|add|append|want|need|practice|try)\b.{0,60}\b(?:another|more|additional|extra|one more|a|an)\b.{0,30}\b(?:exercise|exercises|problem|problems|question|questions|project|projects|homework)\b/i.test(message)) return true;
     if (/(不要|不用|别|不需要|如果|是否)/.test(message)) return false;
     return /(再出|多出|追加|多练|再练|再给|帮我出).{0,24}(题|练习|作业|项目)|针对.{0,8}(题|练习)/.test(message);
   }
@@ -241,7 +250,7 @@
     if (state.ready && (isSupplementalPracticeRequest(value) || isLessonRevisionRequest(value))) {
       if (echoUser) addMessage("user", value);
       const created = await window.LessonEditor.propose(value, isSupplementalPracticeRequest(value) ? "supplemental" : "revision", reference);
-      addMessage("agent", created ? "我先列出修改范围。请确认生成修改稿；你检查并点击「应用修改」后，才会替换当前课件。之后仍可撤销。" : "修改请求尚未建立，原课件没有变化。请查看课件上方提示后重试。");
+      addMessage("agent", created ? t("我先列出修改范围。请确认生成修改稿；你检查并点击「应用修改」后，才会替换当前课件。之后仍可撤销。") : t("修改请求尚未建立，原课件没有变化。请查看课件上方提示后重试。"));
       $("#sendBtn").disabled = false;
       return;
     }
@@ -254,8 +263,8 @@
     const node = messageElement(assistant, true);
     $("#chatFeed").append(node);
     const output = node.querySelector(".markdown-body");
-    $("#sendBtn").disabled = true; setText("#connectionText", "正在回应");
-    window.LearningActivity.start("正在组织讲解", "教练正在结合你的当前进度生成回复。");
+    $("#sendBtn").disabled = true; setText("#connectionText", () => t("正在回应"));
+    window.LearningActivity.start(() => t("正在组织讲解"), () => t("教练正在结合你的当前进度生成回复。"));
     try {
       const response = await fetch("/api/chat/stream", {
         method: "POST", headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
@@ -263,7 +272,7 @@
       });
       if (!response.ok || !response.body) {
         const failure = await response.json().catch(() => ({}));
-        throw new Error(failure.detail?.message || "连接暂时中断，请稍后再试。");
+        throw new Error(failure.detail?.message || t("连接暂时中断，请稍后再试。"));
       }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
       while (true) {
@@ -275,65 +284,65 @@
           if (packet.event === "message.delta") { assistant.content += packet.data.text || ""; output.innerHTML = window.MarkdownRenderer.render(assistant.content); }
           if (packet.event === "notes.updated") document.dispatchEvent(new CustomEvent("learning-agent:notes-updated", { detail: packet.data }));
           if (packet.event === "chat.mode") responseMode = packet.data.mode;
-          if (packet.event === "error") throw new Error(packet.data.message || "学习引擎暂时不可用。");
+          if (packet.event === "error") throw new Error(packet.data.message || t("学习引擎暂时不可用。"));
         });
         $("#chatFeed").scrollTop = $("#chatFeed").scrollHeight;
         if (done) break;
       }
       node.classList.remove("is-streaming");
-      if (!assistant.content.trim()) throw new Error("没有收到完整回答，请重试。");
+      if (!assistant.content.trim()) throw new Error(t("没有收到完整回答，请重试。"));
       window.MarkdownRenderer.hydrate(output);
       state.messages.push(assistant); saveMessages();
       state.chatMode = responseMode;
       if (reference && JSON.stringify(window.LessonSelection?.get()) === JSON.stringify(reference)) window.LessonSelection.clear();
-      window.LearningActivity.finish("讲解已送达", "可以继续提问，或按讲义里的下一步操作。 ");
+      window.LearningActivity.finish(() => t("讲解已送达"), () => t("可以继续提问，或按讲义里的下一步操作。 "));
     } catch (error) {
       if (!$("#chatInput").value.trim()) $("#chatInput").value = value;
-      node.remove(); addMessage("agent", `连接没有成功：${error.message}\n\n你刚才的内容还在，可以直接重试。`);
-      window.LearningActivity.finish("这次没有完成", "你的输入已保留，点击发送即可重试。");
+      node.remove(); addMessage("agent", t("连接没有成功：{0}\n\n你刚才的内容还在，可以直接重试。", {0: (window.LearningI18n?.errorText(error.message) ?? error.message)}));
+      window.LearningActivity.finish(() => t("这次没有完成"), () => t("你的输入已保留，点击发送即可重试。"));
     } finally {
-      state.busy = false; $("#sendBtn").disabled = false; setText("#connectionText", "已连接");
+      state.busy = false; $("#sendBtn").disabled = false; setText("#connectionText", () => t("已连接"));
     }
   }
 
   function renderLearningContext(context) {
     state.context = context;
     const plan = context.plan || {};
-    const stages = plan.stages?.length ? plan.stages : [{ title: "阶段 1：建立直觉", status: "active" }];
+    const stages = plan.stages?.length ? plan.stages : [{ get title() { return t("阶段 1：建立直觉"); }, status: "active" }];
     const activeIndex = Math.max(0, stages.findIndex((stage) => stage.status === "active"));
     const knowledge = context.knowledge_progress || {};
     const progress = knowledge.total
       ? Math.round((Number(knowledge.completed || 0) / Number(knowledge.total)) * 100)
       : Math.round((activeIndex / Math.max(stages.length, 1)) * 100);
-    setText("#planTitle", plan.title || `${context.topic || "我的"}学习计划`);
-    setText("#planMeta", "计划会根据练习证据持续调整");
-    setText("#planProgress", `${progress}%`); $("#progressFill").style.width = `${progress}%`;
-    setText("#completedLessons", knowledge.total ? `${knowledge.completed || 0} / ${knowledge.total} 知识点` : `${activeIndex} / ${stages.length} 阶段`);
-    setText("#masteryText", `课堂进度 ${progress}%`);
-    setText("#remainingTime", `预计还需 ${context.session_minutes || 25} 分钟`);
-    setText("#dueReviewCount", `${context.due_review_count || 0} 个知识点`);
-    setText("#coachContext", context.current_task || `正在学习：${context.topic}`);
+    setText("#planTitle", () => plan.title || t("{0}学习计划", {0: context.topic || t("我的")}));
+    setText("#planMeta", () => t("计划会根据练习证据持续调整"));
+    setText("#planProgress", () => `${progress}%`); $("#progressFill").style.width = `${progress}%`;
+    setText("#completedLessons", () => knowledge.total ? t("{0} / {1} 知识点", {0: knowledge.completed || 0, 1: knowledge.total}) : t("{0} / {1} 阶段", {0: activeIndex, 1: stages.length}));
+    setText("#masteryText", () => t("课堂进度 {0}%", {0: progress}));
+    setText("#remainingTime", () => t("预计还需 {0} 分钟", {0: context.session_minutes || 25}));
+    setText("#dueReviewCount", () => t("{0} 个知识点", {0: context.due_review_count || 0}));
+    setText("#coachContext", () => context.current_task || t("正在学习：{0}", {0: context.topic}));
     $("#stageList").replaceChildren(...stages.map((stage, index) => {
       const item = document.createElement("li");
       item.className = `stage-item ${index < activeIndex ? "is-complete" : index === activeIndex ? "is-active" : ""}`;
       const marker = document.createElement("span"); marker.className = "stage-marker";
-      const body = document.createElement("div"); const title = document.createElement("h3"); title.textContent = stage.title;
-      const status = document.createElement("p"); status.textContent = index < activeIndex ? "已完成" : index === activeIndex ? "正在学习" : "待解锁";
+      const body = document.createElement("div"); const title = document.createElement("h3"); bindUI(title, "textContent", () => stage.title);
+      const status = document.createElement("p"); bindUI(status, "textContent", () => index < activeIndex ? t("已完成") : index === activeIndex ? t("正在学习") : t("待解锁"));
       body.append(title, status); item.append(marker, body); return item;
     }));
     window.requestAnimationFrame(updateOutlinePageLabel);
-    $("#planDocument").innerHTML = window.MarkdownRenderer.render(plan.content || "计划正在生成。");
+    bindUI($("#planDocument"), "innerHTML", () => window.MarkdownRenderer.render(plan.content || t("计划正在生成。")));
     window.MarkdownRenderer.hydrate($("#planDocument"));
   }
 
   function renderPlanConversationMessage(markdown, conceptPlan) {
     $("#planConversationMessage")?.remove();
     const prefix = conceptPlan
-      ? "我把这个概念的学习顺序整理好了："
-      : "我把建议的学习路线整理好了：";
+      ? t("我把这个概念的学习顺序整理好了：")
+      : t("我把建议的学习路线整理好了：");
     const node = messageElement({
       role: "agent",
-      content: `${prefix}\n\n${markdown}\n\n---\n\n需要调整时，直接在下面告诉我要增加、删除或改变什么。`,
+      content: t("{0}\n\n{1}\n\n---\n\n需要调整时，直接在下面告诉我要增加、删除或改变什么。", {0: prefix, 1: markdown}),
     });
     node.id = "planConversationMessage";
     node.classList.add("plan-conversation-message");
@@ -352,19 +361,19 @@
       if (response.ok) context = await response.json();
     } catch { /* The generated markdown in the response remains available. */ }
     if (context) renderLearningContext(context);
-    const markdown = planResult?.plan_markdown || context?.plan?.content || "计划正在生成。";
+    const markdown = planResult?.plan_markdown || context?.plan?.content || t("计划正在生成。");
     const conceptPlan = context?.goal_route === "concept_clarity";
     $("#appShell").classList.remove("is-chat-first");
     $("#appShell").classList.add("is-onboarding");
     renderPlanConversationMessage(markdown, conceptPlan);
     $("#promptChips").hidden = true;
-    setText("#coachContext", "正在确认学习计划");
+    setText("#coachContext", () => t("正在确认学习计划"));
   }
 
   function projectTimeLabel(updatedAt) {
     const date = new Date(updatedAt || "");
-    if (Number.isNaN(date.getTime())) return "随时可以继续";
-    return `上次 ${new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(date)}`;
+    if (Number.isNaN(date.getTime())) return t("随时可以继续");
+    return t("上次 {0}", {0: new Intl.DateTimeFormat(i18n()?.getLocale() || "zh-CN", { month: "numeric", day: "numeric" }).format(date)});
   }
 
   async function activateStoredProject(project) {
@@ -374,7 +383,7 @@
         body: JSON.stringify({ user_id: USER_ID, project_id: project.id }),
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail?.message || "切换学习项目失败，请重试。");
+      if (!response.ok) throw new Error(result.detail?.message || t("切换学习项目失败，请重试。"));
       state.messages = [];
       renderMessages();
       await refreshProjectArchive();
@@ -389,7 +398,7 @@
   async function openLearningProject(project, button = null) {
     if (!window.LessonEditor?.canLeave()) return;
     if (button) button.disabled = true;
-    showActivity(project.current ? "正在打开当前学习" : "正在切换学习项目", "大纲、讲义和进度会一起恢复。");
+    showActivity(() => project.current ? t("正在打开当前学习") : t("正在切换学习项目"), () => t("大纲、讲义和进度会一起恢复。"));
     try {
       await activateStoredProject(project);
       state.startupGateActive = false;
@@ -398,8 +407,8 @@
       await enterLearning();
     } catch (error) {
       if (button) button.disabled = false;
-      finishActivity("项目没有打开", "原项目仍然保留，可以稍后重试。");
-      showToast(error.message);
+      finishActivity(() => t("项目没有打开"), () => t("原项目仍然保留，可以稍后重试。"));
+      showToast((window.LearningI18n?.errorText(error.message) ?? error.message));
     }
   }
 
@@ -427,7 +436,7 @@
   function requestProjectDeletion(project) {
     state.selectedProject = project;
     closeProjectContextMenu();
-    setText("#projectDeleteTitle", `删除「${project.topic || "未命名项目"}」？`);
+    setText("#projectDeleteTitle", () => t("删除「{0}」？", {0: project.topic || t("未命名项目")}));
     $("#projectDeleteDialog").showModal();
   }
 
@@ -479,7 +488,7 @@
         method: "DELETE",
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail?.message || "项目暂时没有删除成功。");
+      if (!response.ok) throw new Error(result.detail?.message || t("项目暂时没有删除成功。"));
       $("#projectDeleteDialog").close();
       renderLearningProjects(result.projects || []);
       if (project.current) {
@@ -487,8 +496,8 @@
         state.context = null; state.messages = []; state.ready = false;
         showOnboardingHome(null);
       }
-      showToast("学习项目已删除，共享教案仍然保留");
-    } catch (error) { showToast(error.message); }
+      showToast(() => t("学习项目已删除，共享教案仍然保留"));
+    } catch (error) { showToast((window.LearningI18n?.errorText(error.message) ?? error.message)); }
     finally { button.disabled = false; state.selectedProject = null; }
   }
 
@@ -500,13 +509,13 @@
       ? `learning-project-button${project.current ? " is-current" : ""}`
       : "project-archive-button";
     const title = document.createElement("strong");
-    title.textContent = project.topic || "未命名学习项目";
+    bindUI(title, "textContent", () => project.topic || t("未命名学习项目"));
     const hint = document.createElement("small");
-    hint.textContent = project.current ? `当前学习 · ${projectTimeLabel(project.updated_at)}` : projectTimeLabel(project.updated_at);
+    bindUI(hint, "textContent", () => project.current ? t("当前学习 · {0}", {0: projectTimeLabel(project.updated_at)}) : projectTimeLabel(project.updated_at));
     button.append(title, hint);
     if (rail) {
       const progress = document.createElement("em");
-      progress.textContent = `${Number(project.progress || 0)}%`;
+      bindUI(progress, "textContent", () => `${Number(project.progress || 0)}%`);
       button.append(progress);
     }
     button.addEventListener("click", () => openLearningProject(project, button));
@@ -514,11 +523,11 @@
       item.className = "project-row";
       const content = document.createElement("div"); content.className = "project-row-content";
       const more = document.createElement("button"); more.type = "button"; more.className = "project-row-more";
-      more.setAttribute("aria-label", `管理${project.topic || "学习项目"}`);
+      bindUI(more, "@aria-label", () => t("管理{0}", {0: project.topic || t("学习项目")}));
       const moreIcon = document.createElement("i"); moreIcon.className = "bi bi-three-dots"; moreIcon.setAttribute("aria-hidden", "true"); more.append(moreIcon);
       more.addEventListener("click", (event) => { event.stopPropagation(); openProjectContextMenu(project, event.clientX, event.clientY); });
       const swipeDelete = document.createElement("button"); swipeDelete.type = "button"; swipeDelete.className = "project-row-delete";
-      swipeDelete.textContent = "删除"; swipeDelete.addEventListener("click", () => requestProjectDeletion(project));
+      bindUI(swipeDelete, "textContent", () => t("删除")); swipeDelete.addEventListener("click", () => requestProjectDeletion(project));
       content.append(button, more); item.append(swipeDelete, content); bindProjectGestures(item, project);
     } else item.append(button);
     return item;
@@ -529,7 +538,7 @@
     const rail = $("#learningProjectList");
     rail.replaceChildren(...projects.map((project) => projectListItem(project, { rail: true })));
     $("#learningProjectEmpty").hidden = projects.length > 0;
-    setText("#learningProjectCount", String(projects.length));
+    setText("#learningProjectCount", () => String(projects.length));
 
     const archived = projects.filter((project) => !project.current);
     const settings = $("#projectArchiveList");
@@ -550,7 +559,7 @@
     setArtifactCollapsed(false);
     window.LessonSelection?.clear();
     state.chatMode = "learning";
-    window.LearningActivity.start("正在准备讲义", "先读取你的大纲和进度，再生成当前这一小节。");
+    window.LearningActivity.start(() => t("正在准备讲义"), () => t("先读取你的大纲和进度，再生成当前这一小节。"));
     try {
       const response = await fetch(`/api/learning-context?user_id=${encodeURIComponent(USER_ID)}`);
       const context = await response.json();
@@ -579,11 +588,11 @@
         }
       }
       if (!state.messages.length) {
-        addMessage("agent", "第一课已经打开。先看讲义中的第一小步；遇到题目直接点击，答案会在题目下方立即出现。", true);
+        addMessage("agent", t("第一课已经打开。先看讲义中的第一小步；遇到题目直接点击，答案会在题目下方立即出现。"), true);
       }
-      window.LearningActivity.finish("讲义已准备好", "从第 1 页开始；最后一页会明确告诉你在哪里提交。 ");
+      window.LearningActivity.finish(() => t("讲义已准备好"), () => t("从第 1 页开始；最后一页会明确告诉你在哪里提交。 "));
     } catch (error) {
-      window.LearningActivity.finish("讲义暂时未准备好", "请稍后重试，当前学习状态不会丢失。 ");
+      window.LearningActivity.finish(() => t("讲义暂时未准备好"), () => t("请稍后重试，当前学习状态不会丢失。 "));
       throw error;
     }
   }
@@ -611,7 +620,7 @@
         body: JSON.stringify({ user_id: USER_ID }),
       });
       const backup = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(backup.detail?.message || "当前课程暂时无法安全备份。");
+      if (!response.ok) throw new Error(backup.detail?.message || t("当前课程暂时无法安全备份。"));
       state.projectSnapshotId = backup.snapshot_id;
       localStorage.setItem(STORAGE_PROJECT_SNAPSHOT, state.projectSnapshotId);
     }
@@ -668,7 +677,7 @@
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ user_id: USER_ID, snapshot_id: state.projectSnapshotId }),
           });
-          if (!response.ok) throw new Error("新课程已创建，但旧课程暂时没有归档成功。请稍后重试。 ");
+          if (!response.ok) throw new Error(t("新课程已创建，但旧课程暂时没有归档成功。请稍后重试。 "));
           state.projectSnapshotId = null;
           localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT);
           await refreshProjectArchive();
@@ -682,9 +691,9 @@
         if (!state.projectSnapshotId) return;
         try {
           await restoreCurrentCourse();
-          showToast("已回到原来的课程；你的新主题选择仍会保留在对话记录里。 ");
+          showToast(() => t("已回到原来的课程；你的新主题选择仍会保留在对话记录里。 "));
         } catch (error) {
-          showToast(error.message || "新课程没有生成成功，原课程恢复也需要重试。 ");
+          showToast(() => (window.LearningI18n?.errorText(error.message) ?? error.message) || t("新课程没有生成成功，原课程恢复也需要重试。 "));
         }
       },
     }, initialTopic);
@@ -700,7 +709,7 @@
         body: JSON.stringify({ user_id: USER_ID, snapshot_id: state.projectSnapshotId }),
       });
       const restored = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(restored.detail?.message || "原课程恢复失败，请重试。");
+      if (!response.ok) throw new Error(restored.detail?.message || t("原课程恢复失败，请重试。"));
     }
     localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT);
     state.projectSnapshotId = null;
@@ -728,13 +737,13 @@
 
   function actionChoice(option, index) {
     const button = document.createElement("button"); button.type = "button"; button.className = "inline-choice";
-    const badge = document.createElement("span"); badge.className = "inline-choice-index"; badge.textContent = String(index + 1);
-    const copy = document.createElement("span"); const strong = document.createElement("strong"); strong.textContent = option.label;
-    const small = document.createElement("small"); small.textContent = option.detail; copy.append(strong, small); button.append(badge, copy);
+    const badge = document.createElement("span"); badge.className = "inline-choice-index"; bindUI(badge, "textContent", () => String(index + 1));
+    const copy = document.createElement("span"); const strong = document.createElement("strong"); bindUI(strong, "textContent", () => option.label);
+    const small = document.createElement("small"); bindUI(small, "textContent", () => option.detail); copy.append(strong, small); button.append(badge, copy);
     button.addEventListener("click", async () => {
       $("#inlineChoices").querySelectorAll("button").forEach((item) => { item.disabled = true; });
       try { await option.action(); } catch (error) {
-        showToast(error.message); $("#inlineChoices").querySelectorAll("button").forEach((item) => { item.disabled = false; });
+        showToast((window.LearningI18n?.errorText(error.message) ?? error.message)); $("#inlineChoices").querySelectorAll("button").forEach((item) => { item.disabled = false; });
       }
     });
     return button;
@@ -752,9 +761,9 @@
     $(".sidebar-projects").classList.remove("is-collapsed");
     $("#promptChips").hidden = true;
     $("#choiceTray").hidden = true;
-    setText("#coachContext", "输入你现在想解决的事");
-    addMessage("agent", "想继续以前的内容，直接点左边的学习项目。\n\n想学新东西，就在下面随便说——概念、项目、面试、API 或者一个具体问题都可以。", false);
-    $("#chatInput").placeholder = "例如：下周面试 Java 后端，或我想用 LangGraph 做客服 Agent…";
+    setText("#coachContext", () => t("输入你现在想解决的事"));
+    addMessage("agent", t("想继续以前的内容，直接点左边的学习项目。\n\n想学新东西，就在下面随便说——概念、项目、面试、API 或者一个具体问题都可以。"), false);
+    bindUI($("#chatInput"), "placeholder", () => t("例如：下周面试 Java 后端，或我想用 LangGraph 做客服 Agent…"));
   }
 
   async function confirmPendingPlanAndStart() {
@@ -762,7 +771,7 @@
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: USER_ID }),
     });
-    if (!response.ok) throw new Error("计划确认失败，请重试。 ");
+    if (!response.ok) throw new Error(t("计划确认失败，请重试。 "));
     $("#choiceTray").hidden = true;
     await enterLearning();
     if (state.projectSnapshotId) {
@@ -770,7 +779,7 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: USER_ID, snapshot_id: state.projectSnapshotId }),
       });
-      if (!archiveResponse.ok) throw new Error("计划已确认，但旧课程暂时没有归档成功。请重试。");
+      if (!archiveResponse.ok) throw new Error(t("计划已确认，但旧课程暂时没有归档成功。请重试。"));
       state.projectSnapshotId = null;
       localStorage.removeItem(STORAGE_PROJECT_SNAPSHOT);
       await refreshProjectArchive();
@@ -778,14 +787,15 @@
   }
 
   async function initialize() {
+    await window.LearningI18n?.ready;
     state.messages = [];
     renderMessages();
     try {
       const [healthResponse, contextResponse] = await Promise.all([
         fetch("/api/health"), fetch(`/api/learning-context?user_id=${encodeURIComponent(USER_ID)}`),
       ]);
-      if (!healthResponse.ok) throw new Error("学习服务未连接");
-      $("#statusDot").classList.add("is-online"); setText("#connectionText", "已连接");
+      if (!healthResponse.ok) throw new Error(t("学习服务未连接"));
+      $("#statusDot").classList.add("is-online"); setText("#connectionText", () => t("已连接"));
       const context = await contextResponse.json();
       if (context.profile_status !== "confirmed" && context.profile_status !== "ready") {
         state.projectSnapshotId = null;
@@ -799,14 +809,14 @@
         renderMessages();
         const conceptPlan = context.goal_route === "concept_clarity";
         addMessage("agent", conceptPlan
-          ? "这份概念速学方案还在等你确认。确认后就会直接开始概念讲解。"
-          : "这份学习计划还在等你确认。你可以先阅读；确认后才会开始生成第一章。", false);
+          ? t("这份概念速学方案还在等你确认。确认后就会直接开始概念讲解。")
+          : t("这份学习计划还在等你确认。你可以先阅读；确认后才会开始生成第一章。"), false);
         await showPlanReview({ plan_markdown: context.plan?.content });
-        $("#choiceTrayHint").textContent = "Plan 等待确认";
-        $("#choiceProgress").textContent = "开课前";
+        bindUI($("#choiceTrayHint"), "textContent", () => t("Plan 等待确认"));
+        bindUI($("#choiceProgress"), "textContent", () => t("开课前"));
         $("#inlineChoices").replaceChildren(actionChoice({
-          label: "确认并开始",
-          detail: conceptPlan ? "锁定范围，开始概念讲解" : "锁定当前大纲，开始生成第一章",
+          get label() { return t("确认并开始"); },
+          detail: conceptPlan ? t("锁定范围，开始概念讲解") : t("锁定当前大纲，开始生成第一章"),
           action: confirmPendingPlanAndStart,
         }, 0));
         $("#choiceTray").classList.add("is-plan-confirmation");
@@ -821,8 +831,8 @@
         beginOnboarding();
       }
     } catch (error) {
-      setText("#connectionText", "连接失败");
-      if (!state.messages.length) addMessage("agent", `暂时没能连接学习服务：${error.message}。请确认后台服务正在运行。`, false);
+      setText("#connectionText", () => t("连接失败"));
+      if (!state.messages.length) addMessage("agent", t("暂时没能连接学习服务：{0}。请确认后台服务正在运行。", {0: (window.LearningI18n?.errorText(error.message) ?? error.message)}), false);
     }
   }
 
@@ -840,10 +850,10 @@
       $("#reminderTime").value = reminder.time || "20:00";
       $("#reminderKind").value = reminder.kind || "both";
       $("#reminderEnabled").disabled = reminder.notification_supported === false;
-      setText("#reminderCapability", reminder.message || "后台服务运行时，可在服务所在的 macOS 电脑接收系统通知；请允许系统通知权限。");
+      setText("#reminderCapability", () => t(reminder.message || "后台服务运行时，可在服务所在的 macOS 电脑接收系统通知；请允许系统通知权限。"));
       if (reminder.notification_supported === false) {
         $("#reminderEnabled").checked = false;
-        showToast(reminder.message || "当前系统暂不支持桌面提醒；学习和复习不受影响。");
+        showToast(() => t(reminder.message || "当前系统暂不支持桌面提醒；学习和复习不受影响。"));
       }
     } catch { /* The form keeps safe defaults when the service is unavailable. */ }
     $("#reminderDialog").showModal();
@@ -861,11 +871,11 @@
           kind: $("#reminderKind").value,
         }),
       });
-      if (!response.ok) throw new Error("提醒没有保存成功");
+      if (!response.ok) throw new Error(t("提醒没有保存成功"));
       const result = await response.json();
-      showToast(result.notification_supported === false ? (result.message || "当前系统暂不支持桌面提醒。") : ($("#reminderEnabled").checked ? "每日提醒已保存" : "每日提醒已关闭"));
+      showToast(() => result.notification_supported === false ? t(result.message || "当前系统暂不支持桌面提醒。") : ($("#reminderEnabled").checked ? t("每日提醒已保存") : t("每日提醒已关闭")));
       $("#reminderDialog").close();
-    } catch (error) { showToast(error.message); }
+    } catch (error) { showToast((window.LearningI18n?.errorText(error.message) ?? error.message)); }
   }
 
   function bind() {
@@ -881,18 +891,18 @@
           await beginOnboarding(true, value);
         }
         else await sendMessage(value);
-      } catch (error) { showToast(error.message); input.value = value; }
+      } catch (error) { showToast((window.LearningI18n?.errorText(error.message) ?? error.message)); input.value = value; }
     });
     $("#chatInput").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); $("#chatForm").requestSubmit(); } });
     $$("[data-prompt]").forEach((button) => button.addEventListener("click", () => sendMessage(button.dataset.prompt)));
     $("#settingsBtn").addEventListener("click", () => $("#settingsDialog").showModal());
     $("#projectMobileBtn").addEventListener("click", toggleProjectSwitcher);
-    $("#addLearningProjectBtn").addEventListener("click", () => startNewLearningProject().catch((error) => showToast(error.message)));
+    $("#addLearningProjectBtn").addEventListener("click", () => startNewLearningProject().catch((error) => showToast((window.LearningI18n?.errorText(error.message) ?? error.message))));
     $("#learningProjectsToggle").addEventListener("click", () => {
       const section = $(".sidebar-projects");
       const expanded = section.classList.toggle("is-collapsed") === false;
       $("#learningProjectsToggle").setAttribute("aria-expanded", String(expanded));
-      $("#learningProjectsToggle").setAttribute("aria-label", expanded ? "收起学习项目" : "展开学习项目");
+      bindUI($("#learningProjectsToggle"), "@aria-label", () => expanded ? t("收起学习项目") : t("展开学习项目"));
     });
     $("#projectContextDeleteBtn").addEventListener("click", () => state.selectedProject && requestProjectDeletion(state.selectedProject));
     $("#confirmProjectDeleteBtn").addEventListener("click", confirmProjectDeletion);
@@ -912,22 +922,24 @@
     $("#outlinePreviousBtn").addEventListener("click", () => pageOutline(-1));
     $("#outlineNextBtn").addEventListener("click", () => pageOutline(1));
     $("#outlinePanel").addEventListener("scroll", updateOutlinePageLabel, { passive: true });
-    $("#returnCurrentCourseBtn").addEventListener("click", () => restoreCurrentCourse().catch((error) => showToast(error.message)));
+    $("#returnCurrentCourseBtn").addEventListener("click", () => restoreCurrentCourse().catch((error) => showToast((window.LearningI18n?.errorText(error.message) ?? error.message))));
     $("#collapseArtifactBtn").addEventListener("click", () => { setArtifactCollapsed(true); $("#reopenArtifactBtn").focus(); });
     $("#reopenArtifactBtn").addEventListener("click", () => { setArtifactCollapsed(false); $("#artifactPane").focus(); });
     $("#bugReportExportBtn").addEventListener("click", () => { window.location.href = `/api/support/bug-report?user_id=${encodeURIComponent(USER_ID)}`; });
     $("#reminderForm").addEventListener("submit", saveReminder);
     document.addEventListener("learning-agent:page-change", (event) => {
-      setText("#lessonCounter", `本章 ${event.detail.index + 1} / ${event.detail.total}`);
-      setText("#coachContext", `正在学习：${event.detail.page.title}`);
+      setText("#lessonCounter", () => t("本章 {0} / {1}", {0: event.detail.index + 1, 1: event.detail.total}));
+      setText("#coachContext", () => t("正在学习：{0}", {0: event.detail.page.title}));
     });
     document.addEventListener("learning-agent:lesson-transition", async (event) => {
       const response = await fetch(`/api/learning-context?user_id=${encodeURIComponent(USER_ID)}`);
       if (response.ok) renderLearningContext(await response.json());
-      addMessage("agent", `已经为你打开：**${event.detail.cta_label}**。从第 1 页开始，继续按讲义里的提示往下走。`);
+      addMessage("agent", t("已经为你打开：**{0}**。从第 1 页开始，继续按讲义里的提示往下走。", {0: window.LearningI18n?.completionText(event.detail.cta_label) || event.detail.cta_label}));
     });
   }
 
   document.addEventListener("DOMContentLoaded", () => { bind(); initialize(); }, { once: true });
   window.LearningApp = { sendMessage, celebrateVerifiedSuccess, renderLearningContext };
 }());
+
+}

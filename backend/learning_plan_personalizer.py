@@ -175,12 +175,18 @@ def normalize_and_validate_plan(
     topic: str,
     goal_route: str = "foundation_engineer",
 ) -> str | None:
+    from .plan_locale import plan_labels
+    english = bool(re.search(r'(?im)^## Current task\s*$', markdown))
     candidate = markdown.strip()
     if candidate.startswith("```") and candidate.endswith("```"):
         lines = candidate.splitlines()
         candidate = "\n".join(lines[1:-1]).strip()
+    candidate = plan_labels(candidate)
+    first, separator, rest = candidate.partition('\n')
+    if re.fullmatch(r'\*\*[^*\n]+\*\*', first) and topic.casefold() in first.casefold():
+        candidate = '# ' + first[2:-2] + separator + rest
     title = re.search(r"(?m)^# [^#\n].*$", candidate)
-    if title is None and re.match(r"^学习计划[：:]\s*[^\n]+", candidate):
+    if title is None and re.match(r"^(?:学习计划|Learning plan)[：:]\s*[^\n]+", candidate, re.I):
         first_line = candidate.splitlines()[0]
         if topic.casefold() in first_line.casefold():
             candidate = "# " + candidate
@@ -192,7 +198,7 @@ def normalize_and_validate_plan(
         if not (topic.strip() and "\n" not in topic and "\r" not in topic
                 and candidate.startswith("## ") and topic.casefold() in candidate.casefold()):
             return None
-        candidate = f"# {topic} 学习计划\n\n{candidate}"
+        candidate = f"# {topic} {'learning plan' if english else '学习计划'}\n\n{candidate}"
         title = re.search(r"(?m)^# [^#\n].*$", candidate)
     candidate = candidate[title.start():].strip()
     # Accept equivalent outcome headings; never fabricate missing content.
@@ -253,7 +259,7 @@ def normalize_and_validate_plan(
         last_section = candidate[stages[-1].start():]
         if re.search(r"毕业项目|综合项目|capstone", last_section, re.IGNORECASE) is None:
             return None
-    return candidate + "\n"
+    return (plan_labels(candidate, english=True) if english else candidate) + "\n"
 
 
 def active_plan_path(server_root: Path, user_id: str) -> Path:

@@ -1,5 +1,8 @@
 "use strict";
-
+{
+  const i18n = () => (typeof window !== "undefined" ? window : globalThis).LearningI18n;
+  const t = (key, params = {}) => i18n()?.t(key, params) ?? String(key).replace(/\{(\w+)\}/g, (m, k) => params[k] == null ? m : String(params[k]));
+  const bindUI = (node, property, render) => { if (i18n()) return i18n().bind(node, property, render); const value = render(); if (property.startsWith("@")) node.setAttribute(property.slice(1), value); else node[property] = value; return value; };
 (function createMarkdownRenderer(global) {
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -76,7 +79,7 @@
         while (index < lines.length && !/^```\s*$/.test(lines[index])) { code.push(lines[index]); index += 1; }
         const language = (fence[1] || "text").toLowerCase();
         if (language === "mermaid") html.push(`<div class="mermaid">${escapeHtml(code.join("\n"))}</div>`);
-        else html.push(`<figure class="markdown-code-frame"><figcaption><span>${escapeHtml(language)}</span><button type="button" class="markdown-copy-code" aria-label="复制这段代码">复制代码</button></figcaption><pre><code class="language-${escapeHtml(language)}">${highlightCode(code.join("\n"), language)}</code></pre></figure>`);
+        else html.push(t("<figure class=\"markdown-code-frame\"><figcaption><span>{0}</span><button type=\"button\" class=\"markdown-copy-code\" aria-label=\"复制这段代码\">复制代码</button></figcaption><pre><code class=\"language-{1}\">{2}</code></pre></figure>", {0: escapeHtml(language), 1: escapeHtml(language), 2: highlightCode(code.join("\n"), language)}));
         continue;
       }
       if (!line.trim()) { flushParagraph(); closeList(); continue; }
@@ -103,16 +106,18 @@
   async function hydrate(root) {
     if (!root?.querySelectorAll) return;
     root.querySelectorAll(".markdown-copy-code:not([data-bound])").forEach((button) => {
+      bindUI(button, "textContent", () => t("复制代码"));
+      bindUI(button, "@aria-label", () => t("复制这段代码"));
       button.dataset.bound = "true";
       button.addEventListener("click", async () => {
         const code = button.closest(".markdown-code-frame")?.querySelector("code")?.textContent || "";
         try {
           await global.navigator?.clipboard?.writeText(code);
-          button.textContent = "✓ 已复制";
+          bindUI(button, "textContent", () => t("✓ 已复制"));
         } catch (error) {
-          button.textContent = "复制失败";
+          bindUI(button, "textContent", () => t("复制失败"));
         }
-        global.setTimeout?.(() => { button.textContent = "复制代码"; }, 1600);
+        global.setTimeout?.(() => { bindUI(button, "textContent", () => t("复制代码")); }, 1600);
       });
     });
     if (!global.mermaid) return;
@@ -132,3 +137,5 @@
   global.MarkdownRenderer = { escapeHtml, highlightCode, render, hydrate };
   if (typeof module !== "undefined" && module.exports) module.exports = global.MarkdownRenderer;
 }(typeof window !== "undefined" ? window : globalThis));
+
+}

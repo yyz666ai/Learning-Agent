@@ -20,6 +20,7 @@ from .generation_transaction import project_lock
 from .learning_content import SAFE_USER_ID
 from .user_memory import _atomic_json, read_intent_state
 from .onboarding import OnboardingSubmission
+from .localization import current_locale, submit_localized
 
 REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,100}")
 ACTIVE = {"queued", "running"}
@@ -110,7 +111,7 @@ class DiagnosisJobs:
         return job
 
     def _public(self, user, job):
-        keys = ("request_id", "status", "phase", "intent_session_id", "intent_revision", "error", "submission")
+        keys = ("request_id", "status", "phase", "intent_session_id", "intent_revision", "error", "submission", "locale")
         payload = {key: job[key] for key in keys if key in job}
         payload["elapsed_seconds"] = round(max(0, job.get("finished_at", time.time()) - job["created_at"]), 2)
         payload["retryable"] = job["status"] in {"failed", "interrupted"}
@@ -161,7 +162,9 @@ class DiagnosisJobs:
                        project_fingerprint=self._fingerprint(user), submission=submission)
             self._save(user, job)
             _atomic_json(self._pointer(user), {"request_id": rid})
-            self.futures[(user, rid)] = self.executor.submit(self._run, user, rid, work)
+            job['locale'] = current_locale()
+            self._save(user, job)
+            self.futures[(user, rid)] = submit_localized(self.executor, self._run, user, rid, work)
             return self._public(user, job)
 
     def _run(self, user, rid, work):

@@ -30,6 +30,8 @@ def resolve_plan_path(user_dir: Path, active_plan: object) -> Path | None:
 
 
 def _section_first_line(markdown: str, heading: str) -> str:
+    from .plan_locale import plan_labels
+    markdown = plan_labels(markdown)
     active = False
     for raw in markdown.splitlines():
         line = raw.strip()
@@ -56,7 +58,7 @@ def parse_markdown_plan(markdown: str, source: str = "") -> dict[str, Any]:
             title = re.sub(r"^学习计划[：:]\s*", "", title)
         elif line.startswith("### "):
             stage_title = line.removeprefix("### ").strip()
-            if stage_title.startswith("阶段") or re.match(r"^第\s*\d+\s*章", stage_title):
+            if stage_title.startswith("阶段") or re.match(r"^第\s*\d+\s*章|^(?:Stage|Chapter|Phase)\s+\d+", stage_title, re.I):
                 stages.append(
                     {
                         "title": stage_title,

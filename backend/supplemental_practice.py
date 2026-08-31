@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from .lesson_manifest import LessonBundle, LessonOption, LessonPage
+from .localization import current_locale, text
 
 
 def _clean_json(raw: str) -> str:
@@ -156,12 +157,12 @@ def append_supplemental_questions(
             existing_paths.add(practice_path)
             sections = [str(question["prompt"])]
             if question["milestones"]:
-                sections.append("### 里程碑\n\n" + "\n".join(f"{index}. {step}" for index, step in enumerate(question["milestones"], 1)))
-            sections.append("<details>\n<summary>需要时查看提示</summary>\n\n" + "\n".join(f"- {hint}" for hint in question["hints"]) + "\n\n</details>")
-            sections.append("### 完成标准\n\n" + str(question["completion_criteria"]))
+                sections.append(text("### 里程碑\n\n", "### Milestones\n\n") + "\n".join(f"{index}. {step}" for index, step in enumerate(question["milestones"], 1)))
+            sections.append(text("<details>\n<summary>需要时查看提示</summary>\n\n", "<details>\n<summary>Show hints when needed</summary>\n\n") + "\n".join(f"- {hint}" for hint in question["hints"]) + "\n\n</details>")
+            sections.append(text("### 完成标准\n\n", "### Completion criteria\n\n") + str(question["completion_criteria"]))
             added_pages.append(LessonPage(
-                id=page_id, type="practice", practice_kind="homework",
-                eyebrow="追加项目练习" if question["kind"] == "project" else "追加编程练习",
+                id=page_id, type="practice", practice_kind="homework", locale=current_locale(),
+                eyebrow=text("追加项目练习", "Additional project") if question["kind"] == "project" else text("追加编程练习", "Additional coding exercise"),
                 title=str(question["title"]), markdown="\n\n".join(sections),
                 question=str(question["prompt"]), language=bundle.manifest.language,
                 practice_path=practice_path, completion_criteria=str(question["completion_criteria"]),
@@ -169,13 +170,14 @@ def append_supplemental_questions(
             continue
         added_pages.append(LessonPage(
             id=page_id,
+            locale=current_locale(),
             type="check",
-            eyebrow="追加练习",
+            eyebrow=text("追加练习", "Additional practice"),
             title=str(question["title"]),
-            markdown="先自己判断，再点击最合适的答案。答完后可以在右侧对话框继续追问。",
+            markdown=text("先自己判断，再点击最合适的答案。答完后可以在右侧对话框继续追问。", "Think first, then choose the best answer. Ask follow-up questions in the chat on the right."),
             question=str(question["prompt"]),
             options=[LessonOption.model_validate(option) for option in question["options"]],
-            completion_criteria="完成后可在题库查看解析，并按掌握情况安排复习。",
+            completion_criteria=text("完成后可在题库查看解析，并按掌握情况安排复习。", "Review the explanation in the practice bank and schedule review based on your understanding."),
         ))
         added_answers[page_id] = str(question["correct_option_id"])
 

@@ -579,3 +579,25 @@ dialog h2 { margin: 0; font: 620 22px var(--serif); }
 .markdown-body h3 { font-size:clamp(20px,1.7vw,25px); line-height:1.45; }
 .markdown-body h1,.markdown-body h2,.markdown-body h3 { font-weight:700; }
 @media(max-width:860px) { .lesson-edit-toolbar button {min-width:44px; min-height:44px;} .editor-format-toolbar button {min-height:44px;} .lesson-editor {padding:16px;} }
+:root { --language-menu-offset: 64px; }
+.translation-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 8px 24px; font-size: 12px; border-bottom: 1px solid #e3e8e2; }
+.translation-tools[hidden] { display: none; }
+.translation-tools button { flex: 0 0 auto; border: 1px solid #dce2dc; background: #fff; border-radius: 8px; padding: 6px 10px; }
+.translation-tools span, .translation-context { color: #69736b; font-size: 12px; }
+.translation-context { padding: 0 24px; }
+.translation-content { padding: 12px 24px; }
+.translation-content > section { margin-bottom: 24px; border-bottom: 1px solid #e3e8e2; padding-bottom: 24px; }
+.language-control { position: fixed; right: 20px; top: 17px; z-index: 90; }
+.language-control > button { background: var(--surface, #fff); border: 1px solid #dce2dc; width: 36px; height: 36px; border-radius: 10px; }
+.language-menu { position: absolute; right: 0; top: 44px; min-width: 156px; padding: 6px; border: 1px solid #dce2dc; border-radius: 12px; background: #fff; box-shadow: 0 10px 30px #17251a24; }
+.language-menu:not([hidden]) { display: grid; gap: 3px; }
+.language-menu button { background: transparent; text-align: left; padding: 10px 30px 10px 12px; border: 0; border-radius: 7px; position: relative; }
+.language-menu button[aria-checked="true"] { background: #edf3e9; }
+.language-menu button[aria-checked="true"]::after { content: "✓"; position: absolute; right: 10px; }
+.language-menu button:focus-visible, .language-control button:focus-visible { outline: 2px solid #58724f; outline-offset: 2px; }
+.language-context-hint { margin: 0; padding: 0 24px 8px; color: #747970; font-size: 11px; line-height: 1.5; flex: 0 0 auto; }
+.language-save-notice { position: fixed; top: 62px; right: 20px; max-width: min(360px, 90vw); z-index: 91; }
+.language-save-notice:has(#languageSaveStatus:not([hidden])) { background: #fff9e9; border: 1px solid #dacd9a; padding: 12px; border-radius: 10px; font-size: 13px; }
+.conversation-head { padding-right: var(--language-menu-offset) !important; }
+html[lang="en"] .completion-actions button, html[lang="en"] .page-navigation button { white-space: normal; }
+@media (max-width: 700px) { .language-control { right: 12px; top: 13px; } .language-context-hint { padding-left: 16px; padding-right: 16px; } }

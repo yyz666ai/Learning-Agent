@@ -16,7 +16,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from backend.lesson_context import LessonReference, lesson_revision, restored_checks, validate_reference
@@ -28,6 +28,9 @@ from backend.diagnosis_jobs import DiagnosisJobs, StaleDiagnosis
 from backend.generation_context import profile_slots
 from backend.codex_driver import ensure_user
 from backend.support_report import build_report, record_generation
+from backend.localization import locale_context, normalize_locale, read_preferences, save_preferences
+from backend.localization import current_locale
+from backend import content_translation
 
 try:
     from .codex_driver import chat, latest_release, stream_chat
@@ -97,6 +100,7 @@ PORT = 8787
 logger = logging.getLogger(__name__)
 PLAN_GENERATION_JOBS = GenerationJobRegistry(max_workers=2)
 LESSON_GENERATION_JOBS = GenerationJobRegistry(max_workers=2)
+TRANSLATION_JOBS = GenerationJobRegistry(max_workers=1)
 _diagnosis_registries: dict[str, DiagnosisJobs] = {}
 
 
@@ -147,6 +151,97 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url=None,
 )
+
+
+@app.middleware("http")
+async def request_language(request: Any, call_next: Any) -> Any:
+    if not request.url.path.startswith('/api/'):
+        return await call_next(request)
+    user = request.query_params.get('user_id', 'yang')
+    if request.method in {'POST', 'PUT', 'PATCH'} and 'application/json' in request.headers.get('content-type', ''):
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                user = body.get('user_id', user)
+        except (ValueError, UnicodeDecodeError):
+            pass  # Let FastAPI report malformed bodies.
+    try:
+        locale = normalize_locale(request.headers['x-learning-locale']) if 'x-learning-locale' in request.headers else read_preferences(SERVER_ROOT, user)['locale']
+    except (TypeError, ValueError, OSError):
+        return JSONResponse(status_code=422, content={'detail': 'Unable to read language preference or invalid locale/user_id'})
+    with locale_context(locale):
+        response = await call_next(request)
+        response.headers['Content-Language'] = locale
+        return response
+
+
+class PreferencesRequest(BaseModel):
+    user_id: str = Field(default='yang', pattern=r'^[A-Za-z0-9_-]{1,64}$')
+    locale: str = Field(pattern=r'^(zh-CN|en)$')
+
+
+@app.get('/api/preferences')
+def get_preferences(user_id: str = Query(default='yang', pattern=r'^[A-Za-z0-9_-]{1,64}$')):
+    return read_preferences(SERVER_ROOT, user_id)
+
+
+@app.put('/api/preferences')
+def put_preferences(request: PreferencesRequest):
+    return save_preferences(SERVER_ROOT, request.user_id, request.locale)
+
+
+class TranslationRequest(PreferencesRequest):
+    locale: str = Field(default='zh-CN', pattern=r'^(zh-CN|en)$')
+    kind: str = Field(pattern=r'^(plan|lesson)$')
+    confirmed: bool = False
+    source_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+@app.get('/api/translations/source')
+def translation_source(user_id: str = Query(pattern=r'^[A-Za-z0-9_-]{1,64}$'), kind: str = Query(pattern=r'^(plan|lesson)$')):
+    try:
+        value = content_translation.source(SERVER_ROOT, user_id, kind)
+        return {key:value[key] for key in ('source_hash', 'locale', 'kind')}
+    except (OSError, ValueError) as exc:
+        raise HTTPException(404, 'Translation source is not available') from exc
+
+
+@app.post('/api/translations/start', status_code=202)
+def start_translation(request: TranslationRequest):
+    if not request.confirmed:
+        raise HTTPException(409, 'Please confirm before creating a translation copy')
+    active = translation_source(request.user_id, request.kind)
+    if active['source_hash'] != request.source_hash:
+        raise HTTPException(409, 'Source changed; review it before translating')
+    locale = current_locale()
+    release = latest_release()
+    if release is None:
+        raise HTTPException(503, 'Teaching service is unavailable')
+    generation_id = 'translation-' + secrets.token_hex(16)
+    def work():
+        try:
+            return content_translation.translate(SERVER_ROOT, request.user_id, request.kind, request.source_hash,
+                lambda prompt: chat(request.user_id, prompt, release, generation='lesson_review', timeout=180))
+        except (OSError, ValueError, RuntimeError) as exc:
+            logger.warning('translation failed user=%s cause=%s', request.user_id, type(exc).__name__)
+            return {'ok':False, 'locale':locale, 'user_message':'Translation failed or the source changed. The original is unchanged.'}
+    return TRANSLATION_JOBS.start(request.user_id, generation_id, work)
+
+
+@app.get('/api/translations/status')
+def translation_status(user_id: str = Query(pattern=r'^[A-Za-z0-9_-]{1,64}$'), generation_id: str = Query(pattern=r'^translation-[a-f0-9]{32}$')):
+    try:
+        return TRANSLATION_JOBS.get(user_id, generation_id)
+    except KeyError as exc:
+        raise HTTPException(404, 'Translation task unavailable; it may have been interrupted by a restart') from exc
+
+
+@app.get('/api/translations/view')
+def translation_view(user_id: str = Query(pattern=r'^[A-Za-z0-9_-]{1,64}$'), kind: str = Query(pattern=r'^(plan|lesson)$'), locale: str = Query(pattern=r'^(zh-CN|en)$')):
+    try:
+        return content_translation.read_variant(SERVER_ROOT, user_id, kind, locale)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(404, 'No translation for the current source version') from exc
 
 for route, folder in (("/css", "css"), ("/js", "js"), ("/assets", "assets")):
     target = FRONTEND / folder
@@ -1614,7 +1709,7 @@ def _generate_diagnostic_session(request: OnboardingSubmission, phase=None, *, s
                     request.user_id, request.topic.value, exc,
                 )
                 break
-    if questions is None and not has_curated_bank(request.topic.value, request.goal_route):
+    if questions is None and (current_locale() == 'en' or not has_curated_bank(request.topic.value, request.goal_route)):
         raise HTTPException(status_code=502, detail={
             "message": "这次岗位专属诊断没有生成完成，你的目标已保留。",
             "retryable": True,

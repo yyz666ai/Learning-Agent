@@ -18,9 +18,10 @@ from .lesson_manifest import LessonBundle, LessonManifest
 
 def render_lesson_markdown(bundle: LessonBundle) -> str:
     """Deterministic public projection; never serialize grading/private fields."""
-    lines = [f'# {bundle.manifest.title}', '', f'版本：`{lesson_revision(bundle.manifest)}`', '']
+    en = bundle.manifest.locale == 'en'
+    lines = [f'# {bundle.manifest.title}', '', f'{"Version: " if en else "版本："}`{lesson_revision(bundle.manifest)}`', '']
     for page in bundle.manifest.pages:
-        lines.extend([f'## {page.title}', '', f'页面 ID：`{page.id}`', '', page.markdown, ''])
+        lines.extend([f'## {page.title}', '', f'{"Page ID: " if en else "页面 ID："}`{page.id}`', '', page.markdown, ''])
         if page.code:
             fence = '`' * max(3, max((len(match) + 1 for match in re.findall(r'`+', page.code)), default=3))
             lines.extend([f'{fence}{page.language or bundle.manifest.language}', page.code, fence, ''])

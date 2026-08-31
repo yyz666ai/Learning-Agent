@@ -25,6 +25,7 @@ def test_background_job_returns_immediately_and_keeps_result() -> None:
         "user_id": "learner",
         "generation_id": "a" * 32,
         "status": "completed",
+        "locale": "zh-CN",
         "result": {"personalized": True},
     }
 

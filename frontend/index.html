@@ -4,159 +4,170 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f8fafc">
-  <title>Learning Agent · 一步一步学会</title>
+  <title data-i18n="Learning Agent · 一步一步学会">Learning Agent · 一步一步学会</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="/css/style.css?v=20260831-workspace">
 </head>
 <body>
-  <a class="skip-link" href="#chatInput">跳到对话输入框</a>
+  <div class="language-control" id="languageControl">
+    <button id="languageMenuButton" class="icon-button" type="button" aria-label="选择界面语言" title="选择界面语言" data-i18n-aria-label="选择界面语言" data-i18n-title="选择界面语言" aria-haspopup="menu" aria-controls="languageMenu" aria-expanded="false"><i class="bi bi-globe2" aria-hidden="true"></i></button>
+    <div id="languageMenu" class="language-menu" role="menu" aria-label="界面语言" data-i18n-aria-label="界面语言" hidden>
+      <button type="button" role="menuitemradio" data-locale="zh-CN" aria-checked="true" lang="zh-CN">中文</button>
+      <button type="button" role="menuitemradio" data-locale="en" aria-checked="false" lang="en">English</button>
+    </div>
+  </div>
+  <div class="language-save-notice" role="status"><span id="languageSaveStatus" hidden></span><button id="languageSaveRetry" type="button" data-i18n="重试" hidden>重试</button></div>
+  <a class="skip-link" href="#chatInput"><span data-i18n="跳到对话输入框">跳到对话输入框</span></a>
   <div class="app-shell is-onboarding" id="appShell">
-    <nav class="roadmap" id="learningRoadmap" aria-label="学习大纲">
+    <nav class="roadmap" id="learningRoadmap" aria-label="学习大纲" data-i18n-aria-label="学习大纲">
       <header class="brand-row"><span class="brand-mark" aria-hidden="true"><i class="bi bi-mortarboard-fill"></i></span><strong>Learning Agent</strong></header>
       <section class="sidebar-projects" aria-labelledby="learningProjectsTitle">
-        <header><div><h2 id="learningProjectsTitle">学习项目</h2><span id="learningProjectCount">0</span></div><span class="project-header-actions"><button id="addLearningProjectBtn" type="button" aria-label="添加学习项目"><i class="bi bi-plus-lg" aria-hidden="true"></i></button><button id="learningProjectsToggle" type="button" aria-label="展开学习项目" aria-expanded="false"><i class="bi bi-chevron-up" aria-hidden="true"></i></button></span></header>
+        <header><div><h2 id="learningProjectsTitle"><span data-i18n="学习项目">学习项目</span></h2><span id="learningProjectCount">0</span></div><span class="project-header-actions"><button id="addLearningProjectBtn" type="button" aria-label="添加学习项目" data-i18n-aria-label="添加学习项目"><i class="bi bi-plus-lg" aria-hidden="true"></i></button><button id="learningProjectsToggle" type="button" aria-label="展开学习项目" data-i18n-aria-label="展开学习项目" aria-expanded="false"><i class="bi bi-chevron-up" aria-hidden="true"></i></button></span></header>
         <ol id="learningProjectList" class="learning-project-list"></ol>
-        <p class="learning-project-empty" id="learningProjectEmpty">还没有学习项目。直接在右侧输入你想学什么。</p>
+        <p class="learning-project-empty" id="learningProjectEmpty"><span data-i18n="还没有学习项目。直接在右侧输入你想学什么。">还没有学习项目。直接在右侧输入你想学什么。</span></p>
       </section>
-      <div class="rail-tabs" role="tablist" aria-label="学习导航">
-        <button id="railOutlineTab" class="is-active" type="button" role="tab" aria-selected="true" aria-controls="outlinePanel">大纲</button>
-        <button id="railBankTab" type="button" role="tab" aria-selected="false" aria-controls="interviewBankPanel">练习题库 <span id="bankCount">0</span></button>
+      <div class="rail-tabs" role="tablist" aria-label="学习导航" data-i18n-aria-label="学习导航">
+        <button id="railOutlineTab" class="is-active" type="button" role="tab" aria-selected="true" aria-controls="outlinePanel"><span data-i18n="大纲">大纲</span></button>
+        <button id="railBankTab" type="button" role="tab" aria-selected="false" aria-controls="interviewBankPanel"><span data-i18n="练习题库">练习题库 </span><span id="bankCount">0</span></button>
       </div>
-      <div class="outline-pager" aria-label="大纲翻页"><button id="outlinePreviousBtn" type="button" aria-label="查看上方大纲"><i class="bi bi-chevron-up" aria-hidden="true"></i></button><span id="outlinePageLabel">大纲 1 / 1</span><button id="outlineNextBtn" type="button" aria-label="查看下方大纲"><i class="bi bi-chevron-down" aria-hidden="true"></i></button></div>
+      <div class="outline-pager" aria-label="大纲翻页" data-i18n-aria-label="大纲翻页"><button id="outlinePreviousBtn" type="button" aria-label="查看上方大纲" data-i18n-aria-label="查看上方大纲"><i class="bi bi-chevron-up" aria-hidden="true"></i></button><span id="outlinePageLabel"><span data-i18n="大纲 1 / 1">大纲 1 / 1</span></span><button id="outlineNextBtn" type="button" aria-label="查看下方大纲" data-i18n-aria-label="查看下方大纲"><i class="bi bi-chevron-down" aria-hidden="true"></i></button></div>
       <section id="outlinePanel" class="rail-panel" role="tabpanel" aria-labelledby="railOutlineTab"><ol class="stage-list" id="stageList"></ol></section>
       <section id="interviewBankPanel" class="rail-panel interview-bank" role="tabpanel" aria-labelledby="railBankTab" hidden>
-        <header class="bank-summary"><div><span>题库覆盖率</span><strong id="bankCoverage">0%</strong></div><p id="bankCoverageMeta">已掌握 0 / 共 0 题</p></header>
-        <div class="bank-filter"><span>课堂题、作业与面试题</span><button id="refreshInterviewBank" type="button">刷新</button></div>
+        <header class="bank-summary"><div><span><span data-i18n="题库覆盖率">题库覆盖率</span></span><strong id="bankCoverage">0%</strong></div><p id="bankCoverageMeta"><span data-i18n="已掌握 0 / 共 0 题">已掌握 0 / 共 0 题</span></p></header>
+        <div class="bank-filter"><span><span data-i18n="课堂题、作业与面试题">课堂题、作业与面试题</span></span><button id="refreshInterviewBank" type="button"><span data-i18n="刷新">刷新</span></button></div>
         <ol id="interviewQuestionList" class="interview-question-list"></ol>
-        <p class="bank-empty" id="bankEmpty">开始一节课后，课堂选择题和课后作业会自动记录在这里。</p>
-        <footer class="bank-review-footer"><button id="startBankReviewBtn" type="button"><i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>开始复习</span><small id="bankDueCount">今日 0 题</small></button></footer>
+        <p class="bank-empty" id="bankEmpty"><span data-i18n="开始一节课后，课堂选择题和课后作业会自动记录在这里。">开始一节课后，课堂选择题和课后作业会自动记录在这里。</span></p>
+        <footer class="bank-review-footer"><button id="startBankReviewBtn" type="button"><i class="bi bi-arrow-repeat" aria-hidden="true"></i><span><span data-i18n="开始复习">开始复习</span></span><small id="bankDueCount"><span data-i18n="今日 0 题">今日 0 题</span></small></button></footer>
       </section>
       <details class="sidebar-plan-dock" id="sidebarPlanDock">
-        <summary><span><small>学习方案</small><strong id="planTitle">正在准备学习方案</strong></span><span><strong id="planProgress">0%</strong><i class="bi bi-chevron-up" aria-hidden="true"></i></span></summary>
+        <summary><span><small><span data-i18n="学习方案">学习方案</span></small><strong id="planTitle"><span data-i18n="正在准备学习方案">正在准备学习方案</span></strong></span><span><strong id="planProgress">0%</strong><i class="bi bi-chevron-up" aria-hidden="true"></i></span></summary>
         <div class="sidebar-plan-body">
-          <p class="roadmap-meta" id="planMeta">计划会随着你的表现持续调整</p>
+          <p class="roadmap-meta" id="planMeta"><span data-i18n="计划会随着你的表现持续调整">计划会随着你的表现持续调整</span></p>
           <section class="progress-card" aria-labelledby="progressLabel">
-            <div><span id="progressLabel">总进度</span><span id="completedLessons">0 / 0 课</span></div>
+            <div><span id="progressLabel"><span data-i18n="总进度">总进度</span></span><span id="completedLessons"><span data-i18n="0 / 0 课">0 / 0 课</span></span></div>
             <div class="progress-track"><span id="progressFill"></span></div>
-            <p><span id="remainingTime">预计还需 25 分钟</span></p>
+            <p><span id="remainingTime"><span data-i18n="预计还需 25 分钟">预计还需 25 分钟</span></span></p>
           </section>
-          <button id="sidebarOpenPlanBtn" type="button"><i class="bi bi-file-earmark-text" aria-hidden="true"></i>查看完整方案</button>
+          <button id="sidebarOpenPlanBtn" type="button"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span data-i18n="查看完整方案">查看完整方案</span></button>
         </div>
       </details>
       <div class="roadmap-actions">
-        <button id="settingsBtn" type="button"><i class="bi bi-gear" aria-hidden="true"></i><span>设置与提醒</span></button>
+        <button id="settingsBtn" type="button"><i class="bi bi-gear" aria-hidden="true"></i><span><span data-i18n="设置与提醒">设置与提醒</span></span></button>
       </div>
     </nav>
 
     <main class="artifact-pane" id="artifactPane" tabindex="-1">
       <header class="artifact-topbar">
-        <div class="artifact-meta"><span id="lessonCounter">本章 1 / 1</span><i aria-hidden="true"></i><span id="masteryText">掌握 0%</span><i aria-hidden="true"></i><span id="lessonRemaining">预计还需 25 分钟</span></div>
-        <nav class="lesson-edit-toolbar" aria-label="课件编辑">
-          <button class="icon-button" id="lessonEditBtn" type="button" aria-label="只读模式，点击编辑本页" title="只读模式，点击编辑本页" aria-expanded="false" aria-controls="lessonEditor" disabled><i class="bi bi-lock" aria-hidden="true"></i></button>
-          <button class="icon-button" id="lessonUndoBtn" type="button" aria-label="撤销课件修改" title="撤销课件修改" disabled><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
-          <button class="icon-button" id="collapseArtifactBtn" type="button" aria-label="收起 PPT" title="收起 PPT" aria-controls="artifactPane"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+        <div class="artifact-meta"><span id="lessonCounter"><span data-i18n="本章 1 / 1">本章 1 / 1</span></span><i aria-hidden="true"></i><span id="masteryText"><span data-i18n="掌握 0%">掌握 0%</span></span><i aria-hidden="true"></i><span id="lessonRemaining"><span data-i18n="预计还需 25 分钟">预计还需 25 分钟</span></span></div>
+        <nav class="lesson-edit-toolbar" aria-label="课件编辑" data-i18n-aria-label="课件编辑">
+          <button class="icon-button" id="lessonEditBtn" type="button" aria-label="只读模式，点击编辑本页" data-i18n-aria-label="只读模式，点击编辑本页" title="只读模式，点击编辑本页" data-i18n-title="只读模式，点击编辑本页" aria-expanded="false" aria-controls="lessonEditor" disabled><i class="bi bi-lock" aria-hidden="true"></i></button>
+          <button class="icon-button" id="lessonUndoBtn" type="button" aria-label="撤销课件修改" data-i18n-aria-label="撤销课件修改" title="撤销课件修改" data-i18n-title="撤销课件修改" disabled><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+          <button class="icon-button" id="collapseArtifactBtn" type="button" aria-label="收起 PPT" data-i18n-aria-label="收起 PPT" title="收起 PPT" data-i18n-title="收起 PPT" aria-controls="artifactPane"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
         </nav>
       </header>
       <p id="editorStatus" class="editor-status" role="status"></p>
       <div class="artifact-scroll">
-        <section id="lessonEditor" class="lesson-editor" hidden aria-label="编辑本页课件">
-          <label for="editorTitle">本页标题</label><input id="editorTitle" maxlength="300">
-          <div id="editorFormatToolbar" class="editor-format-toolbar" role="group" aria-label="正文格式">
-            <button type="button" data-format="h1" aria-label="一级标题">H1</button><button type="button" data-format="h2" aria-label="二级标题">H2</button><button type="button" data-format="h3" aria-label="三级标题">H3</button>
-            <button type="button" data-format="bold"><b>加粗</b></button><button type="button" data-format="italic"><i>斜体</i></button><button type="button" data-format="highlight">高亮</button><button type="button" data-format="underline"><u>下划线</u></button>
+        <section id="lessonEditor" class="lesson-editor" hidden aria-label="编辑本页课件" data-i18n-aria-label="编辑本页课件">
+          <label for="editorTitle"><span data-i18n="本页标题">本页标题</span></label><input id="editorTitle" maxlength="300">
+          <div id="editorFormatToolbar" class="editor-format-toolbar" role="group" aria-label="正文格式" data-i18n-aria-label="正文格式">
+            <button type="button" data-format="h1" aria-label="一级标题" data-i18n-aria-label="一级标题">H1</button><button type="button" data-format="h2" aria-label="二级标题" data-i18n-aria-label="二级标题">H2</button><button type="button" data-format="h3" aria-label="三级标题" data-i18n-aria-label="三级标题">H3</button>
+            <button type="button" data-format="bold"><b><span data-i18n="加粗">加粗</span></b></button><button type="button" data-format="italic"><i><span data-i18n="斜体">斜体</span></i></button><button type="button" data-format="highlight"><span data-i18n="高亮">高亮</span></button><button type="button" data-format="underline"><u><span data-i18n="下划线">下划线</span></u></button>
           </div>
-          <div class="editor-fields"><label for="editorMarkdown">正文 · Markdown</label><textarea id="editorMarkdown" rows="12" spellcheck="false"></textarea><label for="editorCode">代码 · 原样保存，不添加文字格式</label><textarea id="editorCode" rows="6" spellcheck="false"></textarea></div>
-          <div class="editor-preview-label">正文预览</div><article id="editorPreview" class="markdown-body"></article>
-          <footer><button id="editorPreviewToggle" type="button">预览</button><button id="editorCancelBtn" type="button">取消</button><button id="editorSaveBtn" class="primary-button" type="button">保存新版本</button></footer>
+          <div class="editor-fields"><label for="editorMarkdown"><span data-i18n="正文 · Markdown">正文 · Markdown</span></label><textarea id="editorMarkdown" rows="12" spellcheck="false"></textarea><label for="editorCode"><span data-i18n="代码 · 原样保存，不添加文字格式">代码 · 原样保存，不添加文字格式</span></label><textarea id="editorCode" rows="6" spellcheck="false"></textarea></div>
+          <div class="editor-preview-label"><span data-i18n="正文预览">正文预览</span></div><article id="editorPreview" class="markdown-body"></article>
+          <footer><button id="editorPreviewToggle" type="button"><span data-i18n="预览">预览</span></button><button id="editorCancelBtn" type="button"><span data-i18n="取消">取消</span></button><button id="editorSaveBtn" class="primary-button" type="button"><span data-i18n="保存新版本">保存新版本</span></button></footer>
         </section>
         <article class="lesson-page" id="lessonPage" aria-live="polite">
-          <div class="page-count" id="pageCount">第 1 页 / 共 1 页</div>
-          <p class="eyebrow" id="pageEyebrow">先建立直觉</p>
-          <h2 id="pageTitle">课程准备中<span class="loading-ellipsis" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only">……</span></h2>
-          <section class="lesson-load-error" id="lessonLoadError" hidden role="alert"><p id="lessonLoadErrorText">这次课程没有生成完成，学习进度没有丢失。</p><button id="retryLessonBtn" type="button"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>重新生成课程</button></section>
+          <div class="page-count" id="pageCount"><span data-i18n="第 1 页 / 共 1 页">第 1 页 / 共 1 页</span></div>
+          <p class="eyebrow" id="pageEyebrow"><span data-i18n="先建立直觉">先建立直觉</span></p>
+          <h2 id="pageTitle"><span data-i18n="课程准备中">课程准备中</span><span class="loading-ellipsis" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only">……</span></h2>
+          <section class="lesson-load-error" id="lessonLoadError" hidden role="alert"><p id="lessonLoadErrorText"><span data-i18n="这次课程没有生成完成，学习进度没有丢失。">这次课程没有生成完成，学习进度没有丢失。</span></p><button id="retryLessonBtn" type="button"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i><span data-i18n="重新生成课程">重新生成课程</span></button></section>
           <div class="markdown-body" id="pageMarkdown"></div>
-          <section class="page-instruction" id="pageInstruction" aria-live="polite" hidden><span>本页请做</span><p id="pageInstructionText"></p></section>
-          <div class="code-block" id="pageCodeBlock" hidden><header><span id="codeFilename">example.go</span><button id="copyCodeBtn" type="button" aria-live="polite">复制代码</button></header><pre><code id="pageCode"></code></pre></div>
+          <section class="page-instruction" id="pageInstruction" aria-live="polite" hidden><span><span data-i18n="本页请做">本页请做</span></span><p id="pageInstructionText"></p></section>
+          <div class="code-block" id="pageCodeBlock" hidden><header><span id="codeFilename">example.go</span><button id="copyCodeBtn" type="button" aria-live="polite"><span data-i18n="复制代码">复制代码</span></button></header><pre><code id="pageCode"></code></pre></div>
           <section class="page-question" id="pageQuestion" hidden><h3 id="pageQuestionText"></h3><div class="page-options" id="pageOptions"></div><p class="question-feedback" id="questionFeedback" hidden aria-live="polite"></p></section>
-          <section class="practice-location" id="practiceLocation" hidden><div><span>本节练习目录</span><code id="practicePath"></code></div><button id="openPracticeFolderBtn" type="button">打开文件夹</button></section>
-          <section class="lesson-notes" id="lessonNotesPanel" hidden aria-live="polite"><header><span>我的课堂笔记</span><small>对话中的重点会自动写到这里</small></header><div id="lessonNotesList"></div><aside id="lessonReward"></aside></section>
-          <section class="lesson-interview-prompts" id="lessonInterviewPrompts" hidden aria-labelledby="lessonInterviewPromptsTitle"><p class="eyebrow">面试表达练习</p><h3 id="lessonInterviewPromptsTitle">把知识说成面试答案</h3><div id="lessonInterviewPromptList"></div></section>
+          <section class="practice-location" id="practiceLocation" hidden><div><span><span data-i18n="本节练习目录">本节练习目录</span></span><code id="practicePath"></code></div><button id="openPracticeFolderBtn" type="button"><span data-i18n="打开文件夹">打开文件夹</span></button></section>
+          <section class="lesson-notes" id="lessonNotesPanel" hidden aria-live="polite"><header><span><span data-i18n="我的课堂笔记">我的课堂笔记</span></span><small><span data-i18n="对话中的重点会自动写到这里">对话中的重点会自动写到这里</span></small></header><div id="lessonNotesList"></div><aside id="lessonReward"></aside></section>
+          <section class="lesson-interview-prompts" id="lessonInterviewPrompts" hidden aria-labelledby="lessonInterviewPromptsTitle"><p class="eyebrow"><span data-i18n="面试表达练习">面试表达练习</span></p><h3 id="lessonInterviewPromptsTitle"><span data-i18n="把知识说成面试答案">把知识说成面试答案</span></h3><div id="lessonInterviewPromptList"></div></section>
           <section class="review-card-panel" id="reviewCardPanel" hidden aria-live="polite">
-            <header><span id="reviewCardProgress">复习 1 / 1</span><button id="closeReviewCardBtn" type="button" aria-label="退出复习"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
-            <p class="eyebrow" id="reviewCardSource">回忆优先，不急着看答案</p>
+            <header><span id="reviewCardProgress"><span data-i18n="复习 1 / 1">复习 1 / 1</span></span><button id="closeReviewCardBtn" type="button" aria-label="退出复习" data-i18n-aria-label="退出复习"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
+            <p class="eyebrow" id="reviewCardSource"><span data-i18n="回忆优先，不急着看答案">回忆优先，不急着看答案</span></p>
             <h3 id="reviewCardQuestion"></h3>
             <div class="review-card-options" id="reviewCardOptions"></div>
-            <p class="review-card-hint">先在心里回答、口述，或直接在右侧对话框说出你的答案。</p>
-            <button class="primary-button" id="revealReviewAnswerBtn" type="button">查看答案</button>
+            <p class="review-card-hint"><span data-i18n="先在心里回答、口述，或直接在右侧对话框说出你的答案。">先在心里回答、口述，或直接在右侧对话框说出你的答案。</span></p>
+            <button class="primary-button" id="revealReviewAnswerBtn" type="button"><span data-i18n="查看答案">查看答案</span></button>
             <section class="review-card-answer markdown-body" id="reviewCardAnswer" hidden></section>
             <div class="review-rating-actions" id="reviewRatingActions" hidden>
-              <p>这次回忆起来有多顺？</p>
-              <button type="button" data-review-rating="forgot"><strong>没想起来</strong><small>1 天后再复习</small></button>
-              <button type="button" data-review-rating="hard"><strong>稍微有点困难</strong><small>3 天后再复习</small></button>
-              <button type="button" data-review-rating="easy"><strong>顺利</strong><small>7 天后再复习</small></button>
+              <p><span data-i18n="这次回忆起来有多顺？">这次回忆起来有多顺？</span></p>
+              <button type="button" data-review-rating="forgot"><strong><span data-i18n="没想起来">没想起来</span></strong><small><span data-i18n="1 天后再复习">1 天后再复习</span></small></button>
+              <button type="button" data-review-rating="hard"><strong><span data-i18n="稍微有点困难">稍微有点困难</span></strong><small><span data-i18n="3 天后再复习">3 天后再复习</span></small></button>
+              <button type="button" data-review-rating="easy"><strong><span data-i18n="顺利">顺利</span></strong><small><span data-i18n="7 天后再复习">7 天后再复习</span></small></button>
             </div>
           </section>
           <section class="lesson-completion" id="lessonCompletionPanel" hidden aria-labelledby="completionTitle">
-            <p class="eyebrow">课堂结束</p>
-            <h3 id="completionTitle">课后自己练一练</h3>
+            <p class="eyebrow"><span data-i18n="课堂结束">课堂结束</span></p>
+            <h3 id="completionTitle"><span data-i18n="课后自己练一练">课后自己练一练</span></h3>
             <p id="completionPrompt"></p>
-            <section class="homework-card" id="homeworkCard" hidden><span>课后练习</span><h4 id="homeworkTitle"></h4><div class="markdown-body" id="homeworkDescription"></div><footer><code id="homeworkPath"></code><button id="openHomeworkFolderBtn" type="button">打开练习文件夹</button></footer></section>
-            <div class="completion-actions"><button class="primary-button" id="completeSubmitBtn" type="button">完成课堂，进入下一章</button></div>
+            <section class="homework-card" id="homeworkCard" hidden><span><span data-i18n="课后练习">课后练习</span></span><h4 id="homeworkTitle"></h4><div class="markdown-body" id="homeworkDescription"></div><footer><code id="homeworkPath"></code><button id="openHomeworkFolderBtn" type="button"><span data-i18n="打开练习文件夹">打开练习文件夹</span></button></footer></section>
+            <div class="completion-actions"><button class="primary-button" id="completeSubmitBtn" type="button"><span data-i18n="完成课堂，进入下一章">完成课堂，进入下一章</span></button></div>
             <div class="completion-result" id="completionResult" hidden aria-live="polite"><strong id="completionVerdict"></strong><p id="completionFeedback"></p><button class="primary-button" id="lessonPrimaryAction" type="button" hidden></button></div>
           </section>
         </article>
       </div>
-      <footer class="page-navigation"><button id="previousPageBtn" type="button"><i class="bi bi-arrow-left" aria-hidden="true"></i><span>上一页</span></button><div class="page-dots" id="pageDots" aria-label="课程页码"></div><button id="nextPageBtn" type="button"><span>下一页</span><i class="bi bi-arrow-right" aria-hidden="true"></i></button></footer>
+      <footer class="page-navigation"><button id="previousPageBtn" type="button"><i class="bi bi-arrow-left" aria-hidden="true"></i><span><span data-i18n="上一页">上一页</span></span></button><div class="page-dots" id="pageDots" aria-label="课程页码" data-i18n-aria-label="课程页码"></div><button id="nextPageBtn" type="button"><span><span data-i18n="下一页">下一页</span></span><i class="bi bi-arrow-right" aria-hidden="true"></i></button></footer>
     </main>
 
-    <div class="artifact-splitter" id="artifactSplitter" role="separator" aria-label="调整讲义和对话宽度" aria-orientation="vertical" tabindex="0"><span aria-hidden="true"></span></div>
+    <div class="artifact-splitter" id="artifactSplitter" role="separator" aria-label="调整讲义和对话宽度" data-i18n-aria-label="调整讲义和对话宽度" aria-orientation="vertical" tabindex="0"><span aria-hidden="true"></span></div>
 
-    <aside class="conversation-shell" id="conversationShell" aria-label="AI 学习教练">
+    <aside class="conversation-shell" id="conversationShell" aria-label="AI 学习教练" data-i18n-aria-label="AI 学习教练">
       <header class="conversation-head">
-        <button class="return-current-course" id="returnCurrentCourseBtn" type="button" hidden><i class="bi bi-arrow-left" aria-hidden="true"></i>返回当前课程</button>
-        <span class="conversation-context" id="coachContext">先聊聊你想学什么</span>
-        <div class="head-actions"><button class="mobile-project-button" id="projectMobileBtn" type="button" aria-label="打开学习导航与项目" aria-expanded="false"><i class="bi bi-folder2-open" aria-hidden="true"></i><span>学习导航</span></button><button class="reopen-artifact-button" id="reopenArtifactBtn" type="button" aria-label="打开 PPT，返回当前页" aria-controls="artifactPane" aria-expanded="true" hidden><i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i><span>打开 PPT</span></button><span class="connection"><i id="statusDot"></i><span id="connectionText">连接中</span></span></div>
+        <button class="return-current-course" id="returnCurrentCourseBtn" type="button" hidden><i class="bi bi-arrow-left" aria-hidden="true"></i><span data-i18n="返回当前课程">返回当前课程</span></button>
+        <span class="conversation-context" id="coachContext"><span data-i18n="先聊聊你想学什么">先聊聊你想学什么</span></span>
+        <div class="head-actions"><button class="mobile-project-button" id="projectMobileBtn" type="button" aria-label="打开学习导航与项目" data-i18n-aria-label="打开学习导航与项目" aria-expanded="false"><i class="bi bi-folder2-open" aria-hidden="true"></i><span><span data-i18n="学习导航">学习导航</span></span></button><button class="reopen-artifact-button" id="reopenArtifactBtn" type="button" aria-label="打开 PPT，返回当前页" data-i18n-aria-label="打开 PPT，返回当前页" aria-controls="artifactPane" aria-expanded="true" hidden><i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i><span><span data-i18n="打开 PPT">打开 PPT</span></span></button><span class="connection"><i id="statusDot"></i><span id="connectionText"><span data-i18n="连接中">连接中</span></span></span></div>
       </header>
+      <p class="language-context-hint" data-i18n="历史课程和对话保留原语言；新内容使用当前语言。">历史课程和对话保留原语言；新内容使用当前语言。</p>
+      <p class="language-context-hint" id="languageJobNotice" role="status" hidden></p>
       <div class="message-list" id="chatFeed" aria-live="polite"></div>
       <div class="conversation-bottom">
-        <section id="lessonProposalPanel" class="lesson-proposal" hidden aria-label="课件修改确认"><strong id="lessonProposalStatus" role="status"></strong><p id="lessonProposalSummary"></p><div id="lessonProposalDiff"></div><div id="lessonProposalActions"></div></section>
+        <section id="lessonProposalPanel" class="lesson-proposal" hidden aria-label="课件修改确认" data-i18n-aria-label="课件修改确认"><strong id="lessonProposalStatus" role="status"></strong><p id="lessonProposalSummary"></p><div id="lessonProposalDiff"></div><div id="lessonProposalActions"></div></section>
         <button class="chat-primary-action" id="chatPrimaryAction" type="button" hidden></button>
-        <section class="activity-status" id="activityStatus" role="status" aria-live="polite" hidden><span class="activity-orb" aria-hidden="true"><i></i><i></i><i></i></span><span><strong id="activityStatusLabel">正在准备</strong><small id="activityStatusDetail">这一步完成后会告诉你接下来做什么。</small><span class="activity-progress-meta" id="activityProgressText">正在估算所需时间</span><i class="activity-track" aria-hidden="true"><b id="activityProgressFill"></b></i><small class="activity-current-step" id="activityCurrentStep">当前：正在建立任务</small></span></section>
-        <div class="prompt-chips" id="promptChips" hidden><button data-prompt="请换一个更生活化的说法。" type="button">换个说法</button><button data-prompt="先别告诉我答案，给我一个最小提示。" type="button">给我提示</button><button data-prompt="根据我刚才的表现，再出一道同难度练习。" type="button">再练一道</button><button data-prompt="开始模拟面试，请根据当前课程一次只问一道简答题。" type="button">模拟面试</button></div>
-        <section class="choice-tray" id="choiceTray" aria-label="可选回答" hidden>
+        <section class="activity-status" id="activityStatus" role="status" aria-live="polite" hidden><span class="activity-orb" aria-hidden="true"><i></i><i></i><i></i></span><span><strong id="activityStatusLabel"><span data-i18n="正在准备">正在准备</span></strong><small id="activityStatusDetail"><span data-i18n="这一步完成后会告诉你接下来做什么。">这一步完成后会告诉你接下来做什么。</span></small><span class="activity-progress-meta" id="activityProgressText"><span data-i18n="正在估算所需时间">正在估算所需时间</span></span><i class="activity-track" aria-hidden="true"><b id="activityProgressFill"></b></i><small class="activity-current-step" id="activityCurrentStep"><span data-i18n="当前：正在建立任务">当前：正在建立任务</span></small></span></section>
+        <div class="prompt-chips" id="promptChips" hidden><button data-prompt="请换一个更生活化的说法。" data-i18n-data-prompt="请换一个更生活化的说法。" type="button"><span data-i18n="换个说法">换个说法</span></button><button data-prompt="先别告诉我答案，给我一个最小提示。" data-i18n-data-prompt="先别告诉我答案，给我一个最小提示。" type="button"><span data-i18n="给我提示">给我提示</span></button><button data-prompt="根据我刚才的表现，再出一道同难度练习。" data-i18n-data-prompt="根据我刚才的表现，再出一道同难度练习。" type="button"><span data-i18n="再练一道">再练一道</span></button><button data-prompt="开始模拟面试，请根据当前课程一次只问一道简答题。" data-i18n-data-prompt="开始模拟面试，请根据当前课程一次只问一道简答题。" type="button"><span data-i18n="模拟面试">模拟面试</span></button></div>
+        <section class="choice-tray" id="choiceTray" aria-label="可选回答" data-i18n-aria-label="可选回答" hidden>
           <p class="choice-tray-question" id="choiceTrayQuestion" aria-live="polite" hidden></p>
-          <div class="choice-tray-head"><span id="choiceTrayHint">点一下就可以，不用打字</span><span id="choiceProgress"></span></div>
+          <div class="choice-tray-head"><span id="choiceTrayHint"><span data-i18n="点一下就可以，不用打字">点一下就可以，不用打字</span></span><span id="choiceProgress"></span></div>
           <div class="inline-choices" id="inlineChoices"></div>
         </section>
-        <div class="inline-error" id="onboardingError" hidden role="alert"><span id="onboardingErrorText"></span><button id="retryOnboardingBtn" type="button">重新连接</button></div>
+        <div class="inline-error" id="onboardingError" hidden role="alert"><span id="onboardingErrorText"></span><button id="retryOnboardingBtn" type="button"><span data-i18n="重新连接">重新连接</span></button></div>
         <form class="coach-composer" id="chatForm">
-          <div id="lessonQuote" class="lesson-quote" hidden><span id="lessonQuoteText"></span><button id="removeLessonQuote" type="button" aria-label="移除课件引用">×</button></div>
-          <label class="sr-only" for="chatInput">给学习教练发消息</label>
-          <textarea id="chatInput" rows="2" placeholder="问当前课程，或直接输入想学的新知识…"></textarea>
-          <div><span>Enter 发送 · Shift+Enter 换行</span><span class="composer-actions"><button class="send-button" id="sendBtn" type="submit" aria-label="发送"><i class="bi bi-arrow-up" aria-hidden="true"></i></button></span></div>
+          <div id="lessonQuote" class="lesson-quote" hidden><span id="lessonQuoteText"></span><button id="removeLessonQuote" type="button" aria-label="移除课件引用" data-i18n-aria-label="移除课件引用">×</button></div>
+          <label class="sr-only" for="chatInput"><span data-i18n="给学习教练发消息">给学习教练发消息</span></label>
+          <textarea id="chatInput" rows="2" placeholder="问当前课程，或直接输入想学的新知识…" data-i18n-placeholder="问当前课程，或直接输入想学的新知识…"></textarea>
+          <div><span><span data-i18n="Enter 发送 · Shift+Enter 换行">Enter 发送 · Shift+Enter 换行</span></span><span class="composer-actions"><button class="send-button" id="sendBtn" type="submit" aria-label="发送" data-i18n-aria-label="发送"><i class="bi bi-arrow-up" aria-hidden="true"></i></button></span></div>
         </form>
       </div>
     </aside>
   </div>
 
-  <dialog class="document-dialog" id="planDialog"><header><div><p class="eyebrow">持续更新</p><h2>完整学习方案</h2></div><button class="dialog-close" data-close-dialog="planDialog" type="button" aria-label="关闭学习方案"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><article class="markdown-body plan-document" id="planDocument"></article></dialog>
-  <dialog class="settings-dialog" id="settingsDialog"><header><div><p class="eyebrow">学习空间</p><h2>设置与档案</h2></div><button class="dialog-close" data-close-dialog="settingsDialog" type="button" aria-label="关闭设置"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><div class="settings-content">
-    <section><h3>当前学习</h3><button class="settings-row" id="openPlanBtn" type="button"><span><strong>查看完整 Plan</strong><small>课程路线、练习与完成标准</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><button class="settings-row" id="reviewModeBtn" type="button"><span><strong>今日回顾</strong><small id="dueReviewCount">0 个知识点</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><button class="settings-row" id="reminderBtn" type="button"><span><strong>学习提醒</strong><small>设置每日学习与复习时间</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button></section>
-    <section><h3>课件与支持</h3>
-      <button class="settings-row" id="lessonHistoryBtn" type="button"><span><strong>课件版本记录</strong><small>查看或恢复之前的课件版本</small></span><i class="bi bi-clock-history" aria-hidden="true"></i></button>
-      <button class="settings-row" id="lessonExportBtn" type="button"><span><strong>导出 Markdown</strong><small>下载当前已保存的课件</small></span><i class="bi bi-download" aria-hidden="true"></i></button>
-      <button class="settings-row" id="bugReportExportBtn" type="button"><span><strong>导出 Bug 报告</strong><small>下载诊断 JSON，不含对话内容，不会自动上传</small></span><i class="bi bi-bug" aria-hidden="true"></i></button>
+  <dialog class="document-dialog" id="planDialog"><header><div><p class="eyebrow"><span data-i18n="持续更新">持续更新</span></p><h2><span data-i18n="完整学习方案">完整学习方案</span></h2></div><button class="dialog-close" data-close-dialog="planDialog" type="button" aria-label="关闭学习方案" data-i18n-aria-label="关闭学习方案"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><article class="markdown-body plan-document" id="planDocument"></article></dialog>
+  <dialog class="settings-dialog" id="settingsDialog"><header><div><p class="eyebrow"><span data-i18n="学习空间">学习空间</span></p><h2><span data-i18n="设置与档案">设置与档案</span></h2></div><button class="dialog-close" data-close-dialog="settingsDialog" type="button" aria-label="关闭设置" data-i18n-aria-label="关闭设置"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><div class="settings-content">
+    <section><h3><span data-i18n="当前学习">当前学习</span></h3><button class="settings-row" id="openPlanBtn" type="button"><span><strong><span data-i18n="查看完整 Plan">查看完整 Plan</span></strong><small><span data-i18n="课程路线、练习与完成标准">课程路线、练习与完成标准</span></small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><button class="settings-row" id="reviewModeBtn" type="button"><span><strong><span data-i18n="今日回顾">今日回顾</span></strong><small id="dueReviewCount"><span data-i18n="0 个知识点">0 个知识点</span></small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><button class="settings-row" id="reminderBtn" type="button"><span><strong><span data-i18n="学习提醒">学习提醒</span></strong><small><span data-i18n="设置每日学习与复习时间">设置每日学习与复习时间</span></small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button></section>
+    <section><h3><span data-i18n="课件与支持">课件与支持</span></h3>
+      <button class="settings-row" id="lessonHistoryBtn" type="button"><span><strong><span data-i18n="课件版本记录">课件版本记录</span></strong><small><span data-i18n="查看或恢复之前的课件版本">查看或恢复之前的课件版本</span></small></span><i class="bi bi-clock-history" aria-hidden="true"></i></button>
+      <button class="settings-row" id="lessonExportBtn" type="button"><span><strong><span data-i18n="导出 Markdown">导出 Markdown</span></strong><small><span data-i18n="下载当前已保存的课件">下载当前已保存的课件</span></small></span><i class="bi bi-download" aria-hidden="true"></i></button>
+      <button class="settings-row" id="bugReportExportBtn" type="button"><span><strong><span data-i18n="导出 Bug 报告">导出 Bug 报告</span></strong><small><span data-i18n="下载诊断 JSON，不含对话内容，不会自动上传">下载诊断 JSON，不含对话内容，不会自动上传</span></small></span><i class="bi bi-bug" aria-hidden="true"></i></button>
     </section>
-    <section class="settings-archives"><h3>学习档案</h3><button class="settings-row" id="currentPlanArchiveBtn" type="button"><span><strong>当前计划</strong><small>持续更新</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><ol id="projectArchiveList" class="project-archive-list" aria-label="可切换的学习项目"></ol></section>
+    <section class="settings-archives"><h3><span data-i18n="学习档案">学习档案</span></h3><button class="settings-row" id="currentPlanArchiveBtn" type="button"><span><strong><span data-i18n="当前计划">当前计划</span></strong><small><span data-i18n="持续更新">持续更新</span></small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><ol id="projectArchiveList" class="project-archive-list" aria-label="可切换的学习项目" data-i18n-aria-label="可切换的学习项目"></ol></section>
   </div></dialog>
-  <dialog class="reminder-dialog" id="reminderDialog"><header><div><p class="eyebrow">每日学习</p><h2>学习提醒</h2></div><button class="dialog-close" data-close-dialog="reminderDialog" type="button" aria-label="关闭学习提醒"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><form id="reminderForm"><label>开启提醒 <input type="checkbox" id="reminderEnabled" checked></label><label>提醒时间 <input type="time" id="reminderTime" value="20:00"></label><label>提醒内容 <select id="reminderKind"><option value="both">学习与复习</option><option value="learn">继续学习</option><option value="review">今日复习</option></select></label><p id="reminderCapability">正在读取当前系统的通知支持情况。</p><button class="primary-button" type="submit">保存提醒</button></form></dialog>
-  <div class="project-context-menu" id="projectContextMenu" hidden><button id="projectContextDeleteBtn" type="button">删除学习项目</button></div>
-  <dialog class="project-delete-dialog" id="projectDeleteDialog"><header><div><p class="eyebrow">删除学习项目</p><h2 id="projectDeleteTitle">确定删除？</h2></div><button class="dialog-close" data-close-dialog="projectDeleteDialog" type="button" aria-label="取消删除"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><div class="project-delete-copy"><p>将删除这个项目的个人计划、进度、笔记、错题与作业。</p><strong>共享知识库中的教案不会被删除。</strong><div><button id="cancelProjectDeleteBtn" type="button">取消</button><button id="confirmProjectDeleteBtn" type="button">删除项目</button></div></div></dialog>
-  <div class="praise-toast" id="praiseToast" hidden aria-live="polite"><strong>答对了</strong><span>答对了，继续下一页。</span></div>
+  <dialog class="reminder-dialog" id="reminderDialog"><header><div><p class="eyebrow"><span data-i18n="每日学习">每日学习</span></p><h2><span data-i18n="学习提醒">学习提醒</span></h2></div><button class="dialog-close" data-close-dialog="reminderDialog" type="button" aria-label="关闭学习提醒" data-i18n-aria-label="关闭学习提醒"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><form id="reminderForm"><label><span data-i18n="开启提醒">开启提醒 </span><input type="checkbox" id="reminderEnabled" checked></label><label><span data-i18n="提醒时间">提醒时间 </span><input type="time" id="reminderTime" value="20:00"></label><label><span data-i18n="提醒内容">提醒内容 </span><select id="reminderKind"><option value="both" data-i18n="学习与复习">学习与复习</option><option value="learn" data-i18n="继续学习">继续学习</option><option value="review" data-i18n="今日复习">今日复习</option></select></label><p id="reminderCapability"><span data-i18n="正在读取当前系统的通知支持情况。">正在读取当前系统的通知支持情况。</span></p><button class="primary-button" type="submit"><span data-i18n="保存提醒">保存提醒</span></button></form></dialog>
+  <div class="project-context-menu" id="projectContextMenu" hidden><button id="projectContextDeleteBtn" type="button"><span data-i18n="删除学习项目">删除学习项目</span></button></div>
+  <dialog class="project-delete-dialog" id="projectDeleteDialog"><header><div><p class="eyebrow"><span data-i18n="删除学习项目">删除学习项目</span></p><h2 id="projectDeleteTitle"><span data-i18n="确定删除？">确定删除？</span></h2></div><button class="dialog-close" data-close-dialog="projectDeleteDialog" type="button" aria-label="取消删除" data-i18n-aria-label="取消删除"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><div class="project-delete-copy"><p><span data-i18n="将删除这个项目的个人计划、进度、笔记、错题与作业。">将删除这个项目的个人计划、进度、笔记、错题与作业。</span></p><strong><span data-i18n="共享知识库中的教案不会被删除。">共享知识库中的教案不会被删除。</span></strong><div><button id="cancelProjectDeleteBtn" type="button"><span data-i18n="取消">取消</span></button><button id="confirmProjectDeleteBtn" type="button"><span data-i18n="删除项目">删除项目</span></button></div></div></dialog>
+  <div class="praise-toast" id="praiseToast" hidden aria-live="polite"><strong><span data-i18n="答对了">答对了</span></strong><span><span data-i18n="答对了，继续下一页。">答对了，继续下一页。</span></span></div>
   <div class="confetti-layer" id="celebrationLayer" hidden aria-hidden="true"></div>
   <div class="toast" id="toast" hidden aria-live="polite"></div>
-  <dialog class="settings-dialog" id="lessonHistoryDialog" aria-labelledby="lessonHistoryTitle"><header><h2 id="lessonHistoryTitle">课件版本记录</h2><button id="lessonHistoryClose" class="dialog-close" type="button" aria-label="关闭版本记录"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><p>恢复只影响课件，代码、对话和历史作答会保留。</p><div id="lessonHistoryList"></div></dialog>
-  <dialog class="settings-dialog" id="lessonRestoreDialog" aria-labelledby="lessonRestoreTitle"><header><h2 id="lessonRestoreTitle">确认恢复课件？</h2></header><p>恢复只影响课件；你的代码、对话和历史作答不会删除。修改过的题目需要重新作答。</p><div class="lesson-editor-actions"><button id="lessonRestoreCancel" type="button" autofocus>暂不恢复</button><button id="lessonRestoreConfirm" type="button">确认恢复</button></div></dialog>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script><script src="/js/markdown.js?v=20260830-editor"></script><script src="/js/activity-progress.js?v=20260823-detail"></script><script src="/js/lesson-selection.js?v=20260830"></script><script src="/js/artifact.js?v=20260830-editor"></script><script src="/js/diagnosis-job.js?v=20260830-async"></script><script src="/js/onboarding.js?v=20260830-diagnosis-async"></script><script src="/js/interview-bank.js?v=20260823-unified"></script><script src="/js/lesson-editor.js?v=20260831-workspace"></script><script src="/js/app.js?v=20260831-workspace"></script>
+  <dialog class="settings-dialog" id="lessonHistoryDialog" aria-labelledby="lessonHistoryTitle"><header><h2 id="lessonHistoryTitle"><span data-i18n="课件版本记录">课件版本记录</span></h2><button id="lessonHistoryClose" class="dialog-close" type="button" aria-label="关闭版本记录" data-i18n-aria-label="关闭版本记录"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><p><span data-i18n="恢复只影响课件，代码、对话和历史作答会保留。">恢复只影响课件，代码、对话和历史作答会保留。</span></p><div id="lessonHistoryList"></div></dialog>
+  <dialog class="settings-dialog" id="lessonRestoreDialog" aria-labelledby="lessonRestoreTitle"><header><h2 id="lessonRestoreTitle"><span data-i18n="确认恢复课件？">确认恢复课件？</span></h2></header><p><span data-i18n="恢复只影响课件；你的代码、对话和历史作答不会删除。修改过的题目需要重新作答。">恢复只影响课件；你的代码、对话和历史作答不会删除。修改过的题目需要重新作答。</span></p><div class="lesson-editor-actions"><button id="lessonRestoreCancel" type="button" autofocus><span data-i18n="暂不恢复">暂不恢复</span></button><button id="lessonRestoreConfirm" type="button"><span data-i18n="确认恢复">确认恢复</span></button></div></dialog>
+  <script src="/js/i18n.js?v=20260831-bilingual"></script><script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script><script src="/js/markdown.js?v=20260830-editor"></script><script src="/js/activity-progress.js?v=20260823-detail"></script><script src="/js/lesson-selection.js?v=20260830"></script><script src="/js/artifact.js?v=20260830-editor"></script><script src="/js/diagnosis-job.js?v=20260830-async"></script><script src="/js/onboarding.js?v=20260830-diagnosis-async"></script><script src="/js/interview-bank.js?v=20260823-unified"></script><script src="/js/lesson-editor.js?v=20260831-workspace"></script><script src="/js/app.js?v=20260831-workspace"></script>
+  <script src="/js/translations.js?v=20260831-bilingual"></script>
 </body>
 </html>

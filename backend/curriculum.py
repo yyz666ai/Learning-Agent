@@ -46,6 +46,7 @@ class Chapter(BaseModel):
 
 
 class Curriculum(BaseModel):
+    locale: Literal['zh-CN', 'en'] = 'zh-CN'
     schema_version: int = 1
     topic: str = Field(min_length=1, max_length=240)
     route: str = Field(min_length=1, max_length=64)
@@ -188,6 +189,9 @@ def _chapter_budget(section: str, default_minutes: int | None) -> dict:
 
 def curriculum_from_plan(markdown: str, *, topic: str, route: str, level: str) -> Curriculum:
     """Turn a detailed model-authored Markdown plan into a navigable curriculum."""
+    from .plan_locale import plan_labels
+    english = bool(re.search(r'(?im)^## Current task\s*$', markdown))
+    markdown = plan_labels(markdown)
     headings = list(re.finditer(r"(?m)^###\s+(?:阶段\s*\d+|第\s*\d+\s*章)[：:\s]*(.+)$", markdown))
     header = markdown[:headings[0].start()] if headings else markdown
     duration = re.search(r"每次\s*(\d+)\s*分钟", header)
@@ -219,7 +223,7 @@ def curriculum_from_plan(markdown: str, *, topic: str, route: str, level: str) -
                 KnowledgePoint(
                     id=point_id,
                     title=concept_title,
-                    outcome=f"理解并能解释：{concept_outcome}",
+                    outcome=f"Understand and explain: {concept_outcome}" if english else f"理解并能解释：{concept_outcome}",
                     practice=practice,
                     mastery_criteria=evidence,
                     prerequisites=[previous_id] if previous_id else [],
@@ -240,6 +244,7 @@ def curriculum_from_plan(markdown: str, *, topic: str, route: str, level: str) -
         raise ValueError("plan does not contain concrete chapters")
     first_id = chapters[0].knowledge_points[0].id
     return Curriculum(
+        locale='en' if english else 'zh-CN',
         topic=topic,
         route=route,
         level=level,
@@ -249,6 +254,8 @@ def curriculum_from_plan(markdown: str, *, topic: str, route: str, level: str) -
 
 
 def render_curriculum_plan(curriculum: Curriculum) -> str:
+    if curriculum.locale == 'en':
+        return _render_english_curriculum(curriculum)
     lines = [
         f"# {curriculum.topic} 详细学习大纲",
         "",
@@ -287,6 +294,34 @@ def render_curriculum_plan(curriculum: Curriculum) -> str:
     current = next(point for point in curriculum.knowledge_points() if point.id == curriculum.current_knowledge_point_id)
     lines.extend(("## 当前任务", "", f"学习并完成：{current.title}", ""))
     return "\n".join(lines)
+
+
+def _render_english_curriculum(curriculum: Curriculum) -> str:
+    lines = [f'# {curriculum.topic} — Learning outline', '',
+             f'> Route: {curriculum.route} · Starting level: {curriculum.level}', '', '## Course map', '']
+    for index, chapter in enumerate(curriculum.chapters, 1):
+        lines += [f'### Chapter {index}: {chapter.title}', '']
+        if chapter.estimated_sessions is None:
+            lines += ['> Session count not estimated; knowledge points are not separate sessions.', '']
+        else:
+            count = str(chapter.estimated_sessions)
+            if chapter.min_sessions and chapter.min_sessions != chapter.estimated_sessions:
+                count = f'{chapter.min_sessions}–{chapter.estimated_sessions}'
+            lines += [f'- Estimated sessions: {count}']
+            if chapter.session_minutes:
+                lines += [f'- Session minutes: {chapter.session_minutes}']
+            if chapter.homework_minutes is not None:
+                lines += [f'- Homework minutes: {chapter.homework_minutes}']
+        if chapter.session_outline:
+            lines += ['- Session breakdown: ' + '; '.join(chapter.session_outline)]
+        for offset, point in enumerate(chapter.knowledge_points, 1):
+            marker = ' (current)' if point.id == curriculum.current_knowledge_point_id else ''
+            lines += [f'#### {index}.{offset} {point.title}{marker}',
+                      f'- Learning outcome: {point.outcome}', f'- Practice: {point.practice}',
+                      f'- Completion criteria: {point.mastery_criteria}', '']
+    current = next(p for p in curriculum.knowledge_points() if p.id == curriculum.current_knowledge_point_id)
+    lines += ['## Current task', '', f'Learn and complete: {current.title}', '']
+    return '\n'.join(lines)
 
 
 def curriculum_path(server_root: Path, user_id: str) -> Path:

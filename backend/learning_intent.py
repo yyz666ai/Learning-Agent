@@ -235,9 +235,9 @@ def parse_intent_response(response: str) -> IntentDecision:
 def _level_from_text(value: str) -> str | None:
     matches: list[tuple[int, str]] = []
     for level, pattern in (
-        ("zero", r"零基础|从零|初学(?:者)?|小白|刚入门|new to coding|\bbeginner\b"),
-        ("experienced", r"熟练|资深|经验丰富"),
-        ("some", r"有一(?:点|些|定)基础|学过一点|有基础"),
+        ("zero", r"零基础|从零|初学(?:者)?|小白|刚入门|new to coding|\bbeginner\b|\bno (?:coding |programming )?experience\b|\bstarting from scratch\b"),
+        ("experienced", r"熟练|资深|经验丰富|\b(?:I am|I'm) (?:an? )?(?:experienced|proficient)\b"),
+        ("some", r"有一(?:点|些|定)基础|学过一点|有基础|\bsome (?:coding |programming )?experience\b|\bknow the basics\b"),
     ):
         for match in re.finditer(pattern, value, flags=re.IGNORECASE):
             # A negative statement is evidence against a label, not that label.
@@ -339,7 +339,7 @@ def validate_intent_against_message(
                 if decision.onboarding.level_claim == "experienced":
                     raise ValueError("years alone do not prove experienced mastery; use some and diagnostic evidence, or ask about target-domain experience")
                 # Accept concrete learner-authored experience without inventing mastery.
-                experience = re.search(r"写了|写过|做过|维护|开发过|用过|学过|没学过|没碰过|从未|工作|项目经验|有.{0,24}基础|years?|built|worked|shipped", evidence, re.I)
+                experience = re.search(r"写了|写过|做过|维护|开发过|用过|学过|没学过|没碰过|从未|工作|项目经验|有.{0,24}基础|years?|built|worked|shipped|experience|learned|studied|written|maintain", evidence, re.I)
                 if not experience:
                     raise ValueError("level evidence must describe experience in learner context")
                 if re.search(r"(?:不是|并非)\s*(?:零基础|初学|小白)", evidence) and decision.onboarding.level_claim == "zero":
@@ -354,7 +354,7 @@ def validate_intent_against_message(
     if decision.onboarding and decision.onboarding.goal_route == "academic_course" and not decision.slots.course_scope:
         raise ValueError("course_scope is missing for following a real course: invite chapters/syllabus with an open material question, or let learner explicitly choose a general scope")
 
-    correction_requested = bool(re.search(r"不对|不是.+是|其实|改成|换成|换个|纠正", message, flags=re.IGNORECASE))
+    correction_requested = bool(re.search(r"不对|不是.+是|其实|改成|换成|换个|纠正|\bactually\b|\binstead\b|\b(?:change|switch|correct|revise) (?:my |the |it|to)|\bI meant\b", message, flags=re.IGNORECASE))
     if not correction_requested:
         for field in ("topic", "target_role", "goal", "desired_outcome"):
             prior = getattr(prior_slots, field)
