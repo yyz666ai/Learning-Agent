@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from backend.curriculum import Chapter, Curriculum, KnowledgePoint, curriculum_from_plan
-from backend.lesson_generator import _scope_concepts, generate_and_save_lesson
+from backend.lesson_generator import _scope_concepts, _validate_scope_evidence, generate_and_save_lesson, parse_lesson_response
 
 
 def coverage_curriculum() -> Curriculum:
@@ -41,10 +41,26 @@ def coverage_payload() -> dict:
     }
 
 
+def test_repair_gets_all_missing_scope_obligations_in_one_pass():
+    curriculum = coverage_curriculum()
+    payload = coverage_payload()
+    for page in payload["pages"]:
+        page["markdown"] = "无关内容，不能作为本章证据。"
+    bundle = parse_lesson_response(json.dumps(payload), topic="Go", route="concept_clarity",
+        knowledge_point_id="http-handler", session_minutes=30,
+        chapter=curriculum.current_chapter(), covered_knowledge_points=curriculum.knowledge_points())
+    with pytest.raises(ValueError) as error:
+        _validate_scope_evidence(payload, bundle, curriculum.knowledge_points())
+    assert "http-handler" in str(error.value)
+    assert "cancellation" in str(error.value)
+
+
 @pytest.mark.parametrize("title", ["Go 并发（进阶）", "Context 取消信号与「资源泄漏」排查", "并发（channel、goroutine）取消", "Context 取消与资源泄漏（channel、goroutine）"])
 def test_incidental_parentheses_and_quotes_do_not_discard_outer_concepts(title: str) -> None:
     concepts = _scope_concepts(title)
-    assert any("Go 并发" in concept or "Context 取消信号" in concept or "取消" in concept for concept in concepts)
+    # Technical label and descriptor can now be separate literal obligations;
+    # the outer topic must still survive extraction (not just the parentheses).
+    assert ("Go" in concepts and "并发" in concepts) or any("取消" in concept for concept in concepts)
 
 
 def generate(tmp_path: Path, payload: dict, *, repaired: bool = False, curriculum: Curriculum | None = None):
@@ -83,7 +99,7 @@ def test_python_interview_audit_fragments_keep_topics_not_instructional_wrappers
 
 def test_source_annotation_and_interview_wrapper_keep_substantive_requirements() -> None:
     assert _scope_concepts("附带一个面试点「解释器与脚本」") == ["解释器", "脚本"]
-    assert _scope_concepts("确认系统与 Python 版本（官方来源 python.org）、练习目录结构、编辑器打开方式") == ["确认系统", "Python 版本", "python.org", "练习目录结构", "编辑器打开方式"]
+    assert _scope_concepts("确认系统与 Python 版本（官方来源 python.org）、练习目录结构、编辑器打开方式") == ["确认系统", "Python", "版本", "python.org", "练习目录结构", "编辑器打开方式"]
 
 
 def test_bare_knowledge_id_that_is_real_terminology_is_not_deleted(tmp_path: Path) -> None:

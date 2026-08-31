@@ -54,7 +54,12 @@
   function setBusy(value){busy=value; byId("lessonEditor").querySelectorAll("button,input,textarea").forEach(n=>n.disabled=value);byId("lessonEditBtn").disabled=value;}
   function preview(){byId("editorPreview").innerHTML=global.MarkdownRenderer.render(byId("editorMarkdown").value);global.MarkdownRenderer.hydrate(byId("editorPreview"));}
   function updateDraft(){if(!draft)return;for(const key of ["title","markdown","code"])draft.update(key,byId(`editor${key[0].toUpperCase()+key.slice(1)}`).value);preview();try{localStorage.setItem(storageKey(),JSON.stringify(draft.payload(user)));}catch{notice("草稿暂存失败，请勿关闭页面。");}}
-  function closeEditor(remove=true){if(remove&&draft)localStorage.removeItem(storageKey());draft=null;byId("lessonEditor").hidden=true;byId("lessonPage").hidden=false;byId("lessonEditBtn").textContent="只读 · 编辑";byId("lessonEditBtn").setAttribute("aria-expanded","false");}
+  function renderEditMode(editing){
+    const button=byId("lessonEditBtn"),label=editing?"编辑模式，点击切回只读":"只读模式，点击编辑本页";
+    button.querySelector("i").className=editing?"bi bi-pencil":"bi bi-lock";
+    button.setAttribute("aria-label",label);button.setAttribute("title",label);button.setAttribute("aria-expanded",String(editing));
+  }
+  function closeEditor(remove=true){if(remove&&draft)localStorage.removeItem(storageKey());draft=null;byId("lessonEditor").hidden=true;byId("lessonPage").hidden=false;renderEditMode(false);}
   function canLeave(){if(busy)return false;if(draft?.dirty()&&!global.confirm("还有未保存的课件修改。放弃这些修改并离开吗？"))return false;closeEditor();return true;}
   function openEditor(){
     if(!manifest||!page||busy)return;
@@ -63,7 +68,7 @@
     let saved=null;try{saved=JSON.parse(localStorage.getItem(storageKey()));}catch{}
     for(const key of ["title","markdown","code"]){const value=saved?.[key]??page[key]??"";byId(`editor${key[0].toUpperCase()+key.slice(1)}`).value=value;draft.update(key,value);}
     byId("lessonEditor").hidden=false;byId("lessonPage").hidden=true;
-    byId("lessonEditBtn").textContent="正在编辑";byId("lessonEditBtn").setAttribute("aria-expanded","true");
+    renderEditMode(true);
     notice(saved?"已恢复本页未保存草稿。":"编辑只影响本页；已有选择题保持只读，可在右侧申请追加新题。");preview();byId("editorTitle").focus();
   }
   async function reload(pageId){const current=await global.ArtifactController.loadCurrentLesson();const i=current.pages.findIndex(p=>p.id===pageId);if(i>=0)global.ArtifactController.showPage(i);await refreshHistory();global.InterviewBankController?.load?.();}
@@ -146,7 +151,7 @@
   byId("lessonEditBtn").addEventListener("click",()=>draft?canLeave():openEditor());
   byId("editorSaveBtn").addEventListener("click",save);
   byId("editorCancelBtn").addEventListener("click",()=>canLeave());
-  byId("lessonHistoryBtn").addEventListener("click",async()=>{await refreshHistory();byId("lessonHistoryDialog").showModal();});
+  byId("lessonHistoryBtn").addEventListener("click",async()=>{byId("settingsDialog").close();await refreshHistory();byId("lessonHistoryDialog").showModal();});
   byId("lessonHistoryClose").addEventListener("click",()=>byId("lessonHistoryDialog").close());
   byId("lessonRestoreConfirm").addEventListener("click",confirmRestore);
   byId("lessonRestoreCancel").addEventListener("click",()=>{if(busy)return;pendingRestore=null;byId("lessonRestoreDialog").close();});

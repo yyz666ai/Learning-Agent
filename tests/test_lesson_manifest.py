@@ -84,6 +84,17 @@ def test_practice_workspace_is_confined_to_user_directory(tmp_path: Path) -> Non
     assert (created / "main.go").is_file()
 
 
+def test_javascript_homework_creates_main_js_without_overwriting_work(tmp_path: Path) -> None:
+    bundle = build_starter_lesson(topic="Vue", language="javascript", session_minutes=25, goal_route="interview_sprint")
+    manifest = bundle.manifest.model_copy(update={"language": "javascript", "practice_starter_mode": "blank"})
+    folder = ensure_practice_workspace(tmp_path, "vue-learner", manifest)
+    assert (folder / "main.js").read_text(encoding="utf-8") == ""
+    assert not (folder / "notes.md").exists()
+    (folder / "main.js").write_text("// 学习者的练习\n", encoding="utf-8")
+    ensure_practice_workspace(tmp_path, "vue-learner", manifest)
+    assert (folder / "main.js").read_text(encoding="utf-8") == "// 学习者的练习\n"
+
+
 def test_practice_workspace_uses_model_lesson_code_for_java(tmp_path: Path) -> None:
     manifest = LessonManifest(
         lesson_id="java-class-lesson",

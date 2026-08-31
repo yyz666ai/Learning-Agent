@@ -57,15 +57,16 @@ def test_course_preparation_title_has_animated_ellipsis_with_reduced_motion_fall
     assert "prefers-reduced-motion" in css
 
 
-def test_learning_mode_reserves_sidebar_for_outline_and_moves_plan_projects_to_settings() -> None:
+def test_learning_mode_keeps_compact_projects_and_plan_beside_outline() -> None:
     html = read(INDEX)
     css = read(STYLE)
     roadmap = html[html.index('<nav class="roadmap"') : html.index("</nav>")]
 
     assert 'id="sidebarPlanDock"' in roadmap
     assert '<details class="sidebar-plan-dock" id="sidebarPlanDock">' in roadmap
-    assert '.app-shell:not(.is-onboarding) .sidebar-projects,' in css
-    assert '.app-shell:not(.is-onboarding) .sidebar-plan-dock { display: none; }' in css
+    assert '.app-shell:not(.is-onboarding) .sidebar-projects { order: 1;' in css
+    assert '.app-shell:not(.is-onboarding) .sidebar-plan-dock { order: 5;' in css
+    assert '.app-shell:not(.is-onboarding) .sidebar-plan-dock { display: none; }' not in css
     settings = html[html.index('id="settingsDialog"') : html.index('id="reminderDialog"')]
     assert 'id="openPlanBtn"' in settings
     assert 'id="projectArchiveList"' in settings
@@ -115,7 +116,7 @@ def test_corporate_clean_tokens_and_one_aligned_chat_grid_are_applied() -> None:
     assert "max(32px, calc((100% - var(--chat-content-width)) / 2))" in css
     assert ".choice-tray.is-intent-question { width: 100%" in css
     assert ".coach-composer textarea" in css and "font-size: 16px" in css
-    assert '.app-shell:not(.is-chat-first):not(.is-onboarding) .conversation-shell' in css
+    assert '.app-shell:not(.is-chat-first):not(.is-onboarding):not(.is-artifact-collapsed) .conversation-shell' in css
     assert "bootstrap-icons" in html
 
 
@@ -587,13 +588,18 @@ def test_failed_lesson_generation_replaces_loading_page_with_retry_action() -> N
     assert 'byId("retryLessonBtn").addEventListener' in artifact
 
 
-def test_learning_mode_prioritizes_outline_and_keeps_projects_in_settings() -> None:
+def test_collapsed_classroom_keeps_navigation_and_mobile_drawer_accessible() -> None:
     html = read(INDEX)
     css = read(STYLE)
     assert 'id="learningProjectsToggle"' in html
     assert 'aria-expanded="false"' in html
     assert ".app-shell:not(.is-onboarding) .sidebar-projects" in css
-    assert '.app-shell:not(.is-onboarding) .sidebar-plan-dock { display: none; }' in css
+    assert '.app-shell.is-artifact-collapsed { grid-template-columns:' in css
+    assert '.app-shell.is-artifact-collapsed .artifact-pane,' in css
+    assert '.app-shell.is-artifact-collapsed .artifact-splitter { display: none; }' in css
+    assert '.app-shell.is-artifact-collapsed .roadmap { display: none; }' not in css
+    assert '.app-shell.is-project-drawer-open .roadmap > :not(' not in css
+    assert '.app-shell.is-artifact-collapsed .conversation-shell { height: 100dvh;' in css
     assert ".app-shell.is-onboarding .sidebar-projects" in css
     assert 'id="projectArchiveList"' in html
 

@@ -40,6 +40,11 @@
     localStorage.setItem(STORAGE_MESSAGES, JSON.stringify(state.archivedMessages));
   }
   function setText(selector, value) { const node = $(selector); if (node) node.textContent = value ?? ""; }
+  function setArtifactCollapsed(collapsed) {
+    $("#appShell").classList.toggle("is-artifact-collapsed", collapsed);
+    $("#reopenArtifactBtn").hidden = !collapsed;
+    $("#reopenArtifactBtn").setAttribute("aria-expanded", String(!collapsed));
+  }
   function showToast(message) {
     const toast = $("#toast"); toast.textContent = message; toast.hidden = false;
     clearTimeout(showToast.timer); showToast.timer = window.setTimeout(() => { toast.hidden = true; }, 2200);
@@ -542,6 +547,7 @@
   }
 
   async function enterLearning() {
+    setArtifactCollapsed(false);
     window.LessonSelection?.clear();
     state.chatMode = "learning";
     window.LearningActivity.start("正在准备讲义", "先读取你的大纲和进度，再生成当前这一小节。");
@@ -712,6 +718,7 @@
     $("#promptChips").hidden = snapshot.onboardingLayout;
     $("#appShell").classList.remove("is-chat-first", "is-onboarding");
     if (snapshot.onboardingLayout) $("#appShell").classList.add("is-onboarding");
+    setArtifactCollapsed(false);
     state.ready = Boolean(snapshot.ready);
     removePlanConversationMessage();
     if (snapshot.ready) window.ArtifactController?.showPage(snapshot.pageIndex);
@@ -734,6 +741,7 @@
   }
 
   function showOnboardingHome(context) {
+    setArtifactCollapsed(false);
     state.context = context;
     state.ready = false;
     state.startupGateActive = true;
@@ -905,7 +913,9 @@
     $("#outlineNextBtn").addEventListener("click", () => pageOutline(1));
     $("#outlinePanel").addEventListener("scroll", updateOutlinePageLabel, { passive: true });
     $("#returnCurrentCourseBtn").addEventListener("click", () => restoreCurrentCourse().catch((error) => showToast(error.message)));
-    $("#collapseArtifactBtn").addEventListener("click", () => $("#appShell").classList.add("is-chat-first"));
+    $("#collapseArtifactBtn").addEventListener("click", () => { setArtifactCollapsed(true); $("#reopenArtifactBtn").focus(); });
+    $("#reopenArtifactBtn").addEventListener("click", () => { setArtifactCollapsed(false); $("#artifactPane").focus(); });
+    $("#bugReportExportBtn").addEventListener("click", () => { window.location.href = `/api/support/bug-report?user_id=${encodeURIComponent(USER_ID)}`; });
     $("#reminderForm").addEventListener("submit", saveReminder);
     document.addEventListener("learning-agent:page-change", (event) => {
       setText("#lessonCounter", `本章 ${event.detail.index + 1} / ${event.detail.total}`);

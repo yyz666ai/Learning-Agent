@@ -285,6 +285,7 @@ def ensure_practice_workspace(
         "python": "main.py",
         "java": "Main.java",
         "rust": "main.rs",
+        "javascript": "main.js",
     }.get(manifest.language, "notes.md")
     if manifest.practice_starter_mode == "blank":
         code = ""

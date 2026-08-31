@@ -27,6 +27,7 @@ from backend.platform_runtime import open_folder
 from backend.diagnosis_jobs import DiagnosisJobs, StaleDiagnosis
 from backend.generation_context import profile_slots
 from backend.codex_driver import ensure_user
+from backend.support_report import build_report, record_generation
 
 try:
     from .codex_driver import chat, latest_release, stream_chat
@@ -1018,6 +1019,7 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
                 return _public_lesson(migrated, request.user_id)
     release = latest_release()
     if release is None:
+        record_generation(SERVER_ROOT, request.user_id, "lesson", error=RuntimeError("unavailable"))
         raise HTTPException(
             status_code=503,
             detail={"message": "教学模型暂时不可用，请稍后重试。", "retryable": True},
@@ -1070,6 +1072,7 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
             curriculum.current_knowledge_point_id,
             error_type,
         )
+        record_generation(SERVER_ROOT, request.user_id, "lesson", error=exc)
         raise HTTPException(
             status_code=502,
             detail={
@@ -1079,6 +1082,7 @@ def generate_lesson(request: LessonGenerateRequest) -> dict[str, Any]:
                 "error_type": error_type,
             },
         ) from exc
+    record_generation(SERVER_ROOT, request.user_id, "lesson")
     return _public_lesson(bundle, request.user_id)
 
 
@@ -1193,6 +1197,15 @@ def restore_lesson_revision(request: LessonRestoreRequest) -> dict[str, Any]:
 def export_lesson_markdown(user_id: str = Query(pattern=r"^[A-Za-z0-9_-]{1,64}$")) -> Response:
     return Response(_lesson_mutation(user_id, lambda service: service.export()), media_type="text/markdown",
                     headers={"Content-Disposition": 'attachment; filename="lesson.md"'})
+
+
+@app.get("/api/support/bug-report")
+def export_bug_report(user_id: str = Query(pattern=r"^[A-Za-z0-9_-]{1,64}$")) -> Response:
+    return Response(json.dumps(build_report(SERVER_ROOT, user_id), ensure_ascii=False, indent=2),
+                    media_type="application/json", headers={
+                        "Content-Disposition": 'attachment; filename="learning-agent-bug-report.json"',
+                        "Cache-Control": "no-store",
+                    })
 
 
 @app.post("/api/lesson/check")
@@ -1742,6 +1755,7 @@ def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
 
     release = latest_release()
     if release is None:
+        record_generation(SERVER_ROOT, request.user_id, "plan", error=RuntimeError("unavailable"))
         return {"personalized": False, "active_plan": plan_path.name, "reason": "codex_unavailable", "user_message": "课程生成服务暂时不可用，你的目标已经保留，请稍后重试。"}
     stage = "model_generation"
     try:
@@ -1762,6 +1776,7 @@ def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
             generation="plan", allow_research=research_required,
         )
         if generated.lstrip().startswith(("[超时]", "[出错]", "[空回复]")):
+            record_generation(SERVER_ROOT, request.user_id, "plan", error=RuntimeError("incomplete response"))
             return {
                 "personalized": False,
                 "active_plan": plan_path.name,
@@ -1809,11 +1824,13 @@ def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
             generated = chat(request.user_id, repair_prompt, release,
                              generation="plan", allow_research=False)
             if generated.lstrip().startswith(("[超时]", "[出错]", "[空回复]")):
+                record_generation(SERVER_ROOT, request.user_id, "plan", error=RuntimeError("incomplete repair response"))
                 return {"personalized": False, "active_plan": plan_path.name,
                         "reason": "model_generation_failed",
                         "user_message": "课程生成超时或暂时中断，你的目标和选择都已保留，请直接重试。"}
             validated = normalize_and_validate_plan(generated, request.topic.value, request.goal_route)
         if validated is None:
+            record_generation(SERVER_ROOT, request.user_id, "plan", error=ValueError("invalid plan structure"))
             return {"personalized": False, "active_plan": plan_path.name, "reason": "validation_failed", "user_message": "课程草案已经生成，但完整性检查没有通过。原计划仍然保留，请重试生成。"}
         if research_required:
             stage = "research_validation"
@@ -1838,6 +1855,7 @@ def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
             curriculum=curriculum,
         )
         plan_markdown = plan_path.read_text(encoding="utf-8")
+        record_generation(SERVER_ROOT, request.user_id, "plan")
         return {
             "personalized": True,
             "active_plan": transaction["active_plan"],
@@ -1858,6 +1876,7 @@ def personalize_plan(request: PlanPersonalizeRequest) -> dict[str, Any]:
             request.topic.value,
             request.generation_id,
         )
+        record_generation(SERVER_ROOT, request.user_id, "plan", error=exc)
         try:
             cancel_generation(SERVER_ROOT, request.user_id, request.generation_id)
         except (OSError, ValueError, json.JSONDecodeError):

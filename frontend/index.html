@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f8fafc">
   <title>Learning Agent · 一步一步学会</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="/css/style.css?v=20260830-reviewed-editor">
+  <link rel="stylesheet" href="/css/style.css?v=20260831-workspace">
 </head>
 <body>
   <a class="skip-link" href="#chatInput">跳到对话输入框</a>
@@ -50,13 +50,13 @@
 
     <main class="artifact-pane" id="artifactPane" tabindex="-1">
       <header class="artifact-topbar">
-        <div><span id="lessonCounter">本章 1 / 1</span><i aria-hidden="true"></i><span id="masteryText">掌握 0%</span><i aria-hidden="true"></i><span id="lessonRemaining">预计还需 25 分钟</span></div>
-        <button class="icon-button" id="collapseArtifactBtn" type="button" aria-label="收起讲义"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+        <div class="artifact-meta"><span id="lessonCounter">本章 1 / 1</span><i aria-hidden="true"></i><span id="masteryText">掌握 0%</span><i aria-hidden="true"></i><span id="lessonRemaining">预计还需 25 分钟</span></div>
+        <nav class="lesson-edit-toolbar" aria-label="课件编辑">
+          <button class="icon-button" id="lessonEditBtn" type="button" aria-label="只读模式，点击编辑本页" title="只读模式，点击编辑本页" aria-expanded="false" aria-controls="lessonEditor" disabled><i class="bi bi-lock" aria-hidden="true"></i></button>
+          <button class="icon-button" id="lessonUndoBtn" type="button" aria-label="撤销课件修改" title="撤销课件修改" disabled><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+          <button class="icon-button" id="collapseArtifactBtn" type="button" aria-label="收起 PPT" title="收起 PPT" aria-controls="artifactPane"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+        </nav>
       </header>
-      <nav class="lesson-edit-toolbar" aria-label="课件编辑与版本">
-        <button id="lessonEditBtn" type="button" aria-expanded="false" aria-controls="lessonEditor" disabled>只读 · 编辑</button>
-        <button id="lessonUndoBtn" type="button" disabled>撤销</button><button id="lessonHistoryBtn" type="button">版本记录</button><button id="lessonExportBtn" type="button">导出 Markdown</button>
-      </nav>
       <p id="editorStatus" class="editor-status" role="status"></p>
       <div class="artifact-scroll">
         <section id="lessonEditor" class="lesson-editor" hidden aria-label="编辑本页课件">
@@ -115,7 +115,7 @@
       <header class="conversation-head">
         <button class="return-current-course" id="returnCurrentCourseBtn" type="button" hidden><i class="bi bi-arrow-left" aria-hidden="true"></i>返回当前课程</button>
         <span class="conversation-context" id="coachContext">先聊聊你想学什么</span>
-        <div class="head-actions"><button class="mobile-project-button" id="projectMobileBtn" type="button" aria-label="打开学习项目" aria-expanded="false"><i class="bi bi-folder2-open" aria-hidden="true"></i><span>学习项目</span></button><span class="connection"><i id="statusDot"></i><span id="connectionText">连接中</span></span></div>
+        <div class="head-actions"><button class="mobile-project-button" id="projectMobileBtn" type="button" aria-label="打开学习导航与项目" aria-expanded="false"><i class="bi bi-folder2-open" aria-hidden="true"></i><span>学习导航</span></button><button class="reopen-artifact-button" id="reopenArtifactBtn" type="button" aria-label="打开 PPT，返回当前页" aria-controls="artifactPane" aria-expanded="true" hidden><i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i><span>打开 PPT</span></button><span class="connection"><i id="statusDot"></i><span id="connectionText">连接中</span></span></div>
       </header>
       <div class="message-list" id="chatFeed" aria-live="polite"></div>
       <div class="conversation-bottom">
@@ -142,6 +142,11 @@
   <dialog class="document-dialog" id="planDialog"><header><div><p class="eyebrow">持续更新</p><h2>完整学习方案</h2></div><button class="dialog-close" data-close-dialog="planDialog" type="button" aria-label="关闭学习方案"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><article class="markdown-body plan-document" id="planDocument"></article></dialog>
   <dialog class="settings-dialog" id="settingsDialog"><header><div><p class="eyebrow">学习空间</p><h2>设置与档案</h2></div><button class="dialog-close" data-close-dialog="settingsDialog" type="button" aria-label="关闭设置"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><div class="settings-content">
     <section><h3>当前学习</h3><button class="settings-row" id="openPlanBtn" type="button"><span><strong>查看完整 Plan</strong><small>课程路线、练习与完成标准</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><button class="settings-row" id="reviewModeBtn" type="button"><span><strong>今日回顾</strong><small id="dueReviewCount">0 个知识点</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><button class="settings-row" id="reminderBtn" type="button"><span><strong>学习提醒</strong><small>设置每日学习与复习时间</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button></section>
+    <section><h3>课件与支持</h3>
+      <button class="settings-row" id="lessonHistoryBtn" type="button"><span><strong>课件版本记录</strong><small>查看或恢复之前的课件版本</small></span><i class="bi bi-clock-history" aria-hidden="true"></i></button>
+      <button class="settings-row" id="lessonExportBtn" type="button"><span><strong>导出 Markdown</strong><small>下载当前已保存的课件</small></span><i class="bi bi-download" aria-hidden="true"></i></button>
+      <button class="settings-row" id="bugReportExportBtn" type="button"><span><strong>导出 Bug 报告</strong><small>下载诊断 JSON，不含对话内容，不会自动上传</small></span><i class="bi bi-bug" aria-hidden="true"></i></button>
+    </section>
     <section class="settings-archives"><h3>学习档案</h3><button class="settings-row" id="currentPlanArchiveBtn" type="button"><span><strong>当前计划</strong><small>持续更新</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button><ol id="projectArchiveList" class="project-archive-list" aria-label="可切换的学习项目"></ol></section>
   </div></dialog>
   <dialog class="reminder-dialog" id="reminderDialog"><header><div><p class="eyebrow">每日学习</p><h2>学习提醒</h2></div><button class="dialog-close" data-close-dialog="reminderDialog" type="button" aria-label="关闭学习提醒"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><form id="reminderForm"><label>开启提醒 <input type="checkbox" id="reminderEnabled" checked></label><label>提醒时间 <input type="time" id="reminderTime" value="20:00"></label><label>提醒内容 <select id="reminderKind"><option value="both">学习与复习</option><option value="learn">继续学习</option><option value="review">今日复习</option></select></label><p id="reminderCapability">正在读取当前系统的通知支持情况。</p><button class="primary-button" type="submit">保存提醒</button></form></dialog>
@@ -152,6 +157,6 @@
   <div class="toast" id="toast" hidden aria-live="polite"></div>
   <dialog class="settings-dialog" id="lessonHistoryDialog" aria-labelledby="lessonHistoryTitle"><header><h2 id="lessonHistoryTitle">课件版本记录</h2><button id="lessonHistoryClose" class="dialog-close" type="button" aria-label="关闭版本记录"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><p>恢复只影响课件，代码、对话和历史作答会保留。</p><div id="lessonHistoryList"></div></dialog>
   <dialog class="settings-dialog" id="lessonRestoreDialog" aria-labelledby="lessonRestoreTitle"><header><h2 id="lessonRestoreTitle">确认恢复课件？</h2></header><p>恢复只影响课件；你的代码、对话和历史作答不会删除。修改过的题目需要重新作答。</p><div class="lesson-editor-actions"><button id="lessonRestoreCancel" type="button" autofocus>暂不恢复</button><button id="lessonRestoreConfirm" type="button">确认恢复</button></div></dialog>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script><script src="/js/markdown.js?v=20260830-editor"></script><script src="/js/activity-progress.js?v=20260823-detail"></script><script src="/js/lesson-selection.js?v=20260830"></script><script src="/js/artifact.js?v=20260830-editor"></script><script src="/js/diagnosis-job.js?v=20260830-async"></script><script src="/js/onboarding.js?v=20260830-diagnosis-async"></script><script src="/js/interview-bank.js?v=20260823-unified"></script><script src="/js/lesson-editor.js?v=20260830-reviewed"></script><script src="/js/app.js?v=20260830-diagnosis-async"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script><script src="/js/markdown.js?v=20260830-editor"></script><script src="/js/activity-progress.js?v=20260823-detail"></script><script src="/js/lesson-selection.js?v=20260830"></script><script src="/js/artifact.js?v=20260830-editor"></script><script src="/js/diagnosis-job.js?v=20260830-async"></script><script src="/js/onboarding.js?v=20260830-diagnosis-async"></script><script src="/js/interview-bank.js?v=20260823-unified"></script><script src="/js/lesson-editor.js?v=20260831-workspace"></script><script src="/js/app.js?v=20260831-workspace"></script>
 </body>
 </html>

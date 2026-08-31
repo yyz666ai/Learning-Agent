@@ -58,11 +58,11 @@ button { -webkit-tap-highlight-color: transparent; }
 .sidebar-projects header button:hover { border-color: #bfdbfe; background: #eff6ff; color: var(--primary-strong); box-shadow: var(--shadow-hover); transform: translateY(-1px); }
 .project-header-actions { display: flex; align-items: center; gap: 5px; }
 .app-shell:not(.is-onboarding) .brand-row { order: 0; }
-.app-shell:not(.is-onboarding) .rail-tabs { order: 1; }
-.app-shell:not(.is-onboarding) .outline-pager { order: 2; }
-.app-shell:not(.is-onboarding) .rail-panel { order: 3; }
-.app-shell:not(.is-onboarding) .sidebar-projects,
-.app-shell:not(.is-onboarding) .sidebar-plan-dock { display: none; }
+.app-shell:not(.is-onboarding) .sidebar-projects { order: 1; padding-block: 8px; }
+.app-shell:not(.is-onboarding) .rail-tabs { order: 2; }
+.app-shell:not(.is-onboarding) .outline-pager { order: 3; }
+.app-shell:not(.is-onboarding) .rail-panel { order: 4; }
+.app-shell:not(.is-onboarding) .sidebar-plan-dock { order: 5; }
 .app-shell:not(.is-onboarding) .roadmap-actions { order: 6; }
 .sidebar-projects.is-collapsed { max-height: 46px !important; }
 .sidebar-projects.is-collapsed > header { margin-bottom: 0; }
@@ -202,7 +202,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .artifact-pane { display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--surface); }
 .artifact-topbar { flex: 0 0 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 34px 0 42px; border-bottom: 1px solid var(--line); font-size: 11px; }
 .artifact-topbar > div { display: flex; gap: 10px; align-items: center; }
-.artifact-topbar i { width: 3px; height: 3px; border-radius: 50%; background: var(--line-strong); }
+.artifact-meta { min-width: 0; flex-wrap: wrap; }
+.artifact-meta > i { width: 3px; height: 3px; border-radius: 50%; background: var(--line-strong); }
 .artifact-scroll { flex: 1; overflow: auto; }
 .lesson-page { width: min(760px, calc(100% - 64px)); margin: 0 auto; padding: 46px 0 52px; }
 .page-count { display: inline-flex; padding: 5px 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-soft); font-size: 10px; }
@@ -428,6 +429,12 @@ button { -webkit-tap-highlight-color: transparent; }
 .app-shell.is-onboarding .sidebar-projects.is-collapsed .learning-project-empty { display: grid; }
 .app-shell.is-onboarding #learningProjectsToggle { display: none; }
 
+.app-shell.is-artifact-collapsed { grid-template-columns: 270px minmax(0, 1fr); }
+.app-shell.is-artifact-collapsed .artifact-pane,
+.app-shell.is-artifact-collapsed .artifact-splitter { display: none; }
+.app-shell.is-artifact-collapsed .conversation-shell { width: 100%; }
+.reopen-artifact-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--primary); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.reopen-artifact-button[hidden] { display: none; }
 .app-shell.is-chat-first { display: block; min-height: 100vh; padding: 24px; }
 .app-shell.is-chat-first .roadmap, .app-shell.is-chat-first .artifact-pane, .app-shell.is-chat-first .artifact-splitter { display: none; }
 .app-shell.is-chat-first .conversation-shell { width: min(860px, 100%); height: calc(100vh - 48px); min-height: 620px; margin: 0 auto; border: 1px solid var(--line); box-shadow: var(--shadow); }
@@ -482,6 +489,7 @@ dialog h2 { margin: 0; font: 620 22px var(--serif); }
 @media (max-width: 1120px) {
   :root { --coach-width: 340px; }
   .app-shell { grid-template-columns: 230px minmax(430px, 1fr) 9px var(--coach-width); }
+  .app-shell.is-artifact-collapsed { grid-template-columns: 230px minmax(0, 1fr); }
   .roadmap-heading, .brand-row { padding-inline: 22px; }
   .progress-card, .review-entry, .archive-list { margin-inline: 22px; }
   .roadmap-footer { padding-inline: 22px; }
@@ -495,11 +503,10 @@ dialog h2 { margin: 0; font: 620 22px var(--serif); }
   .app-shell.is-onboarding .roadmap { display: none; }
   .mobile-project-button { display: inline-grid; place-items: center; }
   .app-shell.is-project-drawer-open .roadmap { position: fixed; z-index: 80; inset: 0 auto 0 0; width: min(290px, calc(100vw - 46px)); display: flex; box-shadow: 16px 0 38px rgba(15, 23, 42, .16); }
-  .app-shell.is-project-drawer-open .roadmap > :not(.brand-row):not(.sidebar-projects):not(.roadmap-actions) { display: none; }
-  .app-shell.is-project-drawer-open .sidebar-projects { display: block; flex: 1; max-height: none; }
-  .app-shell.is-project-drawer-open .learning-project-list { max-height: calc(100vh - 190px); }
+  .app-shell.is-project-drawer-open .sidebar-projects { display: block; }
   .app-shell.is-project-drawer-open .roadmap-actions { margin-top: auto; }
-  .app-shell:not(.is-chat-first):not(.is-onboarding) .conversation-shell { height: 48vh; min-height: 420px; }
+  .app-shell:not(.is-chat-first):not(.is-onboarding):not(.is-artifact-collapsed) .conversation-shell { height: 48vh; min-height: 420px; }
+  .app-shell.is-artifact-collapsed .conversation-shell { height: 100dvh; min-height: 0; }
   .app-shell.is-chat-first .message-list { padding: 30px 22px; }
   .app-shell.is-chat-first .conversation-bottom { padding: 0 16px 18px; }
   .artifact-topbar { padding-inline: 18px; }
@@ -541,8 +548,9 @@ dialog h2 { margin: 0; font: 620 22px var(--serif); }
 .markdown-hints > summary:hover { color: #1d4ed8; }
 .markdown-hints > summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
 /* Classroom notes use the same typography as the read-only lesson. */
-.lesson-edit-toolbar { display:flex; flex-wrap:wrap; gap:6px; padding:8px 24px; border-bottom:1px solid #e2e8f0; background:#fff; }
-.lesson-edit-toolbar button,.editor-format-toolbar button,.lesson-editor footer button,.lesson-proposal button,.lesson-version-row button { min-height:36px; padding:6px 10px; border:1px solid #dbe2ec; border-radius:7px; background:#fff; color:#334155; font:inherit; font-size:13px; cursor:pointer; }
+.lesson-edit-toolbar { display:flex; flex:0 0 auto; gap:2px; }
+.lesson-edit-toolbar button { width:36px; height:36px; padding:0; border-radius:7px; font-size:16px; }
+.editor-format-toolbar button,.lesson-editor footer button,.lesson-proposal button,.lesson-version-row button { min-height:36px; padding:6px 10px; border:1px solid #dbe2ec; border-radius:7px; background:#fff; color:#334155; font:inherit; font-size:13px; cursor:pointer; }
 .lesson-edit-toolbar button:hover,.editor-format-toolbar button:hover,.lesson-proposal button:hover,.lesson-version-row button:hover { background:#eff6ff; color:#1d4ed8; }
 .lesson-edit-toolbar button:disabled,.lesson-editor button:disabled { opacity:.5; cursor:default; }
 .lesson-edit-toolbar button:focus-visible,.lesson-editor :focus-visible,.lesson-proposal button:focus-visible,.lesson-version-row button:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
@@ -570,4 +578,4 @@ dialog h2 { margin: 0; font: 620 22px var(--serif); }
 .markdown-body h2 { font-size:clamp(23px,2vw,29px); line-height:1.4; }
 .markdown-body h3 { font-size:clamp(20px,1.7vw,25px); line-height:1.45; }
 .markdown-body h1,.markdown-body h2,.markdown-body h3 { font-weight:700; }
-@media(max-width:860px) { .lesson-edit-toolbar {padding:8px 12px;} .lesson-edit-toolbar button,.editor-format-toolbar button {min-height:44px;} .lesson-editor {padding:16px;} }
+@media(max-width:860px) { .lesson-edit-toolbar button {min-width:44px; min-height:44px;} .editor-format-toolbar button {min-height:44px;} .lesson-editor {padding:16px;} }

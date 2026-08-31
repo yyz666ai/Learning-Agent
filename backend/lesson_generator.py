@@ -45,7 +45,7 @@ def _expected_language(topic: str) -> str | None:
 
 
 def _starter_filename(language: str) -> str:
-    return {"go": "main.go", "python": "main.py", "java": "Main.java", "rust": "main.rs"}.get(language, "notes.md")
+    return {"go": "main.go", "python": "main.py", "java": "Main.java", "rust": "main.rs", "javascript": "main.js"}.get(language, "notes.md")
 
 
 def _comment_legacy_code(language: str, code: str) -> str:
@@ -441,13 +441,31 @@ def _scope_concepts(title: str) -> list[str]:
         # 'HTTP handler 实现' names the API plus an instructional action.
         # Do not strip arbitrary Chinese suffixes or invent synonyms.
         phrase = re.sub(r"(?<=[A-Za-z])\s+实现$", "", phrase)
-        if phrase and phrase not in concepts:
-            concepts.append(phrase)
+        # Explicit identifier[/identifier] + optional Chinese description names
+        # literal obligations, not one mandatory contiguous sentence. Do not
+        # guess synonyms or split arbitrary Chinese descriptions into n-grams.
+        technical = re.fullmatch(
+            r"([A-Za-z_$][A-Za-z0-9_$]*(?:\s*/\s*[A-Za-z_$][A-Za-z0-9_$]*)*)"
+            r"(?:\s+([\u3400-\u9fff]+))?", phrase.replace("`", ""),
+        )
+        parts = [*re.split(r"\s*/\s*", technical[1]), technical[2]] if technical else [phrase]
+        for part in parts:
+            if part and part not in concepts:
+                concepts.append(part)
     return concepts or [title]
 
 
 def _scope_text(text: str) -> str:
     return re.sub(r"[\s`*]+", "", text).casefold()
+
+
+def _contains_scope_term(body: str, term: str) -> bool:
+    if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", term):
+        # Keep spaces for word boundaries: 'contract', 'triggerLater' and
+        # 'NonProxy' must not count as track, trigger or Proxy evidence.
+        plain = re.sub(r"[`*]+", "", body)
+        return re.search(rf"(?<![A-Za-z0-9_$]){re.escape(term)}(?![A-Za-z0-9_$])", plain, re.I) is not None
+    return _scope_text(term) in _scope_text(body)
 
 
 # Explicit literal subanchors for known compound concepts. They are only used
@@ -515,33 +533,39 @@ def _validate_scope_evidence(payload: dict, bundle: LessonBundle, points: list[K
         evidence_by_point[point_id] = cleaned_bodies
     if set(evidence_by_point) != set(bundle.manifest.covered_knowledge_point_ids):
         raise ValueError("generated lesson scope evidence must match covered knowledge points")
+    coverage_errors = []
     for point_id, narratives in evidence_by_point.items():
         point = point_by_id.get(point_id)
         if point is None:
             raise ValueError("generated lesson scope evidence claimed an out-of-scope knowledge point")
-        normalized = [_scope_text(narrative) for narrative in narratives]
         concepts = _scope_concepts(point.title)
         anchors = [
-            _scope_text(anchor)
+            anchor
             for concept in concepts
             for anchor in (concept, *_SCOPE_PAGE_SUBANCHORS.get(concept, ()))
         ]
         # Models may cite surplus overview/quiz pages. Discard those citations
         # only after validating ALL raw IDs/excerpts above. Never manufacture a
         # second supporting page, and check every concept on retained pages only.
-        normalized = [body for body in normalized if any(anchor in body for anchor in anchors)]
-        if len(normalized) < 2:
-            raise ValueError(
+        relevant = [body for body in narratives if any(_contains_scope_term(body, anchor) for anchor in anchors)]
+        if len(relevant) < 2:
+            coverage_errors.append(
                 f"generated lesson drifted: scope evidence needs at least two relevant pages for {point_id}. "
                 f"知识点“{point.title}”必须在至少两张引用页的正文/问题/代码中讲解；"
-                f"把完整词组“{point.title}”自然写入这些页面的定义、示例说明或问题中，不能只写在页面标题。"
+                f"目前仅 {len(relevant)} 张引用页含匹配正文。至少两页，每页至少自然出现一个覆盖词组：{'、'.join(concepts)}；"
+                "这些页面合起来还须涵盖全部词组。若只有一个词组，它必须分别出现在两页的正文/问题/代码中。"
+                "仅用同义改写或只写在页面标题不会被此词面检查识别。"
                 "可以补充讲解或修正 page_ids 指向已有真实讲解页，不能虚构引用。"
             )
-        # The full-title form remains compatible; the concept-list form accepts
-        # paraphrased wrappers but still requires EVERY named concept.
-        if ((_structured_scope_concepts(point.title) is not None or not any(_scope_text(point.title) in body for body in normalized))
-                and not all(any(_scope_text(concept) in body for body in normalized) for concept in concepts)):
-            raise ValueError(f"generated lesson drifted away from a covered knowledge point: {point_id}")
+            continue
+        # Every named obligation is required, even when title syntax is split.
+        missing = [concept for concept in concepts if not any(_contains_scope_term(body, concept) for body in relevant)]
+        if missing:
+            coverage_errors.append(f"generated lesson drifted away from a covered knowledge point: {point_id}; 缺少覆盖词组：{'、'.join(missing)}")
+    # A single bounded model repair must see all lexical failures, otherwise it
+    # can fix the first title and immediately fail on the next one.
+    if coverage_errors:
+        raise ValueError("\n".join(coverage_errors))
 
 
 def build_lesson_prompt(
@@ -627,11 +651,12 @@ practice_starter_mode(provided/blank), pages(3–24 页，最后一页 type 必�
 scope_evidence 必须是数组，逐项对应本章知识点，格式为 [{{"knowledge_point_id":"原 id","page_ids":["page-1","page-2"]}}]，不能写成按 id 索引的对象。每项至少引用两个不同的真实页面 id。
 引用页面的正文、问题或代码合起来必须包含该知识点的全部覆盖词组；只在标题或元数据中点名不算覆盖。
 scope_evidence 只输出 knowledge_point_id 和 page_ids，不输出 excerpts；后台直接检查这些页面的正文，不需要重复抄写引文。
+词面检查的逐页要求：每个知识点至少有两张引用页，每页至少自然出现一个覆盖词组；全部引用页合起来涵盖全部词组。若知识点只有一个覆盖词组（如“解构失响应”），须在两页正文/问题/代码中分别使用该词组：一页定义，另一页针对它解释示例或布置练习；仅同义改写不能通过词面检查。不必在每页重复全部技术词，不用关键词清单冒充讲解。
 page 字段使用 id, type(explain/example/check/practice/mastery), title, eyebrow, markdown,
 code, language, question, options, practice_kind(classroom/homework/null)。options 必须是对象数组，例如
 [{{"id":"a","label":"选项文字"}},{{"id":"b","label":"选项文字"}}]，answer_keys 的值使用同样的小写 id。
 practice_path 必须是用户目录内的文件夹路径，例如 projects/go/package-main，不能以 main.go 等文件名结尾。
-除 meaning_only 不创建练习文件外，系统会自动在练习文件夹创建唯一的源文件：Go 一律为 `main.go`、Python 为 `main.py`、Java 为 `Main.java`、Rust 为 `main.rs`。所有代码页、运行命令和最终提交说明必须使用这个文件名；不得杜撰 `hello.go` 等其他文件。讲义里不得写 `$USER_DIR` 或要求学习者自行猜绝对路径。
+除 meaning_only 不创建练习文件外，系统会自动在练习文件夹创建唯一的源文件：Go 一律为 `main.go`、Python 为 `main.py`、Java 为 `Main.java`、Rust 为 `main.rs`、JavaScript 为 `main.js`。所有代码页、运行命令和最终提交说明必须使用这个文件名；不得杜撰 `hello.go` 等其他文件。讲义里不得写 `$USER_DIR` 或要求学习者自行猜绝对路径。
 除 meaning_only 明确禁止代码外，必须覆盖上面列出的本章每个知识点，页面按依赖顺序展开。不得在本章验收后再次生成本章余下的知识点。
 每页 markdown 末尾必须用“**本页请做**：...”明确写出这一页的下一步；不得要求学生在聊天框写解释、复述或长文回答。
 可用 `**关键结论**` 加粗必记结论，用 `==核心警告==` 高亮容易导致误解或 bug 的边界。每页最多 2 处加粗和 1 处高亮，不得滥用高亮或高亮整段文字。
@@ -644,7 +669,7 @@ practice_starter_mode：第一个非常简单的例子可用 provided；课后�
 当路线为 interview_sprint 时，interview_prompts 必须有 2–4 项；每项字段为 id, question, reference_answer,
 answer_structure, common_omissions, follow_ups。answer_structure 和 common_omissions 必须是字符串数组，不能返回单个字符串。follow_ups 每项字段为 prompt, answer_points，其中 answer_points 也必须是字符串数组。即使用户没有提供面试题也必须生成，答案要适合口述并能应对追问；其他路线可返回空数组。
 
-最终结构检查：pages[-1].type 必须为 "mastery"，它之后不能再有页面。面试题仅填顶层 interview_prompts，前端会自动显示在最后一页，不再另建“面试表达练习”practice 页。只保留一个 homework 页，课堂不另设编程 practice 页。第一次代码示例保持 3–12 行非空非注释代码，之后才扩展；每个 code 字段都检查中文注释数量。scope_evidence 必须是数组。为保证概念与讲解对应，每个知识点至少在两张引用页的正文或问题中自然出现完整词组（例如在定义页讲“goroutine 生命周期”，示例页再说明“这个例子的 goroutine 生命周期如何结束”）；不只放在标题，不堆砌关键词。只返回完整 JSON。
+最终结构检查：pages[-1].type 必须为 "mastery"，它之后不能再有页面。面试题仅填顶层 interview_prompts，前端会自动显示在最后一页，不再另建“面试表达练习”practice 页。只保留一个 homework 页，课堂不另设编程 practice 页。第一次代码示例保持 3–12 行非空非注释代码，之后才扩展；每个 code 字段都检查中文注释数量。scope_evidence 必须是数组。每个知识点至少有两张真正相关的引用页，正文、问题或代码合起来覆盖全部指定词组；技术标识符与中文描述可以分别讲解，例如“track / trigger 依赖收集”要求 track、trigger、依赖收集全部出现，不要求连续复述标题。不只放在标题，不堆砌关键词。只返回完整 JSON。
 """
 
 
