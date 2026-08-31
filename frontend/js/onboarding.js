@@ -238,7 +238,6 @@
             state.diagnosisRequestId = current.status === "cancelled" ? null : current.request_id;
             state.diagnosisLocale = current.locale || "zh-CN";
             if (current.status === "completed") {
-              global.LearningI18n?.noticeJobLocale('diagnosis', current.locale || current.result?.locale || 'zh-CN');
               state.diagnosisPrefaced = true;
               if (current.result.complete) await confirm({diagnostic_session_id: current.result.session_id});
               else renderDiagnostic(current.result);
@@ -438,7 +437,6 @@
         onStatus: job => global.LearningActivity?.diagnosis?.(job),
       });
       if (epoch !== state.epoch || !state.active) return;
-      global.LearningI18n?.noticeJobLocale('diagnosis', result.locale || state.diagnosisLocale || 'zh-CN');
       if (result.complete) { await confirm({diagnostic_session_id: result.session_id}); return; }
       renderDiagnostic(result);
       global.LearningActivity?.finish(() => t("第一题准备好了"), () => t("直接点击输入框上方的选项即可。"));
@@ -488,7 +486,6 @@
         const personalized = await waitForPersonalizedPlan(planSubmission, result.generation_id);
         if (!isCurrent()) return;
         if (!personalized.personalized) throw new Error(personalized.user_message || t("模型还没有生成合格的详细课程大纲，请点击重试。"));
-        global.LearningI18n?.noticeJobLocale('plan', personalized.locale || planSubmission.locale || 'zh-CN');
         state.generationId = null;
         state.confirmationResult = result; state.stage = "plan_review";
         await state.callbacks.onPlanReady?.(personalized);

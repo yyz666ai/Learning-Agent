@@ -17,7 +17,6 @@
   "做一道针对性练习": "Try a focused exercise",
   "换一种讲法": "Try another explanation",
   "查看课程总结": "View course summary",
-  "刚完成的{0}使用{1}生成。原结果已保留；切换界面不会自动翻译，可按需查看翻译副本。": "The completed {0} was generated in {1}. The original result is preserved. Changing the interface does not translate it automatically; you can request a translated copy when needed.",
   "诊断": "assessment",
   "计划": "plan",
   "课件": "lesson",
@@ -28,18 +27,6 @@
   "当前环境没有可用桌面，请手动打开此路径。": "No desktop is available in this environment. Please open this path manually.",
   "请手动打开此路径。": "Please open this path manually.",
   "系统未能打开文件夹，请手动打开此路径。": "The system could not open the folder. Please open this path manually.",
-  "翻译副本": "Translated copy",
-  "查看原文": "View original",
-  "这是只读翻译副本；原文、代码、笔记和作答记录保持不变。关闭即可返回原文。": "This is a read-only translated copy. The original, code, notes and answer records are unchanged. Close it to return to the original.",
-  "翻译当前 Plan": "Translate this plan",
-  "翻译当前章课件": "Translate this chapter",
-  "正在准备翻译副本，原文不会被修改。": "Preparing a translated copy. The original will not be changed.",
-  "仅将{0}翻译为{1}并保存副本，可能需要模型调用。不会翻译历史聊天或其他章节。继续吗？": "Translate only {0} into {1} and save a copy? This may use a model call. Past conversations and other chapters will not be translated.",
-  "当前 Plan": "the current plan",
-  "当前章课件": "the current chapter",
-  "翻译副本已就绪；原文保持不变。": "Translated copy ready. The original is unchanged.",
-  "原文已经变化，这份译本未显示。请重新翻译当前版本。": "The original has changed, so this translation was not displayed. Translate the current version again.",
-  "翻译未完成，原文保持不变。可以重试；详细原因见诊断报告。": "Translation did not complete. The original is unchanged. Retry, or export a diagnostic report for details.",
   "{0} 秒": "{0} sec",
   "{0} 分钟": "{0} min",
   "超出常见时间，仍在生成": "Taking longer than usual; still generating",
@@ -612,7 +599,7 @@
     const storage = options.storage;
     const fetcher = options.fetcher;
     const cacheKey = `learning-agent.locale.v1.${userId}`;
-    let locale = "zh-CN", saveStatus = "saved", revision = 0, saveQueue = Promise.resolve(), jobNotice = null;
+    let locale = "zh-CN", saveStatus = "saved", revision = 0, saveQueue = Promise.resolve();
     const preferenceTimeoutMs = Math.max(1, Number(options.preferenceTimeoutMs) || 4000);
     try { if (storage?.getItem(cacheKey) === "en") locale = "en"; } catch (_) { /* Private mode can disable storage. */ }
     const bindings = new Map();
@@ -660,11 +647,6 @@
       if (status) { status.textContent = saveStatus === 'unsaved' ? t('本次已切换，但偏好尚未保存。请重试。') : ''; status.hidden = saveStatus !== 'unsaved'; }
       const retry = doc?.getElementById('languageSaveRetry');
       if (retry) retry.hidden = saveStatus !== 'unsaved';
-      const jobStatus = doc?.getElementById('languageJobNotice');
-      if (jobStatus) {
-        jobStatus.hidden = !jobNotice || jobNotice.locale === locale;
-        jobStatus.textContent = jobStatus.hidden ? '' : t('刚完成的{0}使用{1}生成。原结果已保留；切换界面不会自动翻译，可按需查看翻译副本。', {0:t(({diagnosis:'诊断',plan:'计划',lesson:'课件'})[jobNotice.kind] || '课件'),1:jobNotice.locale==='en'?'English':t('中文')});
-      }
     }
     function withLocale(options = {}, snapshot = locale) {
       const headers = new Headers(options.headers || {});
@@ -753,8 +735,7 @@
       if (missing) return t('这些选择题还需要先答对：{0}。回到对应页面直接点击选项，不需要写文字回答。', {0:missing[1]});
       return t(original);
     }
-    function noticeJobLocale(kind, value) { jobNotice = {kind,locale:validLocale(value)}; refresh(); }
-    return {t, bind, apply, refresh, mount, setLocale, getLocale:()=>locale, withLocale, fetch:apiFetch, loadPreference, errorText, completionText, noticeJobLocale, persistenceStatus:()=>saveStatus, dictionary};
+    return {t, bind, apply, refresh, mount, setLocale, getLocale:()=>locale, withLocale, fetch:apiFetch, loadPreference, errorText, completionText, persistenceStatus:()=>saveStatus, dictionary};
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = {createI18n, dictionary};
   if (root?.document) {

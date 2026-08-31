@@ -111,29 +111,10 @@ test('language control is shared and static copy is annotated explicitly', () =>
   assert.match(html, /data-i18n-aria-label="发送"/);
   assert.ok(html.indexOf('/js/i18n.js') < html.indexOf('/js/onboarding.js'));
 });
-function translations() {
-  const file = path.join(__dirname, '../frontend/js/translations.js');
-  assert.ok(fs.existsSync(file), 'explicit translation action module must exist');
-  return require(file);
-}
-test('translation requires confirmation and cancellation never creates a model job', async () => {
-  const calls=[];
-  await translations().requestTranslation({userId:'test',kind:'lesson',locale:'en',confirm:()=>false,
-    fetcher:async url=>{calls.push(url);return {ok:true,json:async()=>({source_hash:'one',locale:'zh-CN'})}}});
-  assert.equal(calls.length, 1);
-  assert.match(calls[0], /translations\/source/);
-});
-test('translation snapshot is explicit and stale source results are rejected', async () => {
-  const calls=[]; let sources=0;
-  await assert.rejects(translations().requestTranslation({userId:'test',kind:'lesson',locale:'en',confirm:()=>true,sleep:async()=>{},
-    fetcher:async (url,options)=>{
-      calls.push([url,options]);
-      return {ok:true,json:async()=>url.includes('/source')?{source_hash:++sources===1?'one':'changed'}:
-        url.includes('/start')?{generation_id:'job'}:{status:'completed',result:{ok:true,source_hash:'one',locale:'en',content:{pages:[]}}}};
-    }}), /source_changed/);
-  const start=calls.find(([url])=>url.includes('/start'));
-  assert.equal(JSON.parse(start[1].body).locale, 'en');
-  assert.equal(new Headers(start[1].headers).get('X-Learning-Locale'), 'en');
+test('the onboarding welcome is framework copy and changes with the selected interface language', () => {
+  const source=fs.readFileSync(path.join(__dirname,'../frontend/js/app.js'),'utf8');
+  assert.match(source,/addFrameworkMessage\(\"想继续以前的内容/);
+  assert.match(source,/message\.frameworkKey/);
 });
 test('English lesson-edit and confirmation commands keep the existing explicit-confirmation safety', () => {
   const editor=require('../frontend/js/lesson-editor.js');
@@ -169,42 +150,10 @@ test('completion framework translates exact templates but preserves lesson title
   assert.match(i.completionText('这些选择题还需要先答对：原题A、原题B。回到对应页面直接点击选项，不需要写文字回答。'),/^First answer these questions correctly: 原题A、原题B/);
   assert.equal(i.completionText('模型关于你的特殊问题的原始解释'),'模型关于你的特殊问题的原始解释');
 });
-test('completed-job locale notice follows UI language without relabeling the result', async () => {
-  const nodes={languageJobNotice:{hidden:true,textContent:''}};
-  const document={documentElement:{},getElementById:id=>nodes[id],querySelectorAll:()=>[]};
-  const i=create({document});await i.setLocale('en');
-  const result={locale:'zh-CN',content:'原内容'};
-  i.noticeJobLocale('lesson',result.locale);
-  assert.equal(nodes.languageJobNotice.hidden,false);
-  assert.match(nodes.languageJobNotice.textContent,/Chinese/);
-  assert.equal(result.content,'原内容');
-  assert.equal(result.locale,'zh-CN');
-  await i.setLocale('zh-CN');assert.equal(nodes.languageJobNotice.hidden,true);
-});
 test('English extra-practice requests route explicitly and exclude explanations, negation and conditionals', () => {
   const source=fs.readFileSync(path.join(__dirname,'../frontend/js/app.js'),'utf8');
   const fn=source.slice(source.indexOf('  function isSupplementalPracticeRequest('),source.indexOf('  async function sendMessage('));
   const context={};require('node:vm').runInNewContext(fn,context);
   for(const message of ['Give me another coding exercise','Add a programming project','Can you give me one more practice problem?','I want more exercises'])assert.equal(context.isSupplementalPracticeRequest(message),true,message);
   for(const message of ['What is a coding exercise?','Explain this practice problem',"Don't add another exercise",'If I add another exercise, will progress reset?','Can you explain how to add an exercise?','Remove the exercise from this slide'])assert.equal(context.isSupplementalPracticeRequest(message),false,message);
-});
-test('read-only lesson translation renders completion and every interview field while preserving code and source', async () => {
-  const api=translations();
-  assert.equal(typeof api.renderLessonVariant,'function','production translation renderer must be available');
-  const element=tag=>({tagName:tag.toUpperCase(),children:[],dataset:{},textContent:'',innerHTML:'',isConnected:true,append(...items){this.children.push(...items)}});
-  const document={createElement:element};
-  const body=element('article');
-  const i=create();await i.setLocale('en');
-  const manifest={completion_prompt:'Complete the final quiz, then reflect.',pages:[{id:'page-1',title:'Translated page',markdown:'Page body.',code:'const text = "<unsafe>原代码";',question:'Which value?',options:[{id:'a',label:'Answer A'}]}],
-    interview_prompts:[{question:'Explain a mutex.',reference_answer:'Mutual exclusion. <script>unsafe()</script>',answer_structure:['State the purpose.','Give an example.'],common_omissions:['Ownership details.'],follow_ups:[{prompt:'What about fairness?',answer_points:['Fairness is not guaranteed.','Discuss starvation.']}]}]};
-  const snapshot=JSON.stringify(manifest);
-  api.renderLessonVariant(body,manifest,{document,markdown:require('../frontend/js/markdown.js'),i18n:i});
-  const flatten=node=>[node,...node.children.flatMap(flatten)];
-  const all=flatten(body), text=()=>all.map(node=>node.textContent+' '+node.innerHTML).join('\n');
-  for(const expected of ['Completion instructions','Complete the final quiz, then reflect.','Interview delivery practice','Explain a mutex.','Reference answer','Mutual exclusion.','Answer structure','State the purpose.','Give an example.','Common omissions','Ownership details.','Follow-up questions','What about fairness?','Answer points','Fairness is not guaranteed.','Discuss starvation.'])assert.ok(text().includes(expected),expected);
-  const code=all.find(node=>node.tagName==='CODE');assert.equal(code.textContent,manifest.pages[0].code);assert.equal(code.innerHTML,'');
-  assert.ok(!text().includes('<script>unsafe()'));
-  assert.ok(!all.some(node=>['INPUT','TEXTAREA','BUTTON'].includes(node.tagName)),'translated lesson has no mutation controls');
-  assert.equal(JSON.stringify(manifest),snapshot);
-  await i.setLocale('zh-CN');assert.ok(text().includes('结课说明'));assert.ok(text().includes('Explain a mutex.'));
 });

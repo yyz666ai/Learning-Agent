@@ -15,6 +15,7 @@ STYLE = ROOT / "frontend/css/style.css"
 INTERVIEW_JS = ROOT / "frontend/js/interview-bank.js"
 TOPIC_INTENT_JS = ROOT / "frontend/js/topic-intent.js"
 ACTIVITY_PROGRESS_JS = ROOT / "frontend/js/activity-progress.js"
+MAIN_PY = ROOT / "backend/main.py"
 
 
 def read(path: Path) -> str:
@@ -133,6 +134,19 @@ def test_primary_controls_use_a_standard_icon_library_instead_of_text_glyphs() -
     assert "bi-info-circle" in onboarding
     assert 'more.textContent = "•••"' not in app
     assert 'detail.textContent = "i"' not in onboarding
+
+
+def test_language_switch_has_no_historical_translation_ui_and_keeps_the_globe_aligned() -> None:
+    html = read(INDEX)
+    css = read(STYLE)
+    backend = read(MAIN_PY)
+
+    assert 'language-context-hint' not in html
+    assert '/js/translations.js' not in html
+    assert '/api/translations' not in backend
+    assert '.language-control { position: fixed; right: 20px; top: 9px;' in css
+    assert '.artifact-splitter { display: none; }' in css
+    assert '.conversation-shell { display: flex; flex-direction: column; height: 100vh; border-left: 0;' in css
 
 
 def test_inline_diagnosis_is_clickable_and_bounded() -> None:
@@ -763,7 +777,8 @@ def test_selected_visual_tokens_and_responsive_layout_are_preserved() -> None:
     assert "--paper:" in css
     assert "--primary:" in css
     assert "--success:" in css
-    assert "grid-template-columns: 270px minmax(480px, 1fr) 9px var(--coach-width)" in css
+    assert "grid-template-columns: 270px minmax(480px, 1fr) var(--coach-width)" in css
+    assert ".artifact-splitter { display: none; }" in css
     assert "@media (max-width: 860px)" in css
 
 

@@ -10,7 +10,7 @@
 
 ## Execution record — 2026-08-31
 
-Tasks 1–3 implemented, tested and independently reviewed. Task 4 automated verification and live browser checks completed. Real model acceptance covers one English beginner Plan and chapter; a fresh paid Chinese/advanced/interview end-to-end matrix and real Windows/mobile device acceptance are **not** claimed. The checklist below is the original test-first work sequence; current evidence and limitations are recorded in [bilingual validation](2026-08-31-bilingual-validation.md).
+Tasks 1–2 implemented, tested and independently reviewed. Historical translation variants from the original Task 3 were removed after product review: language selection controls the interface and future generation, while existing material remains unchanged. Real model acceptance covers one English beginner Plan and chapter; a fresh paid Chinese/advanced/interview end-to-end matrix and real Windows/mobile device acceptance are **not** claimed. The checklist below is the original test-first work sequence; current evidence and limitations are recorded in [bilingual validation](2026-08-31-bilingual-validation.md).
 
 ## Task 1 — UI language layer
 
@@ -35,14 +35,9 @@ Files: create backend/localization.py, tests/test_localization.py; modify backen
 - [ ] Localize deterministic learner feedback, and support English Plan field labels without changing stable IDs.
 - [ ] Run focused tests and existing Python regression suite.
 
-## Task 3 — Historical translation variants
+## Task 3 — Historical translation variants (removed)
 
-Files: create backend/content_translation.py and tests/test_content_translation.py; modify backend/main.py and frontend language actions.
-
-- [ ] Test source unchanged, identity/answer references preserved, invalid output refused, stale version detection and original fallback.
-- [ ] Implement explicit confirmed translation requests for current Plan/current lesson only; asynchronous job, source hash and locale in variant key; never regenerate other chapters.
-- [ ] Add translated-view actions, source-version checks and original-view fallback. Never translate user code or identifiers.
-- [ ] Run translation regressions together with locale tests.
+This originally proposed a read-only translation copy for old Plans and lessons. Product review removed it: the language switch changes the framework UI immediately and the language captured by future generation jobs; old user material remains in its original language and has no translation action.
 
 ## Task 4 — Acceptance and delivery
 

@@ -194,6 +194,10 @@
     item.className = `message ${message.role === "user" ? "user" : "agent"}${streaming ? " is-streaming" : ""}`;
     const content = document.createElement("div"); content.className = "markdown-body";
     if (message.role === "user") content.textContent = message.content;
+    else if (message.frameworkKey) {
+      bindUI(content, "innerHTML", () => window.MarkdownRenderer.render(t(message.frameworkKey)));
+      window.queueMicrotask(() => window.MarkdownRenderer.hydrate(content));
+    }
     else {
       content.innerHTML = window.MarkdownRenderer.render(message.content);
       window.queueMicrotask(() => window.MarkdownRenderer.hydrate(content));
@@ -216,6 +220,12 @@
     $("#chatFeed").append(messageElement(message));
     $("#chatFeed").scrollTop = $("#chatFeed").scrollHeight;
     if (persist) saveMessages();
+  }
+  function addFrameworkMessage(key) {
+    const message = { role: "agent", content: t(key), frameworkKey: key };
+    state.messages.push(message);
+    $("#chatFeed").append(messageElement(message));
+    $("#chatFeed").scrollTop = $("#chatFeed").scrollHeight;
   }
 
   function parseSSEBlock(block) {
@@ -762,7 +772,7 @@
     $("#promptChips").hidden = true;
     $("#choiceTray").hidden = true;
     setText("#coachContext", () => t("输入你现在想解决的事"));
-    addMessage("agent", t("想继续以前的内容，直接点左边的学习项目。\n\n想学新东西，就在下面随便说——概念、项目、面试、API 或者一个具体问题都可以。"), false);
+    addFrameworkMessage("想继续以前的内容，直接点左边的学习项目。\n\n想学新东西，就在下面随便说——概念、项目、面试、API 或者一个具体问题都可以。");
     bindUI($("#chatInput"), "placeholder", () => t("例如：下周面试 Java 后端，或我想用 LangGraph 做客服 Agent…"));
   }
 

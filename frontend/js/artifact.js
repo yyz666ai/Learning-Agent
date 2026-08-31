@@ -335,7 +335,6 @@
         const generated = await requestLessonGeneration({ user_id: userId });
         response = { ok: generated.ok };
         payload = generated.payload;
-        if (generated.ok) global.LearningI18n?.noticeJobLocale('lesson', generated.locale || payload.locale || 'zh-CN');
       }
       if (!response.ok && payload.detail?.recovery === "stale_generation") {
         if (retryStale) {
@@ -424,7 +423,6 @@
       }
       if (!response.ok) throw new Error(payload.detail?.message || t("下一步课程没有生成成功，请重试。"));
       applyManifest(payload);
-      global.LearningI18n?.noticeJobLocale('lesson', generated.locale || payload.locale || 'zh-CN');
       document.dispatchEvent(new CustomEvent("learning-agent:lesson-transition", { detail: decision }));
       finishActivity(() => t("下一小节已准备好"), () => t("从讲义第 1 页开始；每一步都会告诉你接下来做什么。 "));
     } catch (error) {
